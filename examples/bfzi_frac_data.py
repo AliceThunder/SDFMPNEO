@@ -50,21 +50,26 @@ def main(argv=None):
     p.add_argument("--bfzi-root",required=True,type=Path)
     p.add_argument("--out",type=Path,default=Path("runs/m4_frac_teacher.npz"))
     p.add_argument("--step",type=int,default=30)
+    p.add_argument("--sample",choices=("M1","M2","M3","M4"),default="M4",
+                   help="Original BFZI V150 dual-port rounded-square/circular sample")
+    p.add_argument("--limit",type=int,default=None,
+                   help="First N physical histories, for targeted cross-geometry runs")
     args=p.parse_args(argv)
     if args.step<=0 or 600%args.step:
         p.error("step must divide 600 seconds")
     sys.path.insert(0,str(args.bfzi_root.resolve()))
     import bfzi_v148_results as calc
+    import run_v150 as original
 
     t0=time.perf_counter()
-    data=calc.build_circle_data("M4")
+    data=original.build_data(args.sample)
     model=BFZIV148Adapter(data,calc,heat_mode="port-weak")
     zr,*_=calc.base.formal_with_local_mass(data)
     cold=model.solve(np.full(len(model.vol),model.ambient),
                      np.full(2,model.ambient))
     rel=float(np.linalg.norm(cold.sea_z-zr)/np.linalg.norm(zr))
     if rel>1e-5:
-        raise RuntimeError(f"BFZI M4 original Z regression failed: {rel}")
+        raise RuntimeError(f"BFZI {args.sample} original Z regression failed: {rel}")
     extra=np.diag([.5-1j*model.omega*model.air[0,0],
                    .5-1j*model.omega*model.air[1,1]])
     et=BFZIV148Pkg3D(
@@ -72,6 +77,10 @@ def main(argv=None):
     times=np.arange(0,600+args.step,args.step,dtype=float)
     temp=[]; zs=[]; vin=[]; eff=[]; cur=[]; split=[]; cases=[]
     allcases=programs()
+    if args.limit is not None:
+        if args.limit<=0:
+            p.error("--limit must be positive")
+        allcases=allcases[:args.limit]
     for cid,(v,windows,tag) in enumerate(allcases):
         fn=lambda t: drive(v,windows,t)
         tr=et.trajectory(times,fn)
@@ -82,7 +91,8 @@ def main(argv=None):
         eff.append([circuit_power(fn(t),a.currents,.5,.5)[-1]
                     for t,a in zip(times,tr)])
         split.append(tag=="train")
-        cases.append(dict(id=cid,voltage_v=v,windows_s=windows,split=tag))
+        cases.append(dict(id=cid,sample=args.sample,voltage_v=v,
+                          windows_s=windows,split=tag))
         if (cid+1)%5==0 or cid+1==len(allcases):
             print(f"teacher {cid+1}/{len(allcases)} "
                   f"elapsed={time.perf_counter()-t0:.1f}s",flush=True)
@@ -93,11 +103,16 @@ def main(argv=None):
         currents_A=np.asarray(cur),eta=np.asarray(eff),
         train=np.asarray(split,bool),nsea=et.count,
         npkg=et.pkg_n,ambient_K=et.amb,external_z=extra,
+        sea_xyz_m=model.points,sea_vol_m3=model.vol,
+        pkg_xyz_m=np.asarray(et.pkg_xyz),
+        pkg_vol_m3=np.asarray(et.pkg_vol),
+        sample=np.asarray(args.sample),
         cases_json=json.dumps(cases),bfzi_isothermal_relative_error=rel)
     print(json.dumps(dict(out=str(args.out),cases=len(allcases),
                           train=int(sum(split)),test=int(len(split)-sum(split)),
                           times=len(times),thermal_states=et.n,
-                          m4_regression=rel,
+                          original_bfzi_sample=args.sample,
+                          original_bfzi_z_regression=rel,
                           elapsed_sec=time.perf_counter()-t0),indent=2))
 
 
