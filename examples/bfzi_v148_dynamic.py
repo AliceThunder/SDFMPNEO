@@ -35,6 +35,8 @@ def main(argv=None):
     p.add_argument("--cool",type=float,default=180.)
     p.add_argument("--restart",type=float,default=180.)
     p.add_argument("--sea-alpha",type=float,default=.02)
+    p.add_argument("--check-only",action="store_true",
+                   help="Verify original BFZI isothermal complex Z without thermal time stepping")
     p.add_argument("--out",type=Path,default=Path("runs/bfzi_v148_dynamic.json"))
     a=p.parse_args(argv)
     if (not a.bfzi_root.is_dir() or
@@ -52,6 +54,45 @@ def main(argv=None):
     backend=BFZIV148Adapter(data,calc,sea_alpha=a.sea_alpha)
     extra=np.diag([a.source_r-1j*backend.omega*backend.air[0,0],
                    a.load_r-1j*backend.omega*backend.air[1,1]])
+    # Check the original v148 isothermal electromagnetic computation
+    # before investing in any expensive repeated thermal time steps.
+    cold=backend.solve(np.full(len(backend.vol),backend.ambient),
+                       np.full(2,backend.ambient))
+    z_ref,_,_,_,_=calc.formal_with_local_mass(data)
+    warm_rel=float(np.linalg.norm(cold.sea_z-z_ref)
+                   / max(np.linalg.norm(z_ref),1e-30))
+    archive_rel=None
+    if a.sample=="M4":
+        import csv
+        saved=a.bfzi_root/"outputs_v148"/"bfzi_v148_all_samples_matrix.csv"
+        if saved.is_file():
+            z_arch=np.zeros((2,2),complex)
+            with saved.open(encoding="utf-8-sig",newline="") as inp:
+                for row in csv.DictReader(inp):
+                    if row["sample_id"]=="M4":
+                        i,j=int(row["row"])-1,int(row["col"])-1
+                        z_arch[i,j]=(float(row["R_ohm"])
+                            +1j*backend.omega*float(row["L_sea_reaction_uH"])*1e-6)
+            archive_rel=float(np.linalg.norm(z_ref-z_arch)
+                              / max(np.linalg.norm(z_arch),1e-30))
+    baseline={
+        "sample":a.sample,"frequency_hz":backend.omega/(2*np.pi),
+        "baseline_tolerance":1e-3,
+        "v148_isothermal_Zsea_relative_error":warm_rel,
+        "v148_M4_archived_Zsea_relative_error":archive_rel,
+        "warm_Zsea_ohm":pair(cold.sea_z),
+        "original_Zsea_ohm":pair(z_ref),
+        "isothermal_baseline_pass":bool(warm_rel<=1e-3),
+    }
+    if a.check_only:
+        a.out.parent.mkdir(parents=True,exist_ok=True)
+        a.out.write_text(json.dumps(baseline,indent=2),encoding="utf-8")
+        print(json.dumps(baseline,indent=2))
+        if not baseline["isothermal_baseline_pass"]:
+            raise RuntimeError("Original BFZI v148 isothermal impedance mismatch")
+        return
+    if not baseline["isothermal_baseline_pass"]:
+        raise RuntimeError("Original BFZI v148 isothermal impedance mismatch; use --check-only")
     et=BFZIV148ET(backend,external=extra)
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
@@ -61,20 +102,6 @@ def main(argv=None):
         return np.array([a.voltage if active else 0.,0.],complex)
 
     trace=et.trajectory(times,drive)
-    # Exactly the same original BFZI v148 isothermal sea impedance is the
-    # regression baseline: geometry, Green, port orientation and local mass.
-    z_ref,_,_,_,_ = calc.formal_with_local_mass(data)
-    warm_rel = float(np.linalg.norm(trace[0].sea_z-z_ref)
-                     / max(np.linalg.norm(z_ref),1e-30))
-    # Independent BFZI master/outputs_v148 archive, M4 two-port sea reaction.
-    # This is a source-code regression target, not an experimental reference.
-    archive_rel = None
-    if a.sample == "M4":
-        z11 = .12781381449951726-0.0038545269438708036j
-        z12 = .10805885891894453-0.003731629612853443j
-        archive = np.array([[z11,z12],[z12,z11]])
-        archive_rel = float(np.linalg.norm(z_ref-archive)
-                            / np.linalg.norm(archive))
     rows=[]
     for s in trace:
         v=drive(s.time)
@@ -122,8 +149,7 @@ def main(argv=None):
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
-        "v148_isothermal_Zsea_relative_error":warm_rel,
-        "v148_M4_archived_Zsea_relative_error":archive_rel,
+        "isothermal_regression":baseline,
         "sea_alpha_per_K":a.sea_alpha,
         "source_resistance_ohm":a.source_r,
         "load_resistance_ohm":a.load_r,
