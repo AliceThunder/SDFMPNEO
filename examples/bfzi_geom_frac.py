@@ -60,9 +60,14 @@ def data_file(path,probe=None):
     port=geom_port(geom)
     cold_cu=port.copper(np.full(2,amb))
     sea_delta=z-z0
+    slope=np.empty(vin.shape+(4,))
     for i in range(len(vin)):
         for k in range(len(times)):
-            dz=port.copper(temp[i,k,-2:])-cold_cu
+            tc=temp[i,k,-2:]
+            dz=port.copper(tc)-cold_cu
+            deriv=(port.copper(tc+.1)-port.copper(tc-.1))/.2
+            slope[i,k]=[deriv[0].real,deriv[0].imag,
+                        deriv[1].real,deriv[1].imag]
             sea_delta[i,k,0]-=dz[0].real
             sea_delta[i,k,1]-=dz[0].imag
             sea_delta[i,k,4]-=dz[1].real
@@ -75,7 +80,8 @@ def data_file(path,probe=None):
                 temp[i,k-1,-2:],geom[14:16])
     return dict(sample=sample,geom=geom,z0=z0,ext=ext,
                 times=times,v=vin,z=z,train=train,
-                src=src,temp=summ,sea_delta=sea_delta,cases=cases)
+                src=src,temp=summ,sea_delta=sea_delta,
+                cu_slope=slope,cases=cases)
 
 
 def data_all(files,probe):
@@ -106,9 +112,11 @@ def tensors(rows,src_scale,y_scale,port_sea=False):
         for d,i in rows])/y_scale
     geom=np.stack([geom_feat(d["geom"],d["z0"])
                    for d,i in rows])
+    slope=np.stack([d["cu_slope"][i] for d,i in rows])
     return (torch.tensor(src,dtype=torch.float32),
             torch.tensor(y,dtype=torch.float32),
-            torch.tensor(geom,dtype=torch.float32))
+            torch.tensor(geom,dtype=torch.float32),
+            torch.tensor(slope,dtype=torch.float32))
 
 
 def score(model,ck,rows):
@@ -157,6 +165,8 @@ def main():
     p.add_argument("--epochs",type=int,default=1600)
     p.add_argument("--port-sea",action="store_true",
                    help="Train sea delta and assemble exact temperature-dependent BFZI copper Z")
+    p.add_argument("--phys-loss",type=float,default=0.,
+                   help="Joint full-Z Jacobian loss coupling sea delta and copper temperature")
     p.add_argument("--patience",type=int,default=280)
     args=p.parse_args()
     torch.set_num_threads(2)
@@ -175,8 +185,22 @@ def main():
         np.full(8,max(float(max(ystd[6:]))*.001,1e-3))])
     src_scale=np.maximum(np.max(
         np.stack([d["src"][i] for d,i in fit]),axis=(0,1)),1e-4)
-    u,y,g=tensors(fit,src_scale,yscale,args.port_sea)
-    uv,yv,gv=tensors(val,src_scale,yscale,args.port_sea)
+    u,y,g,cu=tensors(fit,src_scale,yscale,args.port_sea)
+    uv,yv,gv,cuv=tensors(val,src_scale,yscale,args.port_sea)
+    if args.phys_loss and not args.port_sea:
+        p.error("--phys-loss requires --port-sea")
+    ysc=torch.tensor(yscale,dtype=torch.float32)
+    def physical_loss(pred,target,deriv):
+        if args.phys_loss<=0:
+            return pred.new_zeros(())
+        error=(pred-target)*ysc
+        ez=error[:,:,:6].clone()
+        dt=error[:,:,12:14]
+        ez[:,:,0]+=deriv[:,:,0]*dt[:,:,0]
+        ez[:,:,1]+=deriv[:,:,1]*dt[:,:,0]
+        ez[:,:,4]+=deriv[:,:,2]*dt[:,:,1]
+        ez[:,:,5]+=deriv[:,:,3]*dt[:,:,1]
+        return (ez/ysc[:6]).square().mean()
     model=GeomFrac()
     opt=torch.optim.Adam(model.parameters(),lr=.003)
     best=1e30;state=None;best_epoch=0
@@ -185,15 +209,17 @@ def main():
         model.train()
         opt.zero_grad(set_to_none=True)
         pred=model(u,t,g)
-        loss=(pred-y).square().mean()+.45*(
-            pred[:,:,:6]-y[:,:,:6]).square().mean()
+        loss=((pred-y).square().mean()+.45*
+              (pred[:,:,:6]-y[:,:,:6]).square().mean()
+              +args.phys_loss*physical_loss(pred,y,cu))
         loss.backward()
         opt.step()
         model.eval()
         with torch.no_grad():
             vpred=model(uv,t,gv)
             vloss=float((vpred-yv).square().mean()+.45*
-                        (vpred[:,:,:6]-yv[:,:,:6]).square().mean())
+                        (vpred[:,:,:6]-yv[:,:,:6]).square().mean()
+                        +args.phys_loss*physical_loss(vpred,yv,cuv))
         if vloss<best-1e-7:
             best=vloss;best_epoch=epoch+1
             state={k:v.detach().clone()
@@ -216,6 +242,7 @@ def main():
         model=str(args.model),
         train_samples=sorted(set(d["sample"] for d,i in fit)),
         heldout_geometry=other["sample"],port_sea=bool(args.port_sea),
+        physics_loss_weight=float(args.phys_loss),
         train_cases=len(fit),val_cases=len(val),
         trained_steps=len(t),epochs=epoch+1,best_epoch=best_epoch,
         val_loss=best,
