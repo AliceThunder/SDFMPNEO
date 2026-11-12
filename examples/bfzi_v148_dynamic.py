@@ -129,6 +129,8 @@ def main(argv=None):
             heat_gap=None
         p_in,p_load,p_src,eta = circuit_power(
             v,s.currents,a.source_r,a.load_r)
+        p_sea=float(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents)))
+        p_gap=p_in-p_load-p_src-p_sea-float(np.sum(s.copper_power))
         rows.append({
             "time_s":s.time,
             "drive":"on" if np.any(abs(s.currents)>0) else "off",
@@ -137,8 +139,9 @@ def main(argv=None):
             "Leff_H":(s.impedance.imag/backend.omega).tolist(),
             "I_A":pair(s.currents),
             "Psea_volume_W":s.sea_power,
-            "Psea_port_W":float(.5*np.real(
-                np.vdot(s.currents,s.sea_z@s.currents))),
+            "Psea_port_W":p_sea,
+            "circuit_power_relative_gap":float(
+                abs(p_gap)/max(abs(p_in),1e-30)),
             "Psea_port_volume_relative_gap":float(
                 abs(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents))
                     -s.sea_power)/max(abs(s.sea_power),1e-30)),
@@ -193,6 +196,7 @@ def main(argv=None):
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archive_relative_error":archive_rel,
         "max_sea_power_relative_gap":max(r["Psea_port_volume_relative_gap"] for r in rows),
+        "max_circuit_power_relative_gap":max(r["circuit_power_relative_gap"] for r in rows),
         "max_thermal_balance_relative_gap":max(
             r["thermal_balance_relative_gap"] for r in rows[1:]),
         "efficiency_first":rows[0]["efficiency"],
