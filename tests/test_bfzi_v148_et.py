@@ -186,6 +186,30 @@ def test_package_flux_and_material_energy_budget():
     assert np.all(et.cap[et.pkg]>0)
 
 
+
+def test_heat_rom_conserves_each_package(tmp_path):
+    from sdfmpneo_bfzi.v148_heat_rom import BFZIV148HeatROM
+    # Synthetic temperatures span sea gradients and both independent boxes.
+    p=tmp_path/"thermal.npz"
+    sea=293.15+np.array([[0,.1,.2,.4],[.2,.3,.4,.5],[.4,.5,.6,.8]])
+    pkg=293.15+np.array([[0,.3],[.05,.4],[.15,.5]])
+    cu=293.15+np.array([[0,1],[.25,1.2],[.3,1.4]])
+    np.savez(p,Tsea_K=sea,Tpkg_K=pkg,Tcu_K=cu)
+    et=BFZIV148HeatROM(
+        Model(),[p],rank=6,sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+        sea_k=.05,cu_pkg_g=.08,pkg_sea_g=.04,outer_h=.1,
+        external=np.diag([.5,.5]))
+    assert et.hgroups==5
+    old=et.zeros()
+    dt=.1
+    new=et.advance(old,[8.,0.],dt)
+    _,_,heat,_,_=et.em(new,[8.,0.])
+    residual=et.cap*(new-old)/dt+et.H@new-heat
+    for idx in [np.arange(et.count),*[np.array([j]) for j in range(et.count,et.n)]]:
+        assert abs(np.sum(residual[idx]))<1e-5
+    assert np.isfinite(et.hretained)
+
+
 def test_v148_circuit_efficiency():
     et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
                   sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
