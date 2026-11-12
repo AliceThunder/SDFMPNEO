@@ -142,3 +142,16 @@ q_p=\frac{\lVert\mathbf J_p\rVert^2}{2\sigma_p}
 - 本轮主要提交：`2738ed73`、`44113ec9`、`54a684f0`、`e2844576`、`86a8b274`、`477ed0f3`、`49538f58`。未使用 Remote Desktop Commander，未使用 GitHub Actions。
 
 **剩余主线：** 在完整原 BFZI checkout 可用的环境中实跑 M4 `--check-only` 并记录两项实际复阻抗相对差；通过后运行完整动态时程，定位真实海水端口功率与体积分焦耳热的残差，并检查热收支、`Z11/Z12/Z22` 实虚部、自感互感、电流和效率的时变；真实闭环成立后开始电磁/热 ROM 和神经代理。
+
+
+## 2026-11-12 独立 BFZI V150 实际计算方法核对
+
+已找到独立 BFZI 的非默认分支 `bfzi-v150-turn-scan`，HEAD `9f3fa48e6a0a133c363e244379a95f9e55f8b558`（`master` 仅到 V149 计算主入口）。经逐项核对：
+
+1. `README_v150.md` 明确规定：原 S1–M4 七个样例及 M4 圆形退化线圈保持 V149 原样；V150 的新增任务是标准**圆角矩形**单线圈 `T04–T14` 的匝数 N=4–14 效率计算基准。
+2. `run_v150.py::build_data` 对 S1–M4 直接调用 `v149.build_data(sid)`；`run_v150.py::result_runtime_one` 对这七例调用 `v149.result_runtime_one(sid)`。该 V149 路径仍调用 `bfzi_v148_results.run_one` 进行完整 M4 复阻抗；V150 新增的 Txx 单线圈分支依旧调用 `calc.base.formal_with_local_mass(data)` 和 `calc.compute_air_matrix_direct_zlead(data)`。
+3. 对 `master` 和 `bfzi-v150-turn-scan` 做 Git blob SHA 对比：`bfzi_v148_results.py`、`bfzi_v142_results.py`、`bfzi_fast_sea.py`、`run.py`、`run_v130_local_source_support_zortho.py`、`mra_green_pino/env_resolvent.py`、`mra_green_pino/lmb_diffusion.py` **全部逐字节一致**。因此 M4 V148→V150 在电磁物理计算公式、端口源、海水 Green/resolvent、局部质量修正和空气自感/互感方面无迁移修改。
+4. V149/V150 的空气中心线族 GSO 加速、源场中心线族聚合主要用于**重复执行的效率比较**；M4 原全量复阻抗仍调用 V148 Neumann/GMD 与原 Green/resolvent 核。当前动态模型在初始化时只构造一次几何/源、G0、空气矩阵，之后主要消耗在随温度变化的海水 resolvent 重求；迁移单独的性能基准不会改善这一热步主耗时，暂不引入额外计算实现。
+5. `examples/bfzi_v148_dynamic.py` 增加原 BFZI checkout 的 Git SHA 以及是否含 `run_v150.py` 的前端版本记录，保留既有 M4 `--check-only` 双重回归检查；使用 V150 checkout 时仍取同一 `bfzi_v148_results` 电磁后端。V150 的单线圈 Txx 扫描是后续扩展**双端口跨几何**数据的一项可用基础，不改变当前首要 M4 真实时程任务。
+
+本轮沙箱再次执行 `git ls-remote https://github.com/AliceThunder/BFZI.git`，依然返回 `Could not resolve host: github.com`；GitHub 仓库接口可核对完整代码，但沙箱还无法取得私有 BFZI 可执行依赖 checkout。**当前没有重新计算出的原 BFZI M4 复阻抗/动态热时程数值，数值验收继续 OPEN。**
