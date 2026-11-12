@@ -63,19 +63,28 @@ def main():
                  Z6=pr["z6"][k].tolist(),eta=float(eta[k]))
         row.update({key:float(val) for key,val in
                     zip(labels,pr["temp_rise_K"][k])})
+        if "Psea_W" in pr:
+            row["Psea_W"]=float(pr["Psea_W"][k])
+            row["Pcu_W"]=pr["Pcu_W"][k].tolist()
+            row["circuit_gap_W"]=float(pr["circuit_gap_W"][k])
         rows.append(row)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(dict(
         model=str(a.model),geometry=str(a.geometry),sample=sample,
         cold_complex_Z6=z0.tolist(),trace=rows),indent=2),encoding="utf-8")
+    extras={key:pr[key] for key in
+            ("Zsea_ohm","Zcu_ohm","Psea_W","Pcu_W","circuit_gap_W")
+            if key in pr}
     np.savez_compressed(a.out.with_suffix(".npz"),time_s=times,
         voltage_v=vin,z6=pr["z6"],
         temp_rise_K=pr["temp_rise_K"],eta=np.asarray(eta),
-        current_A=pr["current_A"])
+        current_A=pr["current_A"],**extras)
     print(json.dumps(dict(
         sample=sample,steps=len(times),out=str(a.out),
         max_package_rise_K=float(np.max(pr["temp_rise_K"][:,4:6])),
         max_copper_rise_K=float(np.max(pr["temp_rise_K"][:,6:])),
+        max_circuit_gap_W=float(np.max(pr["circuit_gap_W"]))
+            if "circuit_gap_W" in pr else None,
         final_eta=float(eta[-1])),indent=2))
 
 
