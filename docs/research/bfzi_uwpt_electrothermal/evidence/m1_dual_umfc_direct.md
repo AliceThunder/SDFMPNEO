@@ -98,7 +98,7 @@ python -m pytest tests/test_bfzi_m1_direct.py -q
 
 ## 6. 独立圆形／圆角方形组合与海水电导率参数化
 
-M1 入口新增 `--tx-shape circle|rounded`、`--rx-shape circle|rounded`、`--sigma`。圆形使用同一连续 BFZI/UMFC 几何族的圆形极限，两个端口可分别选择形状。场景中两个独立 SE(3) 位姿和导电海水材料仍由同一物理求解器处理，保持原源项及热源计算结构。
+M1 入口新增 `--tx-coil`、`--rx-coil`（统一 BFZI 六参数）、`--sigma`。圆形使用同一连续 BFZI/UMFC 几何族的圆形极限，两个端口可分别选择形状。场景中两个独立 SE(3) 位姿和导电海水材料仍由同一物理求解器处理，保持原源项及热源计算结构。
 
 **真实运行：** TX 连续圆形 2 匝、RX 连续圆角方形 2 匝、RX 绕 y 轴旋转 0.18 rad、海水电导率 **3 S/m**、200 kHz、每圆角折线 6 段；复电流 `I=(1,0.4+0.3j) A`；复用相同绝缘盒物理边界的 **3445 tetra Gmsh OCC** 网格。
 
@@ -120,9 +120,13 @@ M1 入口新增 `--tx-shape circle|rounded`、`--rx-shape circle|rounded`、`--s
 数据：[m1_mixed_shape.json](m1_mixed_shape.json)。运行入口：
 
 ```bash
-python run.py --mode bfzi-m1 --tx-shape circle --rx-shape rounded --sigma 3 --rx-rotvec 0 0.18 0 --mesh runs/m1_rot.msh --panels 6 --output runs/m1_mixed_shape.json
+python run.py --mode bfzi-m1 --tx-coil 2 0.075 0.075 0.005 1 1 --rx-coil 2 0.075 0.045 0.005 0.5 1 --sigma 3 --rx-rotvec 0 0.18 0 --mesh runs/m1_rot.msh --panels 6 --output runs/m1_mixed_shape.json
 python -m pytest tests/test_bfzi_m1_direct.py -q
 ```
 
 形状、介质参数化专项 **2 passed**；初始场景另与既有 D2 闭合端口测试一起累计 **9 passed**。这证明参数化电磁物理计算链可在圆形／圆角方形组合和不同海水电导率下运行，**独立空间数值精度仍 OPEN**。
 
+
+## 7. V2.0 M1 固定近场 R 与完整统一几何参数接口
+
+新增 [固定近场 R 收敛证据](m1_fixed_core_r_200khz.md) 与 [数值 JSON](m1_fixed_core_r_200khz.json)；真实六参数 BFZI 模型入口的数据在 [m1_unified_coils.json](m1_unified_coils.json)。外域 0.75→1.05 m 的复 Z 差仍达 **4.534%**，物理精度继续 OPEN。
