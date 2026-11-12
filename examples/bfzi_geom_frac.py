@@ -14,8 +14,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from sdfmpneo_bfzi.frac_memory import build_sources
-from sdfmpneo_bfzi.geom_memory import GeomFrac,geom_feat,thermal_summary,rollout
+from sdfmpneo_bfzi.frac_memory import zmat
+from sdfmpneo_bfzi.geom_memory import (
+    GeomFrac,geom_feat,geom_port,heat_drive,thermal_summary,rollout)
 
 
 def data_file(path,probe=None):
@@ -56,10 +57,16 @@ def data_file(path,probe=None):
         raise ValueError("original BFZI cold Z must match per geometry")
     summ=np.stack([thermal_summary(a,ns,npkg,vol,amb)
                    for a in temp])
+    port=geom_port(geom)
+    src=np.zeros(vin.shape+(3,))
+    for i in range(len(vin)):
+        for k in range(1,len(times)):
+            src[i,k]=heat_drive(
+                float(vin[i,k]),zmat(z[i,k-1]),ext,port,
+                temp[i,k-1,-2:],geom[14:16])
     return dict(sample=sample,geom=geom,z0=z0,ext=ext,
                 times=times,v=vin,z=z,train=train,
-                src=build_sources(vin,z,ext),temp=summ,
-                cases=cases)
+                src=src,temp=summ,cases=cases)
 
 
 def data_all(files,probe):
