@@ -18,7 +18,8 @@ import numpy as np
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
 from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
 from sdfmpneo_bfzi.v148_rom import BFZIV148ROM
-from sdfmpneo_bfzi.v148_heat_rom import BFZIV148HeatROM
+from sdfmpneo_bfzi.v148_heat_rom import BFZIV148HeatROM, BFZIV148PkgHeatROM
+from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
 
 
 def pair(x):
@@ -39,6 +40,11 @@ def main(argv=None):
     p.add_argument("--cool",type=float,default=180.)
     p.add_argument("--restart",type=float,default=180.)
     p.add_argument("--sea-alpha",type=float,default=.02)
+    p.add_argument("--pkg-shape",nargs=3,type=int,default=None,
+                   metavar=("NX","NY","NZ"),
+                   help="3-D FV cell counts for each package, e.g. 4 2 4")
+    p.add_argument("--pkg-k",type=float,default=.25,
+                   help="Package thermal conductivity in W/(m K)")
     p.add_argument("--pkg-rhoc",type=float,default=1.5e6,
                    help="Package effective volumetric thermal capacity, J/(m3 K)")
     p.add_argument("--pkg-sea-g",type=float,default=.6,
@@ -60,7 +66,9 @@ def main(argv=None):
     if (a.source_r <= 0 or a.load_r <= 0):
         p.error("source and load resistances must be positive")
     if min(a.voltage,a.step,a.heat,a.cool,a.restart,
-           a.pkg_rhoc,a.pkg_sea_g,a.cu_pkg_g) <= 0:
+           a.pkg_rhoc,a.pkg_sea_g,a.cu_pkg_g,a.pkg_k) <= 0:
+        p.error("physical inputs must be positive")
+    if a.pkg_shape and min(a.pkg_shape)<1:
         p.error("drive voltage and times must be positive")
     rev=subprocess.run(
         ["git","-C",str(a.bfzi_root.resolve()),"rev-parse","HEAD"],
@@ -134,9 +142,15 @@ def main(argv=None):
     heat_rom=bool(a.heat_rom_train)
     therm=dict(external=extra,pkg_rhoc=a.pkg_rhoc,
                pkg_sea_g=a.pkg_sea_g,cu_pkg_g=a.cu_pkg_g)
-    et=(BFZIV148HeatROM(rom or backend,a.heat_rom_train,
-                        rank=a.heat_rom_rank,**therm)
-        if heat_rom else BFZIV148ET(rom or backend,**therm))
+    if a.pkg_shape:
+        therm.update(pkg_shape=tuple(a.pkg_shape),pkg_k=a.pkg_k)
+    if heat_rom:
+        cls=BFZIV148PkgHeatROM if a.pkg_shape else BFZIV148HeatROM
+        et=cls(rom or backend,a.heat_rom_train,
+               rank=a.heat_rom_rank,**therm)
+    else:
+        cls=BFZIV148Pkg3D if a.pkg_shape else BFZIV148ET
+        et=cls(rom or backend,**therm)
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
                            a.heat,a.heat+a.cool,duration])
@@ -149,11 +163,14 @@ def main(argv=None):
     trace_sec=time.perf_counter()-t1
     rows=[]
     for k,s in enumerate(trace):
-        pkg_t=(et.amb+s.temp[et.pkg])
+        pkg_mat=s.temp[et.pkg].reshape(2,-1)
+        pkg_cap=et.cap[et.pkg].reshape(2,-1)
+        pkg_t=et.amb+np.sum(pkg_cap*pkg_mat,axis=1)/np.sum(pkg_cap,axis=1)
+        pkg_max=et.amb+pkg_mat.max(axis=1)
         cu_t=(et.amb+s.temp[et.cu])
         sea_t=(et.amb+s.temp[:et.count])
         e_sea=float(et.cap[:et.count]@s.temp[:et.count])
-        e_pkg=(et.cap[et.pkg]*s.temp[et.pkg])
+        e_pkg=np.sum(pkg_cap*pkg_mat,axis=1)
         e_cu=(et.cap[et.cu]*s.temp[et.cu])
         q_cp,q_ps,q_amb=et.heat_flux(s.temp)
         gaps=None
@@ -169,7 +186,7 @@ def main(argv=None):
             heat_gap=float(abs(defect)/scale)
             prev=trace[k-1].temp
             de_sea=e_sea-float(et.cap[:et.count]@prev[:et.count])
-            de_pkg=e_pkg-et.cap[et.pkg]*prev[et.pkg]
+            de_pkg=e_pkg-np.sum(pkg_cap*prev[et.pkg].reshape(2,-1),axis=1)
             de_cu=e_cu-et.cap[et.cu]*prev[et.cu]
             rhs_sea=dt*(s.sea_power+sum(q_ps)-q_amb)
             rhs_pkg=dt*(q_cp-q_ps)
@@ -224,7 +241,8 @@ def main(argv=None):
             "Tsea_max_K":float(sea_t.max()),
             "Tsea_mean_K":float(np.average(sea_t,weights=backend.vol)),
             "Tpkg_K":pkg_t.tolist(),
-            "Tpkg_max_K":float(pkg_t.max()),
+            "Tpkg_max_K":float(pkg_max.max()),
+            "Tpkg_cell_max_K":pkg_max.tolist(),
             "Tpkg_rise_K":(pkg_t-et.amb).tolist(),
             "Tcu_K":cu_t.tolist(),
         })
@@ -239,7 +257,17 @@ def main(argv=None):
         qsea_W_m3=np.stack([s.sea_q for s in trace]),
         Jsea_A_m2=np.stack([s.sea_j for s in trace]),
         Jsea_unit_A_m2_per_A=np.stack([s.unit_j for s in trace]),
-        Tpkg_K=np.stack([et.amb+s.temp[et.pkg] for s in trace]),
+        Tpkg_K=np.stack([
+            et.amb+np.sum(et.cap[et.pkg].reshape(2,-1)
+                *s.temp[et.pkg].reshape(2,-1),axis=1)
+            /np.sum(et.cap[et.pkg].reshape(2,-1),axis=1)
+            for s in trace]),
+        Tpkg_cells_K=np.stack([
+            et.amb+s.temp[et.pkg].reshape(2,-1) for s in trace]),
+        pkg_xyz_m=(np.stack(et.pkg_xyz) if a.pkg_shape else
+                   np.array([center[None,:] for center,_ in et.boxes])),
+        pkg_vol_m3=(np.stack(et.pkg_vol) if a.pkg_shape else
+                    (et.cap[et.pkg].reshape(2,-1)/a.pkg_rhoc)),
         Tcu_K=np.stack([et.amb+s.temp[et.cu] for s in trace]))
     report={
         "status":"Original BFZI v148 warm electrothermal prototype; thermal and EM numerical accuracy OPEN",
@@ -265,11 +293,16 @@ def main(argv=None):
         "source_resistance_ohm":a.source_r,
         "source_voltage_peak_V":a.voltage,
         "load_resistance_ohm":a.load_r,
-        "package_thermal_model":"independent effective-capacity node per enclosure, coupled Cu->package->sea",
+        "package_thermal_model":("two independent 3-D FV box fields"
+                                 if a.pkg_shape else
+                                 "independent effective-capacity node per enclosure, coupled Cu->package->sea"),
+        "package_shape":list(a.pkg_shape or (1,1,1)),
+        "package_k_W_mK":a.pkg_k if a.pkg_shape else None,
         "package_rhoc_J_m3K":a.pkg_rhoc,
         "package_to_sea_G_W_K":a.pkg_sea_g,
         "copper_to_package_G_W_K":a.cu_pkg_g,
-        "package_heat_capacity_J_K":et.cap[et.pkg].tolist(),
+        "package_heat_capacity_J_K":np.sum(
+            et.cap[et.pkg].reshape(2,-1),axis=1).tolist(),
         "copper_heat_capacity_J_K":et.cap[et.cu].tolist(),
         "external_Z_ohm":pair(extra),
         "ambient_K":et.amb,
