@@ -1,0 +1,31 @@
+{
+  "model": "runs\\m4_frac_hybrid.pt",
+  "heldout_voltage_v": 115.0,
+  "heldout_windows_s": [
+    [
+      0,
+      120
+    ],
+    [
+      210,
+      330
+    ],
+    [
+      420,
+      510
+    ]
+  ],
+  "steps": 41,
+  "step_s": 15.0,
+  "thermal_states": 450,
+  "direct_trajectory_sec": 4.881299000000581,
+  "neural_trajectory_sec": 0.012707000016234815,
+  "speedup": 384.1425193801919,
+  "Z_relative_L2": 1.953085118189035e-05,
+  "dynamic_Z_relative_L2": 0.07569620495017444,
+  "sea_max_abs_K": 0.07593727255823524,
+  "package_max_abs_K": 0.9161987335995718,
+  "copper_max_abs_K": 4.278617997348704,
+  "source": "independent original BFZI v150 M4, full EM and 3-D heat",
+  "runtime_scope": "same-grid rollout, excludes BFZI geometry/Green setup and neural training"
+}
