@@ -40,6 +40,8 @@ def main(argv=None):
     p.add_argument("--cool",type=float,default=180.)
     p.add_argument("--restart",type=float,default=180.)
     p.add_argument("--sea-alpha",type=float,default=.02)
+    p.add_argument("--sea-heat",choices=("j2","port-weak"),default="j2",
+                   help="Original FV J²/sigma or BFZI port-weak local heat")
     p.add_argument("--pkg-shape",nargs=3,type=int,default=None,
                    metavar=("NX","NY","NZ"),
                    help="3-D FV cell counts for each package, e.g. 4 2 4")
@@ -81,7 +83,7 @@ def main(argv=None):
     data=(calc.build_circle_data("M4") if a.sample=="M4"
           else calc.base.build_dual_data(a.sample))
     backend=BFZIV148Adapter(data,calc,sea_alpha=a.sea_alpha,
-                           sea_only=a.check_only)
+                           sea_only=a.check_only,heat_mode=a.sea_heat)
     extra=np.diag([a.source_r-1j*backend.omega*backend.air[0,0],
                    a.load_r-1j*backend.omega*backend.air[1,1]])
     # Check the original v148 isothermal electromagnetic computation
@@ -162,7 +164,15 @@ def main(argv=None):
     trace=et.trajectory(times,drive)
     trace_sec=time.perf_counter()-t1
     rows=[]
+    strong_q=[]
     for k,s in enumerate(trace):
+        sig=backend.sigma0*(1+backend.alpha*s.temp[:et.count])
+        var=np.real(np.einsum(
+            "i,pij,j->p",s.currents.conj(),backend.mass,
+            s.currents,optimize=True))
+        qj=.5*np.sum(abs(s.sea_j)**2,axis=1)/sig
+        qj+=.5*(backend.omega*backend.mu)**2*sig*var/backend.vol
+        strong_q.append(qj)
         pkg_mat=s.temp[et.pkg].reshape(2,-1)
         pkg_cap=et.cap[et.pkg].reshape(2,-1)
         pkg_t=et.amb+np.sum(pkg_cap*pkg_mat,axis=1)/np.sum(pkg_cap,axis=1)
@@ -216,6 +226,10 @@ def main(argv=None):
             "Leff_H":(s.impedance.imag/backend.omega).tolist(),
             "I_A":pair(s.currents),
             "Psea_volume_W":s.sea_power,
+            "Psea_J2_W":float(qj@backend.vol),
+            "Psea_port_vs_J2_relative_gap":float(
+                abs(p_sea-float(qj@backend.vol))
+                /max(abs(float(qj@backend.vol)),1e-30)),
             "Psea_port_W":p_sea,
             "circuit_power_relative_gap":float(
                 abs(p_gap)/max(abs(p_in),1e-30)),
@@ -255,6 +269,7 @@ def main(argv=None):
         sea_vol_m3=backend.vol,
         Tsea_K=np.stack([et.amb+s.temp[:et.count] for s in trace]),
         qsea_W_m3=np.stack([s.sea_q for s in trace]),
+        qsea_J2_W_m3=np.stack(strong_q),
         Jsea_A_m2=np.stack([s.sea_j for s in trace]),
         Jsea_unit_A_m2_per_A=np.stack([s.unit_j for s in trace]),
         Tpkg_K=np.stack([
@@ -286,6 +301,10 @@ def main(argv=None):
             "retained_energy":et.hretained,
             "train_files":[str(x) for x in a.heat_rom_train]}),
         "sea_temperature_model":"cellwise sigma(T), sigma-weighted FV phi, cellwise local mass",
+        "sea_heat_mode":a.sea_heat,
+        "sea_heat_formula":("original BFZI local port weak-form dissipation"
+                            if a.sea_heat=="port-weak" else
+                            "0.5|J|²/sigma + original near-source mass"),
         "thermal_model":"original BFZI FV face connectivity, 3-D sea cells + 2 package + 2 copper nodes",
         "frequency_hz":backend.omega/(2*np.pi),
         "isothermal_regression":baseline,
@@ -323,6 +342,7 @@ def main(argv=None):
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archive_relative_error":archive_rel,
         "max_sea_power_relative_gap":max(r["Psea_port_volume_relative_gap"] for r in rows),
+        "max_port_vs_J2_relative_gap":max(r["Psea_port_vs_J2_relative_gap"] for r in rows),
         "max_circuit_power_relative_gap":max(r["circuit_power_relative_gap"] for r in rows),
         "max_thermal_balance_relative_gap":max(
             r["thermal_balance_relative_gap"] for r in rows[1:]),
