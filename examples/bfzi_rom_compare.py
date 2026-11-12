@@ -27,6 +27,12 @@ def main():
     cr=np.asarray([x["Tcu_K"] for x in r])
     ef=np.asarray([x["efficiency"] for x in f])
     er=np.asarray([x["efficiency"] for x in r])
+    cp_f=np.asarray([x["Qcu_to_pkg_W"] for x in f])
+    cp_r=np.asarray([x["Qcu_to_pkg_W"] for x in r])
+    ps_f=np.asarray([x["Qpkg_to_sea_W"] for x in f])
+    ps_r=np.asarray([x["Qpkg_to_sea_W"] for x in r])
+    mp_f=np.asarray([x["Epkg_J"] for x in f])
+    mp_r=np.asarray([x["Epkg_J"] for x in r])
     with np.load(a.direct.with_suffix(".npz")) as d, np.load(a.rom.with_suffix(".npz")) as q:
         jf=np.asarray(d["Jsea_unit_A_m2_per_A"])
         jr=np.asarray(q["Jsea_unit_A_m2_per_A"])
@@ -54,6 +60,15 @@ def main():
         "Tpkg_max_absolute_K":float(np.max(abs(tpkg_f-tpkg_r))),
         "Tcu_max_absolute_K":float(np.max(abs(cf-cr))),
         "eta_max_absolute":float(np.max(abs(ef-er))),
+        "Qcu_to_pkg_max_absolute_W":float(np.max(abs(cp_f-cp_r))),
+        "Qpkg_to_sea_max_absolute_W":float(np.max(abs(ps_f-ps_r))),
+        "Epkg_max_absolute_J":float(np.max(abs(mp_f-mp_r))),
+        "rom_material_balance_max":max(
+            max(x["material_balance_relative_gap"].values())
+            for x in r[1:]),
+        "direct_material_balance_max":max(
+            max(x["material_balance_relative_gap"].values())
+            for x in f[1:]),
         "direct_trajectory_sec":t_full,
         "rom_trajectory_sec":t_rom,
         "speedup":t_full/max(t_rom,1e-30),
