@@ -47,3 +47,24 @@ def test_geom_fractional_memory_and_unseen_geometry_rollout():
     assert np.all(out["temp_rise_K"]>=0)
     assert np.allclose(out["z6"][0],z0)
     assert np.allclose(out["current_A"][2],0)
+
+
+def test_original_bfzi_geometry_source_partition():
+    from sdfmpneo_bfzi.geom_memory import geom_port,heat_drive
+    g=np.array([.09,.11,.0,.02,1.,.5,10.,13.,
+                .00079,.00079,.08,16e-6,4e-6,31e-6,35.,56.])
+    port=geom_port(g)
+    t=np.array([293.15,320.])
+    sea=np.array([[.12+.002j,.07-.003j],
+                  [.07-.003j,.19+.004j]])
+    z=port.total(sea,t)
+    ex=np.diag([.5-.3j,.5-.3j])
+    v=75.
+    u=heat_drive(v,z,ex,port,t,g[14:16])
+    I=np.linalg.solve(z+ex,np.array([v,0],complex))
+    cu=port.copper(t)
+    expected=np.r_[
+        .5*np.vdot(I,sea@I).real,
+        .5*cu.real*abs(I)**2/g[14:16]]
+    assert np.allclose(u,expected,rtol=1e-12,atol=1e-12)
+    assert np.all(heat_drive(0.,z,ex,port,t,g[14:16])==0.)
