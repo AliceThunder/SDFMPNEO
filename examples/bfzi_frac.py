@@ -132,22 +132,37 @@ def fit_one(d,mode,epochs=900,patience=180):
     model=FracNet(d["rank"]+6,mode)
     train=np.asarray(d["train"],int)
     val=np.asarray(d["val"],int)
-    src=torch.tensor(d["src"],dtype=torch.float32)
-    label=torch.tensor(d["y"],dtype=torch.float32)
+    grids=[dict(t=g["times"],src=torch.tensor(g["src"],dtype=torch.float32),
+                y=torch.tensor(g["y"],dtype=torch.float32))
+           for g in d["grids"]]
     op=torch.optim.Adam(model.parameters(),lr=.003)
     best=1e30; best_state=None; best_epoch=0
     t0=time.perf_counter()
     for epoch in range(epochs):
         model.train()
         op.zero_grad(set_to_none=True)
-        pr=model(src[train],d["times"])
-        loss=torch.mean((pr-label[train])**2)
+        preds=[model(g["src"][train],g["t"]) for g in grids]
+        loss=torch.stack([
+            torch.mean((pr-g["y"][train])**2)
+            for pr,g in zip(preds,grids)]).mean()
+        # Force identical physical times to agree across discretizations.
+        if len(grids)>1:
+            coarse=min(range(len(grids)),key=lambda k:len(grids[k]["t"]))
+            for j,g in enumerate(grids):
+                if j==coarse:
+                    continue
+                idx=np.searchsorted(g["t"],grids[coarse]["t"])
+                if np.all(idx<len(g["t"])) and np.allclose(
+                        g["t"][idx],grids[coarse]["t"]):
+                    loss=loss+.08*torch.mean(
+                        (preds[coarse]-preds[j][:,idx])**2)
         loss.backward()
         op.step()
         model.eval()
         with torch.no_grad():
-            vloss=float(torch.mean(
-                (model(src[val],d["times"])-label[val])**2))
+            vloss=float(torch.stack([
+                torch.mean((model(g["src"][val],g["t"])-g["y"][val])**2)
+                for g in grids]).mean())
         if vloss<best-1e-7:
             best=vloss
             best_epoch=epoch+1
