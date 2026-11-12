@@ -3,7 +3,7 @@
   "teacher": "runs\\m3_frac_holdout.npz",
   "model": "runs\\bfzi_geom_frac_v5.pt",
   "anchor": "runs\\m3_bfzi_anchor.npz",
-  "anchor_build_seconds": 0.004446499980986118,
+  "anchor_build_seconds": 0.0046097999438643456,
   "cold_Z_relative_error": 0.0,
   "sea_cells": 2250,
   "package_cells_per_box": 32,
@@ -20,8 +20,8 @@
       "pkg_L2_relative": 4.530867437726601e-06,
       "case": 20,
       "voltage_V": 40.0,
-      "neural_trajectory_sec": 0.11363050004001707,
-      "dynamic_Z_relative_L2": 1.0146772430685385,
+      "neural_trajectory_sec": 0.11516070005018264,
+      "dynamic_Z_relative_L2": 0.058269481067305895,
       "max_FV_energy_residual_W": 5.209166431541234e-13,
       "max_sea_source_gap_W": 3.552713678800501e-15
     },
@@ -33,8 +33,8 @@
       "pkg_L2_relative": 2.569816106270116e-05,
       "case": 29,
       "voltage_V": 115.0,
-      "neural_trajectory_sec": 0.11134440009482205,
-      "dynamic_Z_relative_L2": 1.0303375376283297,
+      "neural_trajectory_sec": 0.11089070001617074,
+      "dynamic_Z_relative_L2": 0.07912514423200345,
       "max_FV_energy_residual_W": 7.72786279412685e-11,
       "max_sea_source_gap_W": 5.684341886080802e-14
     }
