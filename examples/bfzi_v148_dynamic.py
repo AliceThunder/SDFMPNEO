@@ -51,7 +51,8 @@ def main(argv=None):
 
     data=(calc.build_circle_data("M4") if a.sample=="M4"
           else calc.base.build_dual_data(a.sample))
-    backend=BFZIV148Adapter(data,calc,sea_alpha=a.sea_alpha)
+    backend=BFZIV148Adapter(data,calc,sea_alpha=a.sea_alpha,
+                           sea_only=a.check_only)
     extra=np.diag([a.source_r-1j*backend.omega*backend.air[0,0],
                    a.load_r-1j*backend.omega*backend.air[1,1]])
     # Check the original v148 isothermal electromagnetic computation
@@ -67,14 +68,22 @@ def main(argv=None):
         saved=a.bfzi_root/"outputs_v148"/"bfzi_v148_all_samples_matrix.csv"
         if saved.is_file():
             z_arch=np.zeros((2,2),complex)
+            found=set()
             with saved.open(encoding="utf-8-sig",newline="") as inp:
                 for row in csv.DictReader(inp):
                     if row["sample_id"]=="M4":
                         i,j=int(row["row"])-1,int(row["col"])-1
+                        if i not in (0,1) or j not in (0,1):
+                            raise ValueError("invalid M4 archive matrix indices")
                         z_arch[i,j]=(float(row["R_ohm"])
                             +1j*backend.omega*float(row["L_sea_reaction_uH"])*1e-6)
-            archive_rel=float(np.linalg.norm(z_ref-z_arch)
-                              / max(np.linalg.norm(z_arch),1e-30))
+                        found.add((i,j))
+            if len(found)==4:
+                archive_rel=float(np.linalg.norm(z_ref-z_arch)
+                                  / max(np.linalg.norm(z_arch),1e-30))
+    original_pass=bool(warm_rel<=1e-5)
+    archive_pass=bool(a.sample!="M4" or
+                      (archive_rel is not None and archive_rel<=1e-5))
     baseline={
         "sample":a.sample,"frequency_hz":backend.omega/(2*np.pi),
         "baseline_tolerance":1e-5,
@@ -82,17 +91,19 @@ def main(argv=None):
         "v148_M4_archived_Zsea_relative_error":archive_rel,
         "warm_Zsea_ohm":pair(cold.sea_z),
         "original_Zsea_ohm":pair(z_ref),
-        "isothermal_baseline_pass":bool(warm_rel<=1e-5),
+        "v148_original_solver_pass":original_pass,
+        "v148_M4_archive_pass":archive_pass,
+        "isothermal_baseline_pass":original_pass and archive_pass,
     }
     if a.check_only:
         a.out.parent.mkdir(parents=True,exist_ok=True)
         a.out.write_text(json.dumps(baseline,indent=2),encoding="utf-8")
         print(json.dumps(baseline,indent=2))
         if not baseline["isothermal_baseline_pass"]:
-            raise RuntimeError("Original BFZI v148 isothermal impedance mismatch")
+            raise RuntimeError("BFZI v148 isothermal solver or M4 archive impedance mismatch")
         return
     if not baseline["isothermal_baseline_pass"]:
-        raise RuntimeError("Original BFZI v148 isothermal impedance mismatch; use --check-only")
+        raise RuntimeError("BFZI v148 isothermal solver or M4 archive impedance mismatch; use --check-only")
     et=BFZIV148ET(backend,external=extra)
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
