@@ -232,15 +232,25 @@ def eval_one(model,ck,d,ids):
 
 def train(args):
     d=dataset(args.data,args.rank)
+    grids=[dict(d,**g) for g in d["grids"]]
     args.out.parent.mkdir(parents=True,exist_ok=True)
-    result=dict(data=str(args.data),bfzi_teacher_case_count=len(d["v"]),
+    result=dict(data=[str(p) for p in args.data],
+                bfzi_teacher_case_count=len(d["v"]),
                 full_space_thermal_states=d["temp"].shape[-1],
                 train_cases=len(d["train"]),validation_cases=len(d["val"]),
                 test_cases=len(d["test"]),
-                times_per_case=len(d["times"]), 
+                times_per_case=[len(g["times"]) for g in grids],
                 fractional_kernel="positive logarithmic SOE for t^(alpha-1), 0<alpha<1",
                 electrical_feedback="solve predicted complex 2-port Z at every interval")
-    for mode in ("frac","exp","hybrid"):
+    if args.baseline is not None:
+        old,oc=load(args.baseline)
+        baseline={}
+        for g in grids:
+            score,_,_=eval_one(old,oc,g,g["test"])
+            baseline[f"{int(g['times'][1]-g['times'][0])}s"]=score
+        result["baseline"]={"model":str(args.baseline),"heldout_grids":baseline}
+        print(json.dumps(dict(baseline=baseline),indent=2),flush=True)
+    for mode in args.modes:
         net,train_info=fit_one(
             d,mode,epochs=args.epochs,patience=args.patience)
         ck=checkpoint(net,d)
@@ -248,33 +258,43 @@ def train(args):
             args.model.stem+"_"+mode+args.model.suffix))
         path.parent.mkdir(parents=True,exist_ok=True)
         torch.save(ck,path)
-        agg,items,fields=eval_one(net,ck,d,d["test"])
+        bygrid={}
+        first=None
+        for g in grids:
+            agg,items,fields=eval_one(net,ck,g,g["test"])
+            key=f"{int(g['times'][1]-g['times'][0])}s"
+            bygrid[key]=agg
+            if first is None:
+                first=(agg,items,fields,g)
+        agg,items,fields,g=first
         result[mode]=dict(model=str(path),train=train_info,
-                          heldout=agg,case_metrics=items)
-        if mode=="frac":
+                          heldout=agg,heldout_grids=bygrid,
+                          case_metrics=items)
+        if mode==args.modes[0]:
             np.savez_compressed(
                 args.out.with_suffix(".npz"),
-                time_s=d["times"],case_ids=d["test"],
-                voltage_v=d["v"][d["test"]],
-                temp_true_K=d["temp"][d["test"]],
+                time_s=g["times"],case_ids=g["test"],
+                voltage_v=g["v"][g["test"]],
+                temp_true_K=g["temp"][g["test"]],
                 temp_pred_K=fields["temp_K"],
-                z_true=d["z"][d["test"]],
+                z_true=g["z"][g["test"]],
                 z_pred=fields["z6"],
-                eta_true=d["eta"][d["test"]],
+                eta_true=g["eta"][g["test"]],
                 eta_pred=fields["eta"])
         print(json.dumps(dict(mode=mode,model=str(path),train=train_info,
-                              heldout=agg),indent=2),flush=True)
-    a=result["frac"]["heldout"];b=result["exp"]["heldout"]
-    c=result["hybrid"]["heldout"]
-    result["comparison"]=dict(
-        fractional_vs_exponential_pkg_error_ratio=a["pkg_max_K_mean"]/
-                                                 max(b["pkg_max_K_mean"],1e-12),
-        fractional_vs_exponential_dynamic_Z_ratio=a["dynamic_Z_relative_L2_mean"]/
-                                                  max(b["dynamic_Z_relative_L2_mean"],1e-12),
-        hybrid_vs_exponential_pkg_error_ratio=c["pkg_max_K_mean"]/
-                                              max(b["pkg_max_K_mean"],1e-12),
-        hybrid_vs_exponential_dynamic_Z_ratio=c["dynamic_Z_relative_L2_mean"]/
-                                              max(b["dynamic_Z_relative_L2_mean"],1e-12))
+                              heldout_grids=bygrid),indent=2),flush=True)
+    if all(mode in result for mode in ("frac","exp","hybrid")):
+        a=result["frac"]["heldout"];b=result["exp"]["heldout"]
+        c=result["hybrid"]["heldout"]
+        result["comparison"]=dict(
+            fractional_vs_exponential_pkg_error_ratio=a["pkg_max_K_mean"]/
+                                                     max(b["pkg_max_K_mean"],1e-12),
+            fractional_vs_exponential_dynamic_Z_ratio=a["dynamic_Z_relative_L2_mean"]/
+                                                      max(b["dynamic_Z_relative_L2_mean"],1e-12),
+            hybrid_vs_exponential_pkg_error_ratio=c["pkg_max_K_mean"]/
+                                                  max(b["pkg_max_K_mean"],1e-12),
+            hybrid_vs_exponential_dynamic_Z_ratio=c["dynamic_Z_relative_L2_mean"]/
+                                                  max(b["dynamic_Z_relative_L2_mean"],1e-12))
     args.out.write_text(json.dumps(result,indent=2),encoding="utf-8")
     print("METRICS",args.out,flush=True)
 
@@ -313,8 +333,12 @@ def infer(args):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("task",choices=("train","infer"))
-    p.add_argument("--data",type=Path,
-                   default=Path("runs/m4_frac_teacher.npz"))
+    p.add_argument("--data",type=Path,nargs="+",
+                   default=[Path("runs/m4_frac_teacher.npz")])
+    p.add_argument("--modes",nargs="+",
+                   choices=("frac","exp","hybrid"),
+                   default=["frac","exp","hybrid"])
+    p.add_argument("--baseline",type=Path,default=None)
     p.add_argument("--model",type=Path,
                    default=Path("runs/m4_frac.pt"))
     p.add_argument("--out",type=Path,default=None)
