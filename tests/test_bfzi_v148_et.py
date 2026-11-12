@@ -9,7 +9,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from sdfmpneo_bfzi.bfzi_v148_adapter import WeightedFV
-from sdfmpneo_bfzi.v148_et import BFZIV148ET
+from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
 
 
 class Grid:
@@ -147,3 +147,16 @@ def test_coupled_heat_balance():
     stored=et.cap@new
     cooling=dt*np.sum(et.H@new)
     assert abs(deposited-stored-cooling) < 1e-5*deposited
+
+
+def test_v148_circuit_efficiency():
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.diag([.5,.5]))
+    voltage=np.array([1.,0.],complex)
+    m,I,_,_,cu=et.em(et.zeros(),voltage)
+    pin,pload,psrc,eta=circuit_power(voltage,I,.5,.5)
+    psea=.5*np.real(np.vdot(I,m.sea_z@I))
+    assert 0 < eta < 1
+    assert np.isclose(pin,pload+psrc+psea+cu.sum(),atol=1e-12)
+    assert circuit_power([0,0],[0,0],.5,.5)[-1] == 0.
