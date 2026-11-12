@@ -125,3 +125,29 @@ def test_multigrid_teacher_split_and_backprop(tmp_path):
     loss.backward()
     assert torch.isfinite(net.raw.grad).all()
     assert torch.isfinite(net.raw_tau.grad).all()
+
+
+def test_sea_field_head_power_and_saved_inference(tmp_path):
+    from sdfmpneo_bfzi.frac_field import SeaHead
+    vol=np.array([.1,.2,.1,.2])
+    basis=np.array([[1.],[0.],[0.],[0.]])
+    j0=np.ones((4,2,3),complex)*(.3+.1j)
+    q0=np.ones(4)/vol.sum()
+    z0=np.array([.2,-.01,.1,-.002,.2,-.01])
+    head=SeaHead(vol,basis,np.array([1.]),j0,q0,z0,
+                 np.zeros((1,24),complex),
+                 np.zeros((1,4)),np.zeros((1,6)))
+    a=np.array([3+.2j,.5-.3j])
+    j,q,z=head.at(np.full(4,293.15),a)
+    assert j.shape==(4,3)
+    assert q.shape==(4,)
+    assert np.all(q>=0)
+    assert np.isclose(q@vol,.5*np.vdot(a,z@a).real,rtol=1e-12)
+    j0,q0,z0=head.at(np.full(4,293.15),np.zeros(2,complex))
+    assert np.all(j0==0) and np.all(q0==0)
+    file=tmp_path/"field.npz"
+    head.save(file)
+    j1,q1,z1=SeaHead.load(file).at(np.full(4,293.15),a)
+    assert np.allclose(j1,j)
+    assert np.allclose(q1,q)
+    assert np.allclose(z1,z)
