@@ -183,7 +183,8 @@ def main():
     model.eval()
     ck=dict(
         state=model.state_dict(),
-        src_scale=src_scale,y_scale=yscale,
+        src_scale=torch.tensor(src_scale,dtype=torch.float32),
+        y_scale=torch.tensor(yscale,dtype=torch.float32),
         ng=model.ng,history="fractional SOE + exponential",
         trained_samples=[d["sample"] for d in
                          {id(d):d for d,i in fit}.values()])
