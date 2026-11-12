@@ -27,6 +27,7 @@ class ETStep:
     copper_power: np.ndarray
     heat_power: float
     energy: float  # stored thermal energy above ambient, J
+    sea_q: np.ndarray  # 3-D cell-averaged Joule source, W/m3
 
 
 class BFZIDynamicET:
@@ -224,5 +225,6 @@ class BFZIDynamicET:
             Z,sea_z,current,heat,psea,pcu = self.em(state,drive)
             out.append(ETStep(float(now),state.copy(),Z,sea_z,
                               current,psea,pcu,float(heat.sum()),
-                              float(self.cap@state)))
+                              float(self.cap@state),
+                              (heat[:self.count]/self.vol).copy()))
         return out
