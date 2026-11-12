@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import scipy.sparse as sp
 
-from sdfmpneo_bfzi.bfzi_v148_adapter import WeightedFV
+from sdfmpneo_bfzi.bfzi_v148_adapter import WeightedFV, BFZIV148Adapter, V148State
 from sdfmpneo_bfzi.v148_et import BFZIV148ET, circuit_power
 
 
@@ -160,3 +160,30 @@ def test_v148_circuit_efficiency():
     assert 0 < eta < 1
     assert np.isclose(pin,pload+psrc+psea+cu.sum(),atol=1e-12)
     assert circuit_power([0,0],[0,0],.5,.5)[-1] == 0.
+
+
+def test_v148_local_mass_heat_matches_port():
+    # Original v148 local source variance adds a real source-mass term to Z.
+    # Its physically located Joule power must be present in the heat source.
+    adapter=BFZIV148Adapter.__new__(BFZIV148Adapter)
+    adapter.omega=1.25e6
+    adapter.mu=4e-7*np.pi
+    adapter.vol=np.array([.006,.009])
+    adapter.mass=np.array([
+        [[.0006,.0001],[.0001,.0004]],
+        [[.0005,-.0002],[-.0002,.0006]],
+    ])
+    sigma=np.array([5.,4.])
+    state=V148State(
+        np.zeros((2,2),complex),np.zeros((2,2),complex),
+        np.array([.08+.001j,.12+.002j]),
+        np.zeros((2,2,3),complex),sigma,None)
+    I=np.array([1.,.4+.3j])
+    q,pcu=adapter.heat(state,I)
+    dz=(adapter.omega*adapter.mu)**2*np.einsum(
+        "p,pij->ij",sigma,adapter.mass)
+    p_mass=float(.5*np.real(np.vdot(I,dz@I)))
+    assert p_mass>0
+    assert np.isclose(np.dot(q,adapter.vol),p_mass,rtol=2e-14)
+    assert np.all(q>=0)
+    assert np.isclose(pcu[0],.5*.08*abs(I[0])**2)
