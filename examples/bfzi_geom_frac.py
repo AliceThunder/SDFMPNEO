@@ -167,6 +167,10 @@ def main():
                    help="Train sea delta and assemble exact temperature-dependent BFZI copper Z")
     p.add_argument("--phys-loss",type=float,default=0.,
                    help="Joint full-Z Jacobian loss coupling sea delta and copper temperature")
+    p.add_argument("--pkg-loss",type=float,default=0.,
+                   help="Additional two-package mean/hotspot temperature penalty")
+    p.add_argument("--sea-loss",type=float,default=0.,
+                   help="Additional seawater mean/hotspot temperature penalty")
     p.add_argument("--patience",type=int,default=280)
     args=p.parse_args()
     torch.set_num_threads(2)
@@ -201,6 +205,13 @@ def main():
         ez[:,:,4]+=deriv[:,:,2]*dt[:,:,1]
         ez[:,:,5]+=deriv[:,:,3]*dt[:,:,1]
         return (ez/ysc[:6]).square().mean()
+    def temp_loss(pred,target):
+        loss=pred.new_zeros(())
+        if args.pkg_loss>0:
+            loss=loss+args.pkg_loss*(pred[:,:,8:12]-target[:,:,8:12]).square().mean()
+        if args.sea_loss>0:
+            loss=loss+args.sea_loss*(pred[:,:,6:8]-target[:,:,6:8]).square().mean()
+        return loss
     model=GeomFrac()
     opt=torch.optim.Adam(model.parameters(),lr=.003)
     best=1e30;state=None;best_epoch=0
@@ -211,7 +222,8 @@ def main():
         pred=model(u,t,g)
         loss=((pred-y).square().mean()+.45*
               (pred[:,:,:6]-y[:,:,:6]).square().mean()
-              +args.phys_loss*physical_loss(pred,y,cu))
+              +args.phys_loss*physical_loss(pred,y,cu)
+              +temp_loss(pred,y))
         loss.backward()
         opt.step()
         model.eval()
@@ -219,7 +231,8 @@ def main():
             vpred=model(uv,t,gv)
             vloss=float((vpred-yv).square().mean()+.45*
                         (vpred[:,:,:6]-yv[:,:,:6]).square().mean()
-                        +args.phys_loss*physical_loss(vpred,yv,cuv))
+                        +args.phys_loss*physical_loss(vpred,yv,cuv)
+                        +temp_loss(vpred,yv))
         if vloss<best-1e-7:
             best=vloss;best_epoch=epoch+1
             state={k:v.detach().clone()
@@ -243,6 +256,8 @@ def main():
         train_samples=sorted(set(d["sample"] for d,i in fit)),
         heldout_geometry=other["sample"],port_sea=bool(args.port_sea),
         physics_loss_weight=float(args.phys_loss),
+        package_loss_weight=float(args.pkg_loss),
+        sea_loss_weight=float(args.sea_loss),
         train_cases=len(fit),val_cases=len(val),
         trained_steps=len(t),epochs=epoch+1,best_epoch=best_epoch,
         val_loss=best,
