@@ -109,7 +109,7 @@ class BFZIV148ET:
         power[self.cu]=cu
         return m,I,power,q,cu
 
-    def advance(self,state,drive,dt,*,iterations=3):
+    def advance(self,state,drive,dt,*,iterations=8,tol=1e-5):
         if not np.isfinite(dt) or dt<=0:
             raise ValueError("positive thermal time step required")
         old=np.asarray(state,float)
@@ -123,7 +123,7 @@ class BFZIV148ET:
         for _ in range(iterations):
             _,_,heat,_,_=self.em(theta,drive)
             nxt=solve(self.cap*old+dt*heat)
-            if np.max(abs(nxt-theta)) < 1e-7:
+            if np.max(abs(nxt-theta)) < tol:
                 break
             theta=nxt
         return nxt
