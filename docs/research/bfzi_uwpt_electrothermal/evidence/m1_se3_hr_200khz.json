@@ -1,0 +1,77 @@
+{
+  "status": "M1 numerical reference OPEN",
+  "geometry": "dual closed UMFC, Rx y-axis rotation 0.18 rad",
+  "frequency_hz": 200000.0,
+  "source_panels_per_corner": 12,
+  "seawater_S_m": 5.0,
+  "mesh": "physical-tag Gmsh OCC, near-box size controlled; changing R remeshes entire domain",
+  "case_settings": {
+    "r052h08": {
+      "R_m": 0.52,
+      "near_h_m": 0.08,
+      "far_h_m": 0.25
+    },
+    "r075h08": {
+      "R_m": 0.75,
+      "near_h_m": 0.08,
+      "far_h_m": 0.25
+    },
+    "r075h06": {
+      "R_m": 0.75,
+      "near_h_m": 0.06,
+      "far_h_m": 0.25
+    },
+    "r120h08": {
+      "R_m": 1.2,
+      "near_h_m": 0.08,
+      "far_h_m": 0.25
+    }
+  },
+  "power_W": {
+    "r052h08": 0.0065288553064633235,
+    "r075h08": 0.006791906033493546,
+    "r075h06": 0.006828120564535445,
+    "r120h08": 0.006653956772505531
+  },
+  "tetra": {
+    "r052h08": 3445,
+    "r075h08": 4115,
+    "r075h06": 5058,
+    "r120h08": 7447
+  },
+  "h": {
+    "r075h08_to_r075h06": {
+      "tetra_from": 4115,
+      "tetra_to": 5058,
+      "port_Z_rel": 0.005365910840913189,
+      "unit_B_probes_rel": 0.021256529411729213,
+      "unit_E_probes_rel": 0.02418524033246948,
+      "J_probes_rel": 0.015638208342146562,
+      "power_rel": 0.005303733391878568,
+      "port_power_close_rel": 7.621673312214705e-15
+    }
+  },
+  "R": {
+    "r052_to_r075": {
+      "tetra_from": 3445,
+      "tetra_to": 4115,
+      "port_Z_rel": 0.060759658373676875,
+      "unit_B_probes_rel": 0.023860417546909863,
+      "unit_E_probes_rel": 0.03708875678485575,
+      "J_probes_rel": 0.032979557814309474,
+      "power_rel": 0.038730030382195565,
+      "port_power_close_rel": 4.3419768981163045e-15
+    },
+    "r075_to_r120": {
+      "tetra_from": 4115,
+      "tetra_to": 7447,
+      "port_Z_rel": 0.058142075337782234,
+      "unit_B_probes_rel": 0.020838007341164158,
+      "unit_E_probes_rel": 0.028963690703424475,
+      "J_probes_rel": 0.025530227021575813,
+      "power_rel": 0.020731914213513992,
+      "port_power_close_rel": 2.1638560848639075e-14
+    }
+  },
+  "limit": "Fixed probe set has two wet-seawater points; full 3-D field L2 h/R and source/panel certification are OPEN."
+}
