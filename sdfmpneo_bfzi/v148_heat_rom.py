@@ -8,6 +8,7 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 
 from .v148_et import BFZIV148ET
+from .v148_pkg3d import BFZIV148Pkg3D
 
 
 class BFZIV148HeatROM(BFZIV148ET):
@@ -19,9 +20,12 @@ class BFZIV148HeatROM(BFZIV148ET):
         for path in paths:
             with np.load(Path(path)) as d:
                 sea = np.asarray(d["Tsea_K"], float)
-                pkg = np.asarray(d["Tpkg_K"], float)
-                cu = np.asarray(d["Tcu_K"], float)
-            if sea.ndim != 2 or sea.shape[1] != self.count or (pkg.shape,cu.shape) != ((len(sea),2),(len(sea),2)):
+                key="Tpkg_cells_K" if self.pkg.stop-self.pkg.start>2 else "Tpkg_K"
+                pkg=np.asarray(d[key],float).reshape(len(sea),-1)
+                cu=np.asarray(d["Tcu_K"],float)
+            if (sea.ndim!=2 or sea.shape[1]!=self.count or
+                    pkg.shape!=(len(sea),self.pkg.stop-self.pkg.start) or
+                    cu.shape!=(len(sea),2)):
                 raise ValueError("heat ROM snapshots do not match sea/package/copper cells")
             frames.extend(np.hstack((sea,pkg,cu))-self.amb)
         if not frames:
@@ -36,8 +40,13 @@ class BFZIV148HeatROM(BFZIV148ET):
         w = np.sqrt(self.cap)
         mark = np.zeros((self.n,5))
         mark[:self.count,0] = w[:self.count]
-        for k in range(4):
-            mark[self.count+k,k+1] = w[self.count+k]
+        pn=(self.pkg.stop-self.pkg.start)//2
+        for p in range(2):
+            a=self.pkg.start+p*pn
+            mark[a:a+pn,p+1]=w[a:a+pn]
+        for p in range(2):
+            a=self.cu.start+p
+            mark[a,3+p]=w[a]
         mark /= np.linalg.norm(mark,axis=0)[None,:]
         A = w[:,None]*np.column_stack(frames)
         Ares = A-mark@(mark.T@A)
@@ -72,3 +81,8 @@ class BFZIV148HeatROM(BFZIV148ET):
                 break
             theta=nxt
         return nxt
+
+
+
+class BFZIV148PkgHeatROM(BFZIV148HeatROM, BFZIV148Pkg3D):
+    """Material-conservative POD with 3-D box FV conduction."""
