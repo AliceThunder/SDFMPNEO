@@ -393,10 +393,22 @@ def infer(args):
                      sea_vol_m3=head.vol)
         if port is None:
             spatial["Zsea_ohm"]=np.asarray(zvec)
+    gaps=[]
+    if port is not None:
+        ext=ck["external_z"].cpu().numpy()
+        for k,I in enumerate(r["current_A"]):
+            pin=.5*np.real(vin[k]*I[0].conj())
+            pext=.5*np.vdot(I,ext@I).real
+            pcu=.5*np.sum(r["Zcu_ohm"][k].real*abs(I)**2)
+            psea=rows[k]["Psea_pred_W"]
+            gap=float(abs(pin-pext-pcu-psea))
+            gaps.append(gap)
+            rows[k]["circuit_power_gap_W"]=gap
     args.out.parent.mkdir(parents=True,exist_ok=True)
     info=dict(model=str(args.model),mode=model.mode,
               field_model=str(args.field) if args.field else None,
               port_model=str(args.port) if args.port else None,
+              max_circuit_power_gap_W=max(gaps) if gaps else None,
               inference_sec=time.perf_counter()-t0,
               time_step_s=args.step,trace=rows)
     args.out.write_text(json.dumps(info,indent=2),encoding="utf-8")
