@@ -130,3 +130,15 @@ q_p=\frac{\lVert\mathbf J_p\rVert^2}{2\sigma_p}
 
 沙箱用两海水单元、双端口复电流的原质量矩阵形式直接执行：修正后的局部热源体积分 **0.007229485223797955 W**，端口修正矩阵对应功率 **0.007229485223797953 W**，残差约 **1.73×10⁻¹⁸ W**；已向 `tests/test_bfzi_v148_et.py` 加入对应专项测试。该验证针对质量修正的精确分账，**完整真实 BFZI M4 场景的端口—空间功率闭合仍 OPEN**。
 
+
+
+## 2026-11-12 本轮 M4 原始回归关口与沙箱获取进度
+
+- 通过 GitHub 仓库接口核对独立 `AliceThunder/BFZI` 的 `bfzi_v148_results.py`、`bfzi_v142_results.py`、`run_v130_local_source_support_zortho.py`、`outputs_v148/bfzi_v148_all_samples_matrix.csv` 及 `deps/BFZI_v102_OPERATOR_CONSISTENCY_DIAGNOSTICS` 目录。目标 SDFMPNEO 分支本轮从 `c97eab44` 起步。
+- 原始 M4（200 kHz、5 S/m）存档对角海水反作用阻抗为 `0.12781381449951726 - 0.00385452694387080j Ω`，交叉阻抗为 `0.10805885891894453 - 0.00373162961285344j Ω`；原 BFZI 空气电感对角 `15.827666708487106 μH`、交叉 `5.077003979629416 μH`；原存档总有效自感 `15.824599373405116 μH`、有效互感 `5.074034443136048 μH`。这些是**独立 BFZI 已有存档**，不是本轮的重新计算结果。
+- `bfzi-et-v148 --check-only` 使用 `sea_only` 路径，只为海水等温回归初始化原 BFZI 投影、Green/resolvent 和局部质量项，跳过耗时的 Neumann/GMD 空气电感与铜路径。要求适配器 `Zsea` 与原 `calc.base.formal_with_local_mass` 相对差 ≤`1e-5`；M4 还要求找到完整 2×2 存档矩阵且原算法与存档相对差 ≤`1e-5`。存档缺失、缺行和不匹配均记为失败，写出 JSON 后阻止热时程。
+- 原 `solve_operator` 报告 GMRES `info!=0` 时显式报错；运行输出新增每步 `circuit_power_relative_gap`、整个时程最大电路功率收支差，可与已有海水端口—空间焦耳热差及热收支差并列核对。专项测试加入存档缺失/不匹配、sea-only 参数以及求解不收敛的拒绝条件。
+- **沙箱独立 BFZI 获取阻断：** `git ls-remote` 对 SDFMPNEO、BFZI 均返回 `Could not resolve host: github.com`，`curl` 同样失败；仓库接口可读取源码及依赖清单，但无法把整棵 BFZI 与 `mra_green_pino` 依赖安装到当前沙箱。未运行新的原 BFZI M4 `--check-only` 或真实通电—关断—再启完整时程，未产生可用于判定 PASS 的真实新数值；本轮改动后的仓库 pytest 亦未在完整依赖环境执行。
+- 本轮主要提交：`2738ed73`、`44113ec9`、`54a684f0`、`e2844576`、`86a8b274`、`477ed0f3`、`49538f58`。未使用 Remote Desktop Commander，未使用 GitHub Actions。
+
+**剩余主线：** 在完整原 BFZI checkout 可用的环境中实跑 M4 `--check-only` 并记录两项实际复阻抗相对差；通过后运行完整动态时程，定位真实海水端口功率与体积分焦耳热的残差，并检查热收支、`Z11/Z12/Z22` 实虚部、自感互感、电流和效率的时变；真实闭环成立后开始电磁/热 ROM 和神经代理。
