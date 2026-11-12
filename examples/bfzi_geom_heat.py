@@ -164,10 +164,12 @@ def main():
                 np.max(abs(delta[:,head.ns:head.cu.start])))
             one["rom_vs_full_cu_max_abs_K"]=float(
                 np.max(abs(delta[:,head.cu])))
-            one["rom_vs_full_Z_relative_L2"]=relative(
-                pr["z6"]-direct["z6"],direct["z6"]-direct["z6"][0])
-            one["rom_vs_full_q_relative_L2"]=relative(
-                pr["qsea_W_m3"]-direct["qsea_W_m3"],direct["qsea_W_m3"])
+            one["rom_vs_full_Z_relative_L2"]=float(
+                np.linalg.norm(pr["z6"]-direct["z6"])/
+                max(np.linalg.norm(direct["z6"]-direct["z6"][0]),1e-12))
+            one["rom_vs_full_q_relative_L2"]=float(
+                np.linalg.norm(pr["qsea_W_m3"]-direct["qsea_W_m3"])/
+                max(np.linalg.norm(direct["qsea_W_m3"]),1e-12))
         if args.bench_direct:
             if et is None or true is None:
                 raise ValueError("--bench-direct requires --bfzi-root")
