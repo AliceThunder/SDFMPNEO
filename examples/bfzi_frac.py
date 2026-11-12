@@ -117,10 +117,16 @@ def fit_one(d,mode,epochs=900,patience=180):
             break
     model.load_state_dict(best_state)
     model.eval()
-    params=(model.orders().detach().cpu().numpy().tolist())
-    return model,dict(mode=mode,epochs=epoch+1,best_epoch=best_epoch,
-                      val_loss=best,learned_orders=params,
-                      training_sec=time.perf_counter()-t0)
+    params=model.orders().detach().cpu().numpy().tolist()
+    info=dict(mode=mode,epochs=epoch+1,best_epoch=best_epoch,
+              val_loss=best,learned_orders=params,
+              training_sec=time.perf_counter()-t0)
+    if mode=="hybrid":
+        lam=np.exp(np.log(1/2400.)+
+            torch.sigmoid(model.raw_tau).detach().cpu().numpy()
+            *np.log(2400/12.))
+        info["learned_time_constants_s"]=(1/lam).tolist()
+    return model,info
 
 
 def eval_one(model,ck,d,ids):
@@ -179,12 +185,12 @@ def train(args):
                 times_per_case=len(d["times"]), 
                 fractional_kernel="positive logarithmic SOE for t^(alpha-1), 0<alpha<1",
                 electrical_feedback="solve predicted complex 2-port Z at every interval")
-    for mode in ("frac","exp"):
+    for mode in ("frac","exp","hybrid"):
         net,train_info=fit_one(
             d,mode,epochs=args.epochs,patience=args.patience)
         ck=checkpoint(net,d)
-        path=args.model if mode=="frac" else args.model.with_name(
-            args.model.stem+"_exp"+args.model.suffix)
+        path=(args.model if mode=="frac" else args.model.with_name(
+            args.model.stem+"_"+mode+args.model.suffix))
         path.parent.mkdir(parents=True,exist_ok=True)
         torch.save(ck,path)
         agg,items,fields=eval_one(net,ck,d,d["test"])
@@ -204,11 +210,16 @@ def train(args):
         print(json.dumps(dict(mode=mode,model=str(path),train=train_info,
                               heldout=agg),indent=2),flush=True)
     a=result["frac"]["heldout"];b=result["exp"]["heldout"]
+    c=result["hybrid"]["heldout"]
     result["comparison"]=dict(
         fractional_vs_exponential_pkg_error_ratio=a["pkg_max_K_mean"]/
                                                  max(b["pkg_max_K_mean"],1e-12),
         fractional_vs_exponential_dynamic_Z_ratio=a["dynamic_Z_relative_L2_mean"]/
-                                                  max(b["dynamic_Z_relative_L2_mean"],1e-12))
+                                                  max(b["dynamic_Z_relative_L2_mean"],1e-12),
+        hybrid_vs_exponential_pkg_error_ratio=c["pkg_max_K_mean"]/
+                                              max(b["pkg_max_K_mean"],1e-12),
+        hybrid_vs_exponential_dynamic_Z_ratio=c["dynamic_Z_relative_L2_mean"]/
+                                              max(b["dynamic_Z_relative_L2_mean"],1e-12))
     args.out.write_text(json.dumps(result,indent=2),encoding="utf-8")
     print("METRICS",args.out,flush=True)
 
