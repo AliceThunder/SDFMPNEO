@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from scipy.sparse import csr_matrix,diags
 from scipy.sparse.linalg import factorized
+from scipy.spatial import cKDTree
 
 from .geom_memory import geom_feat,geom_port,heat_drive
 from .frac_memory import zmat
@@ -56,6 +57,51 @@ class GeomHeat:
         if np.any(self.cap<=0) or np.any(self.vol<=0):
             raise ValueError("positive BFZI material thermal capacities required")
         self._lu={}
+        self._sea_tree=cKDTree(self.xyz)
+        self._pkg_tree=[cKDTree(p) for p in self.pkg_xyz]
+        mid=self.pkg_xyz.mean(axis=1)
+        span=np.max(abs(self.pkg_xyz-mid[:,None,:]),axis=1)
+        # Original BFZI 4 x 2 x 4 package thermal-FV cell centers.
+        self._pkg_mid=mid
+        self._pkg_half=span*np.array([4./3,2.,4./3])
+
+    @staticmethod
+    def _interp(tree,values,points):
+        """Continuous inverse-distance reconstruction on original FV centers."""
+        a=np.asarray(values)
+        p=np.asarray(points,float).reshape(-1,3)
+        if len(a)!=tree.n:
+            raise ValueError("field values must match the original BFZI FV cells")
+        d,idx=tree.query(p,k=min(8,tree.n))
+        d=np.asarray(d).reshape(len(p),-1)
+        idx=np.asarray(idx).reshape(len(p),-1)
+        w=1/np.maximum(d,1e-9)**2
+        w/=w.sum(axis=1,keepdims=True)
+        shape=(len(p),len(w[0]))+(1,)*(a.ndim-1)
+        y=(a[idx]*w.reshape(shape)).sum(axis=1)
+        zero=(d[:,0]<1e-10)
+        if np.any(zero):
+            y[zero]=a[idx[zero,0]]
+        return y
+
+    def query_temp(self,xyz,state):
+        """Absolute temperature at arbitrary 3-D sea or package coordinates."""
+        p=np.asarray(xyz,float).reshape(-1,3)
+        temp=np.asarray(state,float)
+        if temp.shape!=(len(self.cap),):
+            raise ValueError("full three-material BFZI temperature field required")
+        ans=self._interp(self._sea_tree,temp[:self.ns],p)
+        for j in range(2):
+            inside=np.all(abs(p-self._pkg_mid[j])<=self._pkg_half[j]+1e-10,
+                          axis=1)
+            if np.any(inside):
+                vals=temp[self.ns+j*self.npkg:self.ns+(j+1)*self.npkg]
+                ans[inside]=self._interp(self._pkg_tree[j],vals,p[inside])
+        return ans
+
+    def query_sea(self,xyz,values):
+        """Interpolate complex J vectors or weak q scalars at arbitrary seawater points."""
+        return self._interp(self._sea_tree,values,xyz)
 
     @classmethod
     def from_original(cls,em,et,external):
