@@ -103,7 +103,7 @@ class BFZIV148ET:
         m=self.model.solve(self.amb+theta[:self.count],
                            self.amb+theta[self.cu])
         I=np.linalg.solve(m.total_z+self.external,v)
-        q,cu=m.heat(m,I)
+        q,cu=self.model.heat(m,I)
         power=np.zeros(self.n)
         power[:self.count]=q*self.model.vol
         power[self.cu]=cu
