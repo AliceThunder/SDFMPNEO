@@ -1,0 +1,51 @@
+{
+  "sample": "M4",
+  "voltage_peak_V": 150.0,
+  "original_BFZI_zport_ohm": [
+    [
+      0.12781381449951715,
+      0.10805885891894447
+    ],
+    [
+      0.10805885891894447,
+      0.12781381449951715
+    ]
+  ],
+  "original_FV_joule_matrix_ohm": [
+    [
+      0.1263611167857569,
+      0.1067102830337817
+    ],
+    [
+      0.1067102830337817,
+      0.12636111678575682
+    ]
+  ],
+  "weak_form_loss_matrix_ohm": [
+    [
+      0.12781381449951715,
+      0.10805885891894444
+    ],
+    [
+      0.10805885891894444,
+      0.12781381449951718
+    ]
+  ],
+  "loss_matrix_relative_gap": 0.01184294829225098,
+  "loss_matrix_weak_port_gap": 2.031025489802968e-16,
+  "projected_field_reprojection_gap": 0.023551009094582683,
+  "projected_source_reprojection_gap": 0.023540812553083188,
+  "Psea_from_ports_W": 34.95566253812401,
+  "Psea_from_J_squared_W": 34.558435319454816,
+  "Psea_from_local_weak_form_W": 34.95566253812402,
+  "port_vs_volume_relative_gap": 0.011494363532297226,
+  "weak_form_negative_cell_count": 0,
+  "weak_form_min_cell_W": 0.002343674760256221,
+  "original_gmres": {
+    "op_mode": "KP",
+    "gmres_infos": "[0, 0]",
+    "gmres_final_pr_norms": "[9.996252976872295e-09, 9.996252976872288e-09]",
+    "gmres_tol": 2e-07,
+    "gmres_maxiter": 180
+  }
+}
