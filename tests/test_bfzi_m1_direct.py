@@ -61,3 +61,26 @@ def test_m1_real_dual_umfc_fields_and_same_heat():
                     np.sum(abs(e1+(.4+.3j)*e2)**2, axis=1))
     with pytest.raises(ValueError, match="conducting seawater"):
         ref.fields(np.array([[0., 0., -.13]]), i)
+
+
+def test_m1_circular_tx_and_variable_seawater():
+    from dataclasses import replace
+    from sdfmpneo_bfzi.scene import Seawater
+
+    src = build_demo_scene()
+    tx = src.transmitter
+    circle = replace(tx.coil, corner_radius=tx.coil.outer_half_size,
+                     alpha=1.0)
+    tx = replace(tx, coil=circle)
+    scene = replace(src, transmitter=tx, seawater=Seawater(3.0))
+    mesh = axis_aligned_bfzi_tetra_mesh(
+        scene, far_step_m=.50, box_layers=1)
+    result = solve_m1(scene, mesh, 200000, panels_per_corner=3)
+    current = np.array([1., .4+.3j])
+    probe = result.fields(np.array([[0., 0., 0.]]), current)
+    assert np.isfinite(probe["B_T"]).all()
+    assert np.isfinite(probe["J_A_m2"]).all()
+    assert np.all(probe["q_W_m3"] >= 0)
+    assert_allclose(result.port_sea_power(current),
+                    result.volume_power(current), rtol=1e-10)
+    assert_allclose(result.z_sea, result.z_sea.T, rtol=1e-10, atol=1e-12)

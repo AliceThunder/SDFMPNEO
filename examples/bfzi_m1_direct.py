@@ -16,6 +16,7 @@ from scipy.spatial.transform import Rotation
 
 from examples.bfzi_mqs_demo import build_demo_scene
 from sdfmpneo_bfzi.geometry import RigidPose
+from sdfmpneo_bfzi.scene import Seawater
 from sdfmpneo_bfzi.direct3d_mesh import bfzi_mesh_from_gmsh22
 from sdfmpneo_bfzi.direct3d_structured_bfzi import axis_aligned_bfzi_tetra_mesh
 from sdfmpneo_bfzi.m1_direct import solve_m1
@@ -28,6 +29,10 @@ def pair(z):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--frequency", type=float, default=200000.)
+    ap.add_argument("--sigma", type=float, default=5.0,
+                    help="Seawater conductivity (S/m)")
+    ap.add_argument("--tx-shape", choices=("rounded", "circle"), default="rounded")
+    ap.add_argument("--rx-shape", choices=("rounded", "circle"), default="rounded")
     ap.add_argument("--mesh", type=Path, help="Physical-tag Gmsh 2.2 mesh")
     ap.add_argument("--generate-msh", type=Path, help="Build conforming arbitrary-SE3 Gmsh OCC mesh")
     ap.add_argument("--mesh-size", type=float, default=.25)
@@ -49,6 +54,12 @@ def main(argv=None):
         ap.error("Use one of --mesh or --generate-msh")
     scene = build_demo_scene()
     tx, rx = scene.assemblies
+    if args.tx_shape == "circle":
+        tx = replace(tx, coil=replace(tx.coil,
+            corner_radius=tx.coil.outer_half_size, alpha=1.0))
+    if args.rx_shape == "circle":
+        rx = replace(rx, coil=replace(rx.coil,
+            corner_radius=rx.coil.outer_half_size, alpha=1.0))
     t_rot = Rotation.from_rotvec(args.tx_rotvec).as_matrix()
     r_rot = Rotation.from_rotvec(args.rx_rotvec).as_matrix()
     tx = replace(tx, pose=RigidPose(t_rot@tx.pose.rotation,
@@ -56,6 +67,7 @@ def main(argv=None):
     rx = replace(rx, pose=RigidPose(r_rot@rx.pose.rotation,
                                    rx.pose.center+np.asarray(args.rx_shift)))
     scene = replace(scene, transmitter=tx, receiver=rx,
+                    seawater=Seawater(args.sigma),
                     outer_radius=(args.outer_radius or scene.outer_radius))
     if args.generate_msh:
         from sdfmpneo_bfzi.direct3d_gmsh_physical import generate_physical_bfzi_msh22
@@ -89,6 +101,16 @@ def main(argv=None):
         "tetrahedra": len(mesh.tetrahedra),
         "frequency_hz": args.frequency,
         "seawater_S_m": scene.seawater.conductivity,
+        "tx_shape": args.tx_shape,
+        "rx_shape": args.rx_shape,
+        "tx_coil": {"turns": tx.coil.turns,
+                    "outer_half_size_m": tx.coil.outer_half_size,
+                    "corner_radius_m": tx.coil.corner_radius,
+                    "pitch_m": tx.coil.pitch, "alpha": tx.coil.alpha},
+        "rx_coil": {"turns": rx.coil.turns,
+                    "outer_half_size_m": rx.coil.outer_half_size,
+                    "corner_radius_m": rx.coil.corner_radius,
+                    "pitch_m": rx.coil.pitch, "alpha": rx.coil.alpha},
         "outer_radius_m": scene.outer_radius,
         "corner_panels": args.panels,
         "tx_pose": {"center_m": tx.pose.center.tolist(),
