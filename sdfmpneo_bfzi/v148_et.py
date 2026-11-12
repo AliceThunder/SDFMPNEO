@@ -155,8 +155,9 @@ class BFZIV148ET:
             if k:
                 theta=self.advance(theta,v,float(now-times[k-1]))
             m,I,heat,q,cu=self.em(theta,v)
+            j=np.einsum("npc,p->nc",m.unit_j,I,optimize=True)
             history.append(ETStep(
                 float(now),theta.copy(),m.total_z,m.sea_z,I,
                 float(np.dot(q,self.model.vol)),cu,float(heat.sum()),
-                float(self.cap@theta),q.copy()))
+                float(self.cap@theta),q.copy(),j.copy(),m.unit_j.copy()))
         return history
