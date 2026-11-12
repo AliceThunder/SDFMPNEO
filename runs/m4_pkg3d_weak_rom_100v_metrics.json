@@ -1,0 +1,43 @@
+{
+  "direct": "runs\\m4_pkg3d_weak_100v.json",
+  "rom": "runs\\m4_pkg3d_weak_rom_100v.json",
+  "rom_basis": {
+    "rank": 8,
+    "snapshot_columns": 44,
+    "retained_energy": 1.0,
+    "train_files": [
+      "runs\\m4_pkg3d_weak_30v.npz",
+      "runs\\m4_pkg3d_weak_150v.npz"
+    ],
+    "basis_build_sec": 0.023133200011216104
+  },
+  "heat_rom_basis": {
+    "rank": 12,
+    "snapshot_count": 22,
+    "retained_energy": 0.9999999999987987,
+    "train_files": [
+      "runs\\m4_pkg3d_weak_30v.npz",
+      "runs\\m4_pkg3d_weak_150v.npz"
+    ]
+  },
+  "steps": 11,
+  "complex_Z_relative_L2": 1.5719375598563285e-10,
+  "complex_Z_max_abs_ohm": 7.3636295791050645e-09,
+  "sea_J_unit_relative_L2": 7.161159276055382e-08,
+  "sea_q_relative_L2": 6.620148663681345e-08,
+  "Tsea_max_absolute_K": 2.138698334874789e-06,
+  "Tsea_spatial_max_absolute_K": 2.4344628172912053e-05,
+  "Tpkg_max_absolute_K": 9.010274766296789e-07,
+  "Tcu_max_absolute_K": 1.646725507953306e-05,
+  "eta_max_absolute": 4.313457369065077e-10,
+  "direct_trajectory_sec": 1.3727563000284135,
+  "rom_trajectory_sec": 1.2122297000605613,
+  "speedup": 1.1324225928137486,
+  "rom_thermal_balance_max": 5.010015889581015e-09,
+  "Tpkg_spatial_max_absolute_K": 0.00014949757394333574,
+  "Qcu_to_pkg_max_absolute_W": 4.6049969896315435e-06,
+  "Qpkg_to_sea_max_absolute_W": 3.3683026288422457e-06,
+  "Epkg_max_absolute_J": 0.0006187031338242832,
+  "rom_material_balance_max": 2.272778475138159e-08,
+  "direct_material_balance_max": 2.2727805731921157e-08
+}
