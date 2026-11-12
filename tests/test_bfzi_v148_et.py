@@ -106,6 +106,7 @@ class Model:
         cu_z=np.array([.1,.1])+.001*(cu_t-293.15)
         return SimpleNamespace(
             sea_z=sea_z,copper_z=cu_z,
+            unit_j=np.zeros((4,2,3),complex),
             total_z=sea_z+np.diag(cu_z))
 
     def heat(self,state,currents):
