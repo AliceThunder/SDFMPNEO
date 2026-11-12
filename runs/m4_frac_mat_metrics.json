@@ -1,0 +1,382 @@
+{
+  "data": [
+    "runs\\m4_frac_teacher.npz",
+    "runs\\m4_frac_teacher_15s.npz"
+  ],
+  "bfzi_teacher_case_count": 30,
+  "full_space_thermal_states": 450,
+  "train_cases": 15,
+  "validation_cases": 5,
+  "test_cases": 10,
+  "times_per_case": [
+    21,
+    41
+  ],
+  "basis_mode": "material",
+  "material_loss": 0.3,
+  "hotspot_loss": 0.15,
+  "fractional_kernel": "positive logarithmic SOE for t^(alpha-1), 0<alpha<1",
+  "electrical_feedback": "solve predicted complex 2-port Z at every interval",
+  "baseline": {
+    "model": "runs\\m4_frac_multi_hybrid.pt",
+    "heldout_grids": {
+      "30s": {
+        "test_cases": 10,
+        "rollout_sec": 0.0659028000663966,
+        "seconds_per_21_step_history": 0.00659028000663966,
+        "sea_max_K_max": 0.08532210263541629,
+        "sea_max_K_mean": 0.03135900345591267,
+        "pkg_max_K_max": 0.8328382574289321,
+        "pkg_max_K_mean": 0.4198065123291201,
+        "cu_max_K_max": 3.4817111251707615,
+        "cu_max_K_mean": 1.3011695137784671,
+        "temp_relative_L2_max": 0.18069894583421436,
+        "temp_relative_L2_mean": 0.0679175960510717,
+        "Z_relative_L2_max": 1.9065326639981977e-05,
+        "Z_relative_L2_mean": 8.16378620762819e-06,
+        "dynamic_Z_relative_L2_max": 0.09151480965371793,
+        "dynamic_Z_relative_L2_mean": 0.053227774577084816,
+        "current_relative_L2_max": 7.831076328382823e-05,
+        "current_relative_L2_mean": 3.6504066348587873e-05,
+        "eta_max_abs_max": 0.0006904801650597925,
+        "eta_max_abs_mean": 0.00029012001434421955
+      },
+      "15s": {
+        "test_cases": 10,
+        "rollout_sec": 0.12518589990213513,
+        "seconds_per_21_step_history": 0.012518589990213514,
+        "sea_max_K_max": 0.08170509482386024,
+        "sea_max_K_mean": 0.039386642130017434,
+        "pkg_max_K_max": 1.5265197785214468,
+        "pkg_max_K_mean": 0.6734823150927639,
+        "cu_max_K_max": 4.012657303989329,
+        "cu_max_K_mean": 1.4917762634225482,
+        "temp_relative_L2_max": 0.19396341690785066,
+        "temp_relative_L2_mean": 0.07724271125823108,
+        "Z_relative_L2_max": 1.8118201617034345e-05,
+        "Z_relative_L2_mean": 8.285823935409445e-06,
+        "dynamic_Z_relative_L2_max": 0.11879392748874294,
+        "dynamic_Z_relative_L2_mean": 0.0606294790069188,
+        "current_relative_L2_max": 7.589024585251018e-05,
+        "current_relative_L2_mean": 3.3366750876051277e-05,
+        "eta_max_abs_max": 0.0008878893374346664,
+        "eta_max_abs_mean": 0.0003464680853734081
+      }
+    }
+  },
+  "hybrid": {
+    "model": "runs\\m4_frac_mat_hybrid.pt",
+    "train": {
+      "mode": "hybrid",
+      "epochs": 2400,
+      "best_epoch": 2261,
+      "val_loss": 0.012785134837031364,
+      "learned_orders": [
+        0.34246373176574707,
+        0.5278218388557434,
+        0.7295387387275696
+      ],
+      "training_sec": 164.5817820999073,
+      "learned_time_constants_s": [
+        630.6661175687261,
+        260.62946365617546,
+        138.6057396915555
+      ]
+    },
+    "heldout": {
+      "test_cases": 10,
+      "rollout_sec": 0.08635670004878193,
+      "seconds_per_21_step_history": 0.008635670004878193,
+      "sea_max_K_max": 0.06411113398701218,
+      "sea_max_K_mean": 0.03047346804460176,
+      "pkg_max_K_max": 0.46158078991550155,
+      "pkg_max_K_mean": 0.343516049571366,
+      "cu_max_K_max": 2.9202182052488865,
+      "cu_max_K_mean": 1.3004056179406007,
+      "temp_relative_L2_max": 0.17176993575701638,
+      "temp_relative_L2_mean": 0.07067858033043325,
+      "Z_relative_L2_max": 1.7034831007272936e-05,
+      "Z_relative_L2_mean": 8.084926481723198e-06,
+      "dynamic_Z_relative_L2_max": 0.11104898951751971,
+      "dynamic_Z_relative_L2_mean": 0.05719437766638704,
+      "current_relative_L2_max": 6.141238801202992e-05,
+      "current_relative_L2_mean": 3.39424827995506e-05,
+      "eta_max_abs_max": 0.0005728623671421573,
+      "eta_max_abs_mean": 0.0002531703855709444
+    },
+    "heldout_grids": {
+      "30s": {
+        "test_cases": 10,
+        "rollout_sec": 0.08635670004878193,
+        "seconds_per_21_step_history": 0.008635670004878193,
+        "sea_max_K_max": 0.06411113398701218,
+        "sea_max_K_mean": 0.03047346804460176,
+        "pkg_max_K_max": 0.46158078991550155,
+        "pkg_max_K_mean": 0.343516049571366,
+        "cu_max_K_max": 2.9202182052488865,
+        "cu_max_K_mean": 1.3004056179406007,
+        "temp_relative_L2_max": 0.17176993575701638,
+        "temp_relative_L2_mean": 0.07067858033043325,
+        "Z_relative_L2_max": 1.7034831007272936e-05,
+        "Z_relative_L2_mean": 8.084926481723198e-06,
+        "dynamic_Z_relative_L2_max": 0.11104898951751971,
+        "dynamic_Z_relative_L2_mean": 0.05719437766638704,
+        "current_relative_L2_max": 6.141238801202992e-05,
+        "current_relative_L2_mean": 3.39424827995506e-05,
+        "eta_max_abs_max": 0.0005728623671421573,
+        "eta_max_abs_mean": 0.0002531703855709444
+      },
+      "15s": {
+        "test_cases": 10,
+        "rollout_sec": 0.16307639994192868,
+        "seconds_per_21_step_history": 0.01630763999419287,
+        "sea_max_K_max": 0.06047684020421684,
+        "sea_max_K_mean": 0.03386877888165714,
+        "pkg_max_K_max": 0.8461399208451326,
+        "pkg_max_K_mean": 0.5493865372584252,
+        "cu_max_K_max": 3.462276159403359,
+        "cu_max_K_mean": 1.5605040385839004,
+        "temp_relative_L2_max": 0.18115333550836565,
+        "temp_relative_L2_mean": 0.07898641191888779,
+        "Z_relative_L2_max": 1.6089159007979728e-05,
+        "Z_relative_L2_mean": 8.75992275960084e-06,
+        "dynamic_Z_relative_L2_max": 0.13854478327561967,
+        "dynamic_Z_relative_L2_mean": 0.0673173155680288,
+        "current_relative_L2_max": 6.099441882489537e-05,
+        "current_relative_L2_mean": 3.451505380644674e-05,
+        "eta_max_abs_max": 0.0007896331097156928,
+        "eta_max_abs_mean": 0.0003173574478853136
+      }
+    },
+    "case_metrics": [
+      {
+        "id": 20,
+        "voltage_v": 40.0,
+        "windows_s": [
+          [
+            0,
+            150
+          ],
+          [
+            360,
+            600
+          ]
+        ],
+        "sea_max_K": 0.013916583952720885,
+        "pkg_max_K": 0.216457429072193,
+        "cu_max_K": 0.4613586799005134,
+        "temp_relative_L2": 0.16765093818758908,
+        "Z_relative_L2": 3.6752563687164326e-06,
+        "dynamic_Z_relative_L2": 0.11104898951751971,
+        "current_relative_L2": 1.5001562882037763e-05,
+        "eta_max_abs": 0.00010581287344690882
+      },
+      {
+        "id": 21,
+        "voltage_v": 40.0,
+        "windows_s": [
+          [
+            0,
+            270
+          ],
+          [
+            420,
+            600
+          ]
+        ],
+        "sea_max_K": 0.020174048812577894,
+        "pkg_max_K": 0.31332506586807085,
+        "cu_max_K": 0.567718805201082,
+        "temp_relative_L2": 0.17176993575701638,
+        "Z_relative_L2": 3.7943985193246354e-06,
+        "dynamic_Z_relative_L2": 0.09998692559413884,
+        "current_relative_L2": 1.3953700267889055e-05,
+        "eta_max_abs": 0.00010581287344690882
+      },
+      {
+        "id": 22,
+        "voltage_v": 75.0,
+        "windows_s": [
+          [
+            0,
+            150
+          ],
+          [
+            360,
+            600
+          ]
+        ],
+        "sea_max_K": 0.029863072958221437,
+        "pkg_max_K": 0.46158078991550155,
+        "cu_max_K": 0.8909581010093461,
+        "temp_relative_L2": 0.07527123070538737,
+        "Z_relative_L2": 5.760292547493452e-06,
+        "dynamic_Z_relative_L2": 0.04909489673612815,
+        "current_relative_L2": 1.6445235744871692e-05,
+        "eta_max_abs": 0.0001287051653132698
+      },
+      {
+        "id": 23,
+        "voltage_v": 75.0,
+        "windows_s": [
+          [
+            0,
+            270
+          ],
+          [
+            420,
+            600
+          ]
+        ],
+        "sea_max_K": 0.02508629177725652,
+        "pkg_max_K": 0.30376987978382886,
+        "cu_max_K": 0.8972428647339825,
+        "temp_relative_L2": 0.04927683591702657,
+        "Z_relative_L2": 6.44017474374348e-06,
+        "dynamic_Z_relative_L2": 0.0478356420508347,
+        "current_relative_L2": 3.070197583110577e-05,
+        "eta_max_abs": 0.00023087367656127178
+      },
+      {
+        "id": 24,
+        "voltage_v": 105.0,
+        "windows_s": [
+          [
+            0,
+            150
+          ],
+          [
+            360,
+            600
+          ]
+        ],
+        "sea_max_K": 0.024278841186799127,
+        "pkg_max_K": 0.348266252605697,
+        "cu_max_K": 1.3941219913454574,
+        "temp_relative_L2": 0.03752046777793765,
+        "Z_relative_L2": 7.820887341843818e-06,
+        "dynamic_Z_relative_L2": 0.03363013957220653,
+        "current_relative_L2": 3.306118042025152e-05,
+        "eta_max_abs": 0.0002778349752667886
+      },
+      {
+        "id": 25,
+        "voltage_v": 105.0,
+        "windows_s": [
+          [
+            0,
+            270
+          ],
+          [
+            420,
+            600
+          ]
+        ],
+        "sea_max_K": 0.02080201470261045,
+        "pkg_max_K": 0.2613075739347437,
+        "cu_max_K": 1.2615370764982572,
+        "temp_relative_L2": 0.025565193965191756,
+        "Z_relative_L2": 9.078987715780943e-06,
+        "dynamic_Z_relative_L2": 0.03399013768772894,
+        "current_relative_L2": 4.4391245482227986e-05,
+        "eta_max_abs": 0.00029165479772474967
+      },
+      {
+        "id": 26,
+        "voltage_v": 135.0,
+        "windows_s": [
+          [
+            0,
+            150
+          ],
+          [
+            360,
+            600
+          ]
+        ],
+        "sea_max_K": 0.030031515018549726,
+        "pkg_max_K": 0.35797757740806446,
+        "cu_max_K": 1.6323504622520773,
+        "temp_relative_L2": 0.02399705423742864,
+        "Z_relative_L2": 9.32405423626137e-06,
+        "dynamic_Z_relative_L2": 0.023895721757811846,
+        "current_relative_L2": 4.207545822209985e-05,
+        "eta_max_abs": 0.00023316973615850056
+      },
+      {
+        "id": 27,
+        "voltage_v": 135.0,
+        "windows_s": [
+          [
+            0,
+            270
+          ],
+          [
+            420,
+            600
+          ]
+        ],
+        "sea_max_K": 0.02903694638490606,
+        "pkg_max_K": 0.4192372611025803,
+        "cu_max_K": 1.936575591155588,
+        "temp_relative_L2": 0.019929006022500678,
+        "Z_relative_L2": 1.1523746164404227e-05,
+        "dynamic_Z_relative_L2": 0.025679692759489666,
+        "current_relative_L2": 5.6351647537387707e-05,
+        "eta_max_abs": 0.0003655710507820542
+      },
+      {
+        "id": 28,
+        "voltage_v": 65.0,
+        "windows_s": [
+          [
+            0,
+            120
+          ],
+          [
+            210,
+            330
+          ],
+          [
+            420,
+            510
+          ]
+        ],
+        "sea_max_K": 0.04743423166536331,
+        "pkg_max_K": 0.3828595293484227,
+        "cu_max_K": 1.0419744020608164,
+        "temp_relative_L2": 0.09262769783010985,
+        "Z_relative_L2": 6.396636172390685e-06,
+        "dynamic_Z_relative_L2": 0.07996569087510504,
+        "current_relative_L2": 2.6030433595604692e-05,
+        "eta_max_abs": 0.00021940633986683444
+      },
+      {
+        "id": 29,
+        "voltage_v": 115.0,
+        "windows_s": [
+          [
+            0,
+            120
+          ],
+          [
+            210,
+            330
+          ],
+          [
+            420,
+            510
+          ]
+        ],
+        "sea_max_K": 0.06411113398701218,
+        "pkg_max_K": 0.3703791366745577,
+        "cu_max_K": 2.9202182052488865,
+        "temp_relative_L2": 0.043177442904144596,
+        "Z_relative_L2": 1.7034831007272936e-05,
+        "dynamic_Z_relative_L2": 0.06681594011290709,
+        "current_relative_L2": 6.141238801202992e-05,
+        "eta_max_abs": 0.0005728623671421573
+      }
+    ]
+  }
+}

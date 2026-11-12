@@ -1,0 +1,15 @@
+{
+  "physical_constants": "runs\\m4_frac_port.npz",
+  "original_m4_case": "runs\\m4_pkg3d_weak_100v.json",
+  "original_z_assembly_max_abs_ohm": 1.1102230246251565e-16,
+  "original_z_assembly_relative_L2": 1.127153019966223e-18,
+  "sea_head_z_assembly_relative_L2": 1.6980067566182122e-10,
+  "network_z_relative_L2": 1.4084214831161948e-05,
+  "physical_neural_z_relative_L2": 1.385057673805139e-05,
+  "physical_neural_dynamic_z_relative_L2": 0.06330463430500069,
+  "network_dynamic_z_relative_L2": 0.06437248688065902,
+  "max_circuit_balance_absolute_W": 2.842170943040401e-14,
+  "max_sea_energy_gap_absolute_W": 0.0,
+  "end_to_end_two_models_sec": 0.016584400087594986,
+  "independent_bfzi_used_for_constants_only": true
+}
