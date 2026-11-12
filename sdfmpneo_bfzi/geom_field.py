@@ -94,15 +94,19 @@ def calibrate(raw,mean,hot,weight=None):
     hot=max(float(hot),0.)
     if hot<1e-10:
         return np.zeros_like(r)
-    target=np.clip(float(mean)/hot,1/len(r),1.)
     w=(np.ones(len(r)) if weight is None else np.asarray(weight,float))
     w=w/w.sum()
-    # Physical peak/minimum support: monotone power map, renormalized to 1.
-    r=(r-r.min())/max(float(r.max()-r.min()),1e-10)
-    if np.max(r)<1e-10:
+    if float(r.max()-r.min())<1e-10:
         return np.full(len(r),min(float(mean),hot))
-    lo,hi=.005,256.
-    for _ in range(28):
+    r=(r-r.min())/float(r.max()-r.min())
+    target=np.clip(float(mean)/hot,float(w[np.argmax(r)])+1e-9,1.)
+    if target>=1.-1e-8:
+        return np.full(len(r),hot)
+    # Nonzero floor preserves almost uniform package temperatures.
+    # Exponent sets the FV-volume-weighted mean while the peak is exact.
+    r=.03+.97*r
+    lo,hi=1e-6,2048.
+    for _ in range(38):
         mid=.5*(lo+hi)
         current=float(w@(r**mid))
         if current>target:
