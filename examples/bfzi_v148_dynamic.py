@@ -28,6 +28,8 @@ def main(argv=None):
                    help="Path to existing AliceThunder/BFZI checkout")
     p.add_argument("--sample",choices=("M1","M2","M3","M4"),default="M4")
     p.add_argument("--voltage",type=float,default=3.)
+    p.add_argument("--source-r",type=float,default=.5,help="transmitter source series resistance, ohm")
+    p.add_argument("--load-r",type=float,default=.5,help="receiver real load, ohm")
     p.add_argument("--step",type=float,default=60.)
     p.add_argument("--heat",type=float,default=240.)
     p.add_argument("--cool",type=float,default=180.)
@@ -38,6 +40,8 @@ def main(argv=None):
     if (not a.bfzi_root.is_dir() or
             not (a.bfzi_root/"bfzi_v148_results.py").exists()):
         p.error("bfzi-root must be an existing BFZI repository checkout")
+    if (a.source_r <= 0 or a.load_r <= 0):
+        p.error("source and load resistances must be positive")
     if min(a.voltage,a.step,a.heat,a.cool,a.restart) <= 0:
         p.error("drive voltage and times must be positive")
     sys.path.insert(0,str(a.bfzi_root.resolve()))
@@ -46,7 +50,8 @@ def main(argv=None):
     data=(calc.build_circle_data("M4") if a.sample=="M4"
           else calc.base.build_dual_data(a.sample))
     backend=BFZIV148Adapter(data,calc,sea_alpha=a.sea_alpha)
-    extra=np.diag([.5-1j*backend.omega*backend.air[i,i] for i in range(2)])
+    extra=np.diag([a.source_r-1j*backend.omega*backend.air[0,0],
+                   a.load_r-1j*backend.omega*backend.air[1,1]])
     et=BFZIV148ET(backend,external=extra)
     duration=a.heat+a.cool+a.restart
     times=np.unique(np.r_[np.arange(0,duration,a.step),
@@ -72,6 +77,10 @@ def main(argv=None):
                             / np.linalg.norm(archive))
     rows=[]
     for s in trace:
+        v=drive(s.time)
+        p_in=float(.5*np.real(np.vdot(v,s.currents)))
+        p_load=float(.5*a.load_r*abs(s.currents[1])**2)
+        p_src=float(.5*a.source_r*abs(s.currents[0])**2)
         rows.append({
             "time_s":s.time,
             "drive":"on" if np.any(abs(s.currents)>0) else "off",
@@ -86,6 +95,10 @@ def main(argv=None):
                 abs(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents))
                     -s.sea_power)/max(abs(s.sea_power),1e-30)),
             "Pcu_W":s.copper_power.tolist(),
+            "Pinput_W":p_in,
+            "Pload_W":p_load,
+            "Psource_loss_W":p_src,
+            "efficiency":p_load/p_in if p_in>0 else 0.,
             "heat_input_W":s.heat_power,
             "stored_heat_J":s.energy,
             "Tsea_max_K":float(et.amb+s.temp[:et.count].max()),
@@ -113,6 +126,9 @@ def main(argv=None):
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archived_Zsea_relative_error":archive_rel,
         "sea_alpha_per_K":a.sea_alpha,
+        "source_resistance_ohm":a.source_r,
+        "load_resistance_ohm":a.load_r,
+        "external_Z_ohm":pair(extra),
         "ambient_K":et.amb,
         "fields_npz":str(fields),
         "trace":rows
@@ -128,6 +144,8 @@ def main(argv=None):
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archive_relative_error":archive_rel,
         "max_sea_power_relative_gap":max(r["Psea_port_volume_relative_gap"] for r in rows),
+        "efficiency_first":rows[0]["efficiency"],
+        "efficiency_last":rows[-1]["efficiency"],
         "sea_P_first_W":rows[0]["Psea_volume_W"],
         "max_temperature_K":max(r["Tsea_max_K"] for r in rows),
     },indent=2))
