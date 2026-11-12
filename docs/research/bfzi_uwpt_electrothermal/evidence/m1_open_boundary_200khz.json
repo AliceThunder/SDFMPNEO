@@ -1,0 +1,80 @@
+{
+  "status": "M1 free-space boundary approximation: tested, physical reference OPEN",
+  "date": "2026-11-11",
+  "geometry": "two continuous rounded-square BFZI 2-turn coils, two independent sealed boxes, axis aligned",
+  "frequency_hz": 200000,
+  "sigma_S_m": 5,
+  "I_A": {
+    "tx": [
+      1,
+      0
+    ],
+    "rx": [
+      0.4,
+      0.3
+    ]
+  },
+  "corner_panels": 12,
+  "mesh": {
+    "scheme": "axis-aligned conforming tetra",
+    "fixed_inner_cube_half_width_m": 0.3,
+    "near_step_m": 0.12,
+    "far_step_m": 0.3,
+    "box_layers": 1,
+    "tetra": {
+      "R052": 4224,
+      "R075": 7800
+    }
+  },
+  "correction": {
+    "open_steps": 2,
+    "boundary_potential": "free-space Green potential of induced J: one constant current-volume moment per wet tetra, iterated prescribed_total BC",
+    "start": "secondary_zero"
+  },
+  "source_overlap_power_W": {
+    "zero_boundary": {
+      "R052": 0.0064949477121905895,
+      "R075": 0.006748644577116176
+    },
+    "corrected": {
+      "R052": 0.006361327604811717,
+      "R075": 0.006399750619012095
+    }
+  },
+  "volume_Joule_power_W": {
+    "zero_boundary": {
+      "R052": 0.006494947712190615,
+      "R075": 0.0067486445771163805
+    },
+    "corrected": {
+      "R052": 0.0063639105500383,
+      "R075": 0.006410723595900431
+    }
+  },
+  "closed_path_port_power_W": {
+    "corrected": {
+      "R052": 0.005582213908946181,
+      "R075": 0.0056525026372633335
+    }
+  },
+  "outer_R_relative_change": {
+    "zero_boundary": {
+      "Z": 0.06356000799007021,
+      "source_overlap_port_power": 0.03759226938485414
+    },
+    "corrected": {
+      "Z": 0.05013300659602353,
+      "source_overlap_port_power": 0.00600382991272075
+    }
+  },
+  "corrected_power_vs_Joule_relative": {
+    "R052": 0.0004058739050892739,
+    "R075": 0.001711659647181269
+  },
+  "tests": "13 passed in 16.47s, test_bfzi_m1_direct and test_bfzi_d2_galerkin",
+  "limits": [
+    "Outer Green field uses constant wet-tetra current moments, not exact integration",
+    "Two outer domains only, no 3D L2 convergence or independent high-fidelity confirmation",
+    "Open correction changes boundary energy dual and does not satisfy exact port-Joule closure; do not treat as certified teacher"
+  ]
+}
