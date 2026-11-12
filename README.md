@@ -1,10 +1,21 @@
-> **V2.1 直接 BFZI V148 数值回归优先：** `python run.py --mode bfzi-et-v148 --bfzi-root /path/to/BFZI --sample M4 --check-only --out runs/m4_check.json` 直接对照原 V148 海水复阻抗和 M4 存档（采用 1e−5 同算法回归阈值），通过后再用 `--source-r 0.5 --load-r 0.5` 运行动态电磁热闭环。时程现记录随温度变化的接收端负载功率、输入功率及传输效率。沙箱合成功率分账代数残差 **5.55e−17 W**。原始 BFZI M4 的真实回归/完整时程仍 OPEN。[V2.1 进度证据](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_original_bfzi_v148_et.md)。
+> **V2.1 最新实算（2026-11-12）：** 独立 BFZI V150 M4 的原复阻抗等温回归、30/100/150 V 完整通电—断电冷却—再启动时程已在 XEnergy 实跑。现支持原 BFZI 三维海水 **384 FV** 单元、两只封装各 **4×2×4 三维热单元**及两铜热态的动态反作用。原 FV `J²/σ` 与端口海水损耗约 1.15% 差额已定位到原投影非幂等性；新增同源端口弱形式 `--sea-heat port-weak` 后，端口功率/局部弱形式积分相对差最大 **4.19e−16**，原 `J²` 积分仍独立保存。联合 EM rank 8 / 热 rank 12 ROM 对留出 100 V 完整时程复 Z 相对误差 **1.57e−10**、封装三维温度最大绝对误差 **1.50e−4 K**；专项 **12 passed**。**[实测与方法](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_m4_pkg3d_weak.md)** · **[研究主线](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)**。
 
-> **V2.1 BFZI V148 动态热反馈运行修复（2026-11-12）：** 已修复原始 V148 热时程 `model.heat` 调用错误，采用热步迭代收敛改善空间热源—储热—环境散热一致性。沙箱合成双端口启停/再启动及热量平衡 **3 passed**，单步相对热收支不平衡 **6.30e−8**；等温 FV 投影复值对照最大差 **3.14e−16**。新增原 BFZI M4 存档复海水阻抗直接回归及端口/空间 Joule 差异输出。完整 M4 原算法计算仍需在有 BFZI checkout 的运行环境实跑。[本轮验证说明](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_original_bfzi_v148_et.md)。
+### 原 BFZI V150 动态电磁热运行
 
-> **V2.1 原始 BFZI V148 复阻抗动态热反作用入口已新增：** `python run.py --mode bfzi-et-v148 --bfzi-root /path/to/BFZI --sample M4 --out runs/bfzi_v148_dynamic.json`。直接复用独立 BFZI 的源/Green/resolvent/空气自感互感；空间温度通过原 FV 单元的 `σ_k(T_k)`、加权电势投影和局部质量修正更新**完整复数海水阻抗（含自感、互感反作用）**，同时由铜内部集肤复阻抗与热 FV 传导形成时间闭环。输出 JSON 复 Z/I/功率以及 NPZ 三维海水 T/q 历史；等温对照原 V148 阻抗记录误差。**完成代码接线，真实原 BFZI checkout 下的时程和物理精度仍 OPEN**。[详细设计与验证状态](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_original_bfzi_v148_et.md) · [V2.1 方案](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_DYNAMIC_ETNS_V2_1_EXECUTION_PLAN.md)。
+需准备独立 `AliceThunder/BFZI` 的 `bfzi-v150-turn-scan` 本地 checkout；M4 复阻抗仍复用原 V148 Green/resolvent 物理内核。
 
-> **V2.1 动态电磁—热闭环代码原型已新增（2026-11-12）：** `python run.py --mode bfzi-et-dynamic --out runs/bfzi_et_dynamic.json`，使用现有 BFZI Green–Galerkin R/L/K 的空间温度反馈 `R[T(x,t)]→Zsea(t)`，联合铜复阻抗 `Zcu(T)`、固定几何空气自感/互感、两端口补偿电路、三维海水热场和铜/封装热态，按真实时间完成通电、关断冷却、再启动。输出复 `Z11/Z12/Z22(t)`、两端口 I、海水空间 q/T、铜/封装温度和热量历史。沙箱合成最小试算 PASS；真实 BFZI 场景、原独立 BFZI V148 后端接通和物理参考精度 OPEN。[代码及验证说明](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_dynamic_et_prototype.md) · [权威方案 V2.1](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_DYNAMIC_ETNS_V2_1_EXECUTION_PLAN.md)。
+```powershell
+# 原 BFZI 完整复阻抗等温回归
+python run.py --mode bfzi-et-v148 --bfzi-root D:\work\bfzi-et-v2.1\BFZI --sample M4 --check-only --out runs/m4_check.json
+
+# 150 V 高功率，双封装三维温度、原 BFZI 端口一致空间热源
+python run.py --mode bfzi-et-v148 --bfzi-root D:\work\bfzi-et-v2.1\BFZI --sample M4 --voltage 150 --sea-heat port-weak --pkg-shape 4 2 4 --pkg-k .25 --step 60 --heat 240 --cool 180 --restart 180 --out runs/m4_pkg3d_weak_150v.json
+
+# 用 30 V 与 150 V 原直接法快照训练物理电磁/热 ROM，留出 100 V 验证
+python run.py --mode bfzi-et-v148 --bfzi-root D:\work\bfzi-et-v2.1\BFZI --sample M4 --voltage 100 --sea-heat port-weak --pkg-shape 4 2 4 --pkg-k .25 --rom-train runs/m4_pkg3d_weak_30v.npz runs/m4_pkg3d_weak_150v.npz --rom-rank 8 --heat-rom-train runs/m4_pkg3d_weak_30v.npz runs/m4_pkg3d_weak_150v.npz --heat-rom-rank 12 --out runs/m4_pkg3d_weak_rom_100v.json
+```
+
+输出 `JSON` 包含完整复 Z、两端口 I、功率/效率、海水/封装/铜温度和分材料能量平衡；配套 `NPZ` 包含三维海水 `J`/`q`、三维封装温度及各单元坐标、两铜时程。使用 `--sea-heat j2` 可切换回原空间 `J²/σ` 热源。
 
 > **当前权威研发方案：[UMFC–BFZI 动态电磁—热双向反作用神经代理系统 V2.1](docs/research/bfzi_uwpt_electrothermal/UMFC_BFZI_DYNAMIC_ETNS_V2_1_EXECUTION_PLAN.md)**（2026-11-11）。直接复用独立 [BFZI](https://github.com/AliceThunder/BFZI) 已有统一几何、海水复阻抗和空气自感互感算法；新增铜/封装/海水三维热传导、温度对**完整复 2×2 Z（铜损耗、海水损耗及有效自感/互感）**的动态反作用，以及电路电流—空间热源—温度连续时间演化。开发顺序：BFZI 电磁适配 → 空间损耗/热模型 → **启动、运行、关断冷却、再启动的真实时间闭环** → 电磁/热 ROM → 神经加速。[项目进度](docs/research/bfzi_uwpt_electrothermal/PROJECT_PROGRESS.md)。此前 V2.0 和 BFZI-PDR/D2 文档保留历史与独立物理对照用途。
 
