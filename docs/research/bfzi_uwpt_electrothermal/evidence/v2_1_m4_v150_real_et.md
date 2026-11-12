@@ -59,3 +59,25 @@ python run.py --mode bfzi-et-v148 --bfzi-root D:\work\bfzi-et-v2.1\BFZI --sample
 - 比较数据：`runs/m4_dynamic_15v.json/.npz`、`runs/m4_rom_15v.json/.npz`、`runs/m4_rom_15v_metrics.json`；可由 `examples/bfzi_rom_compare.py` 重算对照。
 
 **阶段判定：** 原 BFZI M4 等温双端口复阻抗真实回归 PASS，原算法完整电磁—电路—空间海水热—铜/封装热时程已执行并归档；首个同源物理电磁 ROM 通过留出 15 V 时程。接下来重点是海水端口—空间 Joule 约 1.15% 的离散差异、热 ROM、神经动态代理和跨几何/历史/热参考验证。
+
+
+## 热—电磁联合 ROM：原始 BFZI 15 V 留出完整时程（PASS）
+
+继电磁投影 ROM 之后，新增 `sdfmpneo_bfzi/v148_heat_rom.py::BFZIV148HeatROM`，使用同一 3 V/30 V 真实空间温度快照构造海水 384 FV+封装 2 节点+铜 2 节点的**热容量加权空间 POD**。固定保留一个全空间常数模式，使热容/导热/环境散热/Joule 方程在降阶测试空间保留总储热平衡。运行中持续使用原 `H`、海水 q、铜损耗及温度依赖原 BFZI 电磁 ROM，不另构造经验发热方程。
+
+- 热训练：22 个完整时刻热快照，rank 8，POD 保留能量 **0.9999999999999829**。电磁 ROM 仍为 44 列/rank 8。
+- 留出 15 V：完整 600 s 通电→关断冷却→再启动，11 时刻，与已归档原 BFZI 直接法 `runs/m4_dynamic_15v` 独立比较。
+- 复 `Z(t)` 相对 L2 **6.5162698119e-12**；最大元素复差 **2.0847444965e-10 Ω**。
+- 单位端口海水 J 相对 L2 **9.8464290253e-9**；三维 q 相对 L2 **5.2982223931e-9**。
+- 全空间海水 T 最大绝对差 **2.2406925382e-7 K**，封装 **6.0649193756e-7 K**、铜 **5.8355072952e-7 K**；效率最大绝对差 **4.9593551488e-11**。
+- ROM 时程最大热量收支相对差 **9.4633328038e-11**。
+- 同机本次时程计时：原完整 BFZI **1.079998 s**、联合电磁热 ROM **0.866996 s**，约 **1.2457×**。基训练与前置场构造不计入此时程计时；后续更大网格与更多热步需重新度量。
+
+复现命令：
+
+```powershell
+python run.py --mode bfzi-et-v148 --bfzi-root D:\work\bfzi-et-v2.1\BFZI --sample M4 --voltage 15 --step 60 --heat 240 --cool 180 --restart 180 --source-r .5 --load-r .5 --rom-train runs/m4_dynamic.npz runs/m4_dynamic_30v.npz --rom-rank 8 --heat-rom-train runs/m4_dynamic.npz runs/m4_dynamic_30v.npz --heat-rom-rank 8 --out runs/m4_et_rom_15v.json
+python examples/bfzi_rom_compare.py --direct runs/m4_dynamic_15v.json --rom runs/m4_et_rom_15v.json --out runs/m4_et_rom_15v_metrics.json
+```
+
+全部数值与三维空间快照已保存为 `runs/m4_et_rom_15v.json`、`runs/m4_et_rom_15v.npz`、`runs/m4_et_rom_15v_metrics.json`。原 BFZI 求解器未被复制或改写；电磁 ROM 与热 ROM 均保留温度反馈、双端口复电路和对应原空间热源。神经代理与更大几何/更宽运行历史的误差—速度外推验证仍是后续工作。
