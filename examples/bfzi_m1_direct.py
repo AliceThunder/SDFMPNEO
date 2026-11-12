@@ -29,6 +29,13 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--frequency", type=float, default=200000.)
     ap.add_argument("--mesh", type=Path, help="Physical-tag Gmsh 2.2 mesh")
+    ap.add_argument("--generate-msh", type=Path, help="Build conforming arbitrary-SE3 Gmsh OCC mesh")
+    ap.add_argument("--mesh-size", type=float, default=.25)
+    ap.add_argument("--near-mesh-size", type=float, default=.08)
+    ap.add_argument("--outer-radius", type=float)
+    ap.add_argument("--tx-rotvec", type=float, nargs=3, default=(0, 0, 0))
+    ap.add_argument("--tx-shift", type=float, nargs=3, default=(0, 0, 0))
+    ap.add_argument("--rx-shift", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--far-step", type=float, default=.50)
     ap.add_argument("--panels", type=int, default=3)
     ap.add_argument("--rx-rotvec", type=float, nargs=3, default=(0, 0, 0))
@@ -38,12 +45,25 @@ def main(argv=None):
     ap.add_argument("--output", type=Path)
     args = ap.parse_args(argv)
 
+    if args.mesh and args.generate_msh:
+        ap.error("Use one of --mesh or --generate-msh")
     scene = build_demo_scene()
-    rot = Rotation.from_rotvec(args.rx_rotvec).as_matrix()
-    rx = scene.receiver
-    rx = replace(rx, pose=RigidPose(rot@rx.pose.rotation, rx.pose.center))
-    scene = replace(scene, receiver=rx)
-    if args.mesh:
+    tx, rx = scene.assemblies
+    t_rot = Rotation.from_rotvec(args.tx_rotvec).as_matrix()
+    r_rot = Rotation.from_rotvec(args.rx_rotvec).as_matrix()
+    tx = replace(tx, pose=RigidPose(t_rot@tx.pose.rotation,
+                                   tx.pose.center+np.asarray(args.tx_shift)))
+    rx = replace(rx, pose=RigidPose(r_rot@rx.pose.rotation,
+                                   rx.pose.center+np.asarray(args.rx_shift)))
+    scene = replace(scene, transmitter=tx, receiver=rx,
+                    outer_radius=(args.outer_radius or scene.outer_radius))
+    if args.generate_msh:
+        from sdfmpneo_bfzi.direct3d_gmsh_physical import generate_physical_bfzi_msh22
+        generate_physical_bfzi_msh22(scene, args.generate_msh,
+            mesh_size_m=args.mesh_size, near_mesh_size_m=args.near_mesh_size)
+        mesh = bfzi_mesh_from_gmsh22(args.generate_msh, scene)
+        mesh_kind = "generated physical-tag Gmsh OCC SE(3)"
+    elif args.mesh:
         mesh = bfzi_mesh_from_gmsh22(args.mesh, scene)
         mesh_kind = "physical-tag Gmsh OCC SE(3)"
     else:
