@@ -106,3 +106,11 @@ def test_v148_fv_heat_and_off_cooling():
     assert np.allclose(steps[-1].sea_q,0)
     assert steps[2].energy>0
     assert abs(steps[2].impedance[0,0]-steps[0].impedance[0,0])>1e-9
+    # Identical drive at cold start and after a different thermal history
+    # must give a distinct Z and current on restart.
+    restart=et.trajectory([0.,1.,2.,3.,4.,6.,7.],
+        lambda tm: [1 if tm<=2 or tm>=7 else 0,0])
+    assert abs(restart[-1].currents[0])>0
+    assert restart[-1].temp.max()>0
+    assert abs(restart[-1].impedance[0,0]-restart[0].impedance[0,0])>1e-6
+    assert restart[-1].sea_q.shape==(et.count,)
