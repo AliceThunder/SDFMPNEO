@@ -1,0 +1,147 @@
+"""Transient thermo-electromagnetic loop on the *original* BFZI FV mesh.
+
+Each time step calls BFZIV148Adapter.solve(Tsea,Tcu), then re-solves
+the two-port circuit, heats original seawater FV cells, and advances
+sea/package/copper temperatures. Sea heat conduction uses the original
+BFZI internal FV face geometry, without an unrelated mesh or FEM model.
+"""
+from __future__ import annotations
+
+import numpy as np
+from scipy.sparse import coo_matrix, diags
+from scipy.sparse.linalg import factorized
+from scipy.spatial import cKDTree
+
+from .dynamic_et import ETStep
+
+
+class BFZIV148ET:
+    def __init__(self, model, *, ambient=293.15, external=None,
+                 sea_rhoc=4.0e6, sea_k=.6,
+                 pkg_rhoc=1.5e6, cu_rhoc=3.45e6,
+                 pkg_sea_g=.6, cu_pkg_g=.8, outer_h=10.):
+        self.model = model
+        self.amb = float(ambient)
+        self.count = len(model.vol)
+        self.n = self.count + 4
+        self.pkg = slice(self.count,self.count+2)
+        self.cu = slice(self.count+2,self.count+4)
+        self.tree = cKDTree(model.points)
+        self.external = (np.zeros((2,2),complex)
+                         if external is None else np.asarray(external,complex))
+        if self.external.shape != (2,2) or not np.isfinite(self.external).all():
+            raise ValueError("external impedance must be a finite 2x2 matrix")
+        if np.linalg.eigvalsh((self.external+self.external.conj().T)/2).min() < -1e-12:
+            raise ValueError("external circuit must be passive")
+        self.cap = np.zeros(self.n)
+        self.cap[:self.count] = sea_rhoc*model.vol
+        self.boxes = []
+        sample = model.base["sample"]
+        cfg = model.base["cfg"]
+        for p,fam in enumerate(model.base["families"]):
+            prefix = f"coil{p+1}_" if len(model.base["families"])>1 else ""
+            half = np.array([
+                float(sample.get(prefix+"package_x_half_mm",102.))*1e-3,
+                float(cfg.get("BSR_PACKAGE_NORMAL_HALF_M",.0055)),
+                max(float(sample.get(prefix+"package_z_pos_half_mm",102.)),
+                    float(sample.get(prefix+"package_z_neg_half_mm",102.)))*1e-3
+            ])
+            center = np.asarray(fam.coil.center,float)
+            self.boxes.append((center,half))
+            self.cap[self.count+p] = pkg_rhoc*8*np.prod(half)
+            line = model.copper.lines[p].line_elements
+            radius = model.copper.scene.assemblies[p].wire_radius
+            self.cap[self.count+2+p] = (
+                cu_rhoc*np.pi*radius**2*np.linalg.norm(line,axis=1).sum())
+        if np.any(self.cap <= 0):
+            raise ValueError("invalid heat capacities")
+        rows,cols,vals = [],[],[]
+        def link(i,j,cond):
+            if cond <= 0:
+                return
+            rows.extend((i,j,i,j))
+            cols.extend((i,j,j,i))
+            vals.extend((cond,cond,-cond,-cond))
+        for i,j,axis,dist,area,direction in model.proj.edges:
+            link(i,j,sea_k*area/dist)
+        for p,(center,half) in enumerate(self.boxes):
+            dist=np.linalg.norm(
+                np.maximum(np.abs(model.points-center)-half,0),axis=1)
+            take=np.argsort(dist)[:min(12,self.count)]
+            g = 1/np.maximum(dist[take],.005)
+            g /= g.sum()
+            for cell,weight in zip(take,g):
+                link(int(cell),self.count+p,pkg_sea_g*weight)
+            link(self.count+p,self.count+2+p,cu_pkg_g)
+        amb_g = np.zeros(self.n)
+        for i,axis,side,area,is_outer in model.proj.boundary:
+            if is_outer:
+                amb_g[i] += outer_h*area
+        self.H = coo_matrix((vals,(rows,cols)),shape=(self.n,self.n)).tocsr()
+        self.H += diags(amb_g)
+        self._factor = {}
+
+    def zeros(self):
+        return np.zeros(self.n)
+
+    def temperature_at(self,points,state):
+        pts = np.asarray(points,float).reshape(-1,3)
+        theta=np.asarray(state,float)
+        if theta.shape != (self.n,):
+            raise ValueError("invalid thermal state")
+        out=self.amb+theta[self.tree.query(pts)[1]]
+        for p,(center,half) in enumerate(self.boxes):
+            inside=np.all(np.abs(pts-center)<=half,axis=1)
+            out[inside]=self.amb+theta[self.count+p]
+        return out
+
+    def em(self,state,drive):
+        theta=np.asarray(state,float)
+        v=np.asarray(drive,complex)
+        if theta.shape != (self.n,) or v.shape != (2,):
+            raise ValueError("invalid thermal state or two-port voltage")
+        m=self.model.solve(self.amb+theta[:self.count],
+                           self.amb+theta[self.cu])
+        I=np.linalg.solve(m.total_z+self.external,v)
+        q,cu=m.heat(m,I)
+        power=np.zeros(self.n)
+        power[:self.count]=q*self.model.vol
+        power[self.cu]=cu
+        return m,I,power,q,cu
+
+    def advance(self,state,drive,dt,*,iterations=3):
+        if not np.isfinite(dt) or dt<=0:
+            raise ValueError("positive thermal time step required")
+        old=np.asarray(state,float)
+        if old.shape!=(self.n,):
+            raise ValueError("invalid thermal state")
+        if dt not in self._factor:
+            self._factor[dt]=factorized(
+                (diags(self.cap)+dt*self.H).tocsc())
+        solve=self._factor[dt]
+        theta=old.copy()
+        for _ in range(iterations):
+            _,_,heat,_,_=self.em(theta,drive)
+            nxt=solve(self.cap*old+dt*heat)
+            if np.max(abs(nxt-theta)) < 1e-7:
+                break
+            theta=nxt
+        return nxt
+
+    def trajectory(self,times,voltage_at,*,state=None):
+        times=np.asarray(times,float)
+        if (times.ndim!=1 or len(times)<2 or times[0]!=0
+                or np.any(np.diff(times)<=0)):
+            raise ValueError("times must start at zero and strictly increase")
+        theta=self.zeros() if state is None else np.asarray(state,float).copy()
+        history=[]
+        for k,now in enumerate(times):
+            v=np.asarray(voltage_at(float(now)),complex)
+            if k:
+                theta=self.advance(theta,v,float(now-times[k-1]))
+            m,I,heat,q,cu=self.em(theta,v)
+            history.append(ETStep(
+                float(now),theta.copy(),m.total_z,m.sea_z,I,
+                float(np.dot(q,self.model.vol)),cu,float(heat.sum()),
+                float(self.cap@theta),q.copy()))
+        return history
