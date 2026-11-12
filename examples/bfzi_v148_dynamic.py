@@ -103,8 +103,19 @@ def main(argv=None):
 
     trace=et.trajectory(times,drive)
     rows=[]
-    for s in trace:
+    for k,s in enumerate(trace):
         v=drive(s.time)
+        if k:
+            dt=s.time-trace[k-1].time
+            # Implicit FV heat step: storage + ambient dissipation = Joule heat.
+            p_out=float(np.sum(et.H@s.temp))
+            defect=(s.energy-trace[k-1].energy)+dt*(p_out-s.heat_power)
+            scale=max(abs(s.energy-trace[k-1].energy),
+                      dt*abs(p_out),dt*abs(s.heat_power),1e-30)
+            heat_gap=float(abs(defect)/scale)
+        else:
+            p_out=0.
+            heat_gap=None
         p_in,p_load,p_src,eta = circuit_power(
             v,s.currents,a.source_r,a.load_r)
         rows.append({
@@ -127,6 +138,8 @@ def main(argv=None):
             "efficiency":eta,
             "heat_input_W":s.heat_power,
             "stored_heat_J":s.energy,
+            "ambient_cooling_W":p_out,
+            "thermal_balance_relative_gap":heat_gap,
             "Tsea_max_K":float(et.amb+s.temp[:et.count].max()),
             "Tpkg_K":(et.amb+s.temp[et.pkg]).tolist(),
             "Tcu_K":(et.amb+s.temp[et.cu]).tolist(),
@@ -169,6 +182,8 @@ def main(argv=None):
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archive_relative_error":archive_rel,
         "max_sea_power_relative_gap":max(r["Psea_port_volume_relative_gap"] for r in rows),
+        "max_thermal_balance_relative_gap":max(
+            r["thermal_balance_relative_gap"] for r in rows[1:]),
         "efficiency_first":rows[0]["efficiency"],
         "efficiency_last":rows[-1]["efficiency"],
         "sea_P_first_W":rows[0]["Psea_volume_W"],
