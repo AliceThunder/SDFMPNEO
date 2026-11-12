@@ -114,3 +114,16 @@ def test_v148_fv_heat_and_off_cooling():
     assert restart[-1].temp.max()>0
     assert abs(restart[-1].impedance[0,0]-restart[0].impedance[0,0])>1e-6
     assert restart[-1].sea_q.shape==(et.count,)
+
+
+def test_coupled_heat_balance():
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.eye(2)*.5)
+    dt=1.
+    new=et.advance(et.zeros(),[1,0],dt)
+    _,_,q,_,_=et.em(new,[1,0])
+    deposited=dt*q.sum()
+    stored=et.cap@new
+    cooling=dt*np.sum(et.H@new)
+    assert abs(deposited-stored-cooling) < 1e-5*deposited
