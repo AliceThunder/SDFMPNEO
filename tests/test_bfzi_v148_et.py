@@ -47,6 +47,26 @@ def test_temperature_weighted_fv_projection():
     b=scaled.project_one(field)
     c=warm.project_one(field)
     assert np.allclose(a,b,atol=1e-12)
+    # Independently reconstruct original BFZI fv_internal_only projector.
+    A=(base.B.T@sp.diags(base.weights)@base.B).tolil()
+    A[0,:]=0.; A[:,0]=0.; A[0,0]=1.
+    from scipy.sparse.linalg import factorized
+    solve=factorized(A.tocsc())
+    edge=np.array([.5*(field[i,k]+field[j,k])*direction
+                   for i,j,k,d,area,direction in base.edges])
+    rhs=np.asarray(base.B.T@(base.weights*edge))
+    rhs-=rhs.sum()/base.n
+    rhs[0]=0
+    phi=solve(rhs.real)+1j*solve(rhs.imag)
+    grad=np.zeros_like(field)
+    denom=np.zeros((base.n,3))
+    for i,j,k,d,area,direction in base.edges:
+        ge=(phi[j]-phi[i])*direction/d
+        grad[i,k]+=area*ge; grad[j,k]+=area*ge
+        denom[i,k]+=area; denom[j,k]+=area
+    good=denom>0
+    grad[good]/=denom[good]
+    assert np.allclose(a,field-grad,atol=1e-12)
     assert np.linalg.norm(a-c)/np.linalg.norm(a) > .01
 
 
