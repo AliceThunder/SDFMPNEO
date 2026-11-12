@@ -27,12 +27,9 @@ def main():
     cr=np.asarray([x["Tcu_K"] for x in r])
     ef=np.asarray([x["efficiency"] for x in f])
     er=np.asarray([x["efficiency"] for x in r])
-    cp_f=np.asarray([x["Qcu_to_pkg_W"] for x in f])
-    cp_r=np.asarray([x["Qcu_to_pkg_W"] for x in r])
-    ps_f=np.asarray([x["Qpkg_to_sea_W"] for x in f])
-    ps_r=np.asarray([x["Qpkg_to_sea_W"] for x in r])
-    mp_f=np.asarray([x["Epkg_J"] for x in f])
-    mp_r=np.asarray([x["Epkg_J"] for x in r])
+    pkg_fields=("Qcu_to_pkg_W","Qpkg_to_sea_W","Epkg_J")
+    has_pkg=all(all(k in x for k in pkg_fields) for x in f+r)
+    has_energy=all("material_balance_relative_gap" in x for x in f[1:]+r[1:])
     with np.load(a.direct.with_suffix(".npz")) as d, np.load(a.rom.with_suffix(".npz")) as q:
         jf=np.asarray(d["Jsea_unit_A_m2_per_A"])
         jr=np.asarray(q["Jsea_unit_A_m2_per_A"])
@@ -60,20 +57,25 @@ def main():
         "Tpkg_max_absolute_K":float(np.max(abs(tpkg_f-tpkg_r))),
         "Tcu_max_absolute_K":float(np.max(abs(cf-cr))),
         "eta_max_absolute":float(np.max(abs(ef-er))),
-        "Qcu_to_pkg_max_absolute_W":float(np.max(abs(cp_f-cp_r))),
-        "Qpkg_to_sea_max_absolute_W":float(np.max(abs(ps_f-ps_r))),
-        "Epkg_max_absolute_J":float(np.max(abs(mp_f-mp_r))),
-        "rom_material_balance_max":max(
-            max(x["material_balance_relative_gap"].values())
-            for x in r[1:]),
-        "direct_material_balance_max":max(
-            max(x["material_balance_relative_gap"].values())
-            for x in f[1:]),
         "direct_trajectory_sec":t_full,
         "rom_trajectory_sec":t_rom,
         "speedup":t_full/max(t_rom,1e-30),
         "rom_thermal_balance_max":max(x["thermal_balance_relative_gap"] or 0 for x in r)
     }
+    if has_pkg:
+        for name,key in (
+            ("Qcu_to_pkg_max_absolute_W","Qcu_to_pkg_W"),
+            ("Qpkg_to_sea_max_absolute_W","Qpkg_to_sea_W"),
+            ("Epkg_max_absolute_J","Epkg_J")
+        ):
+            vf=np.asarray([x[key] for x in f])
+            vr=np.asarray([x[key] for x in r])
+            data[name]=float(np.max(abs(vf-vr)))
+    if has_energy:
+        data["rom_material_balance_max"]=max(
+            max(x["material_balance_relative_gap"].values()) for x in r[1:])
+        data["direct_material_balance_max"]=max(
+            max(x["material_balance_relative_gap"].values()) for x in f[1:])
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(data,indent=2),encoding="utf-8")
     print(json.dumps(data,indent=2))
