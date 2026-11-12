@@ -77,12 +77,12 @@ def main(argv=None):
                               / max(np.linalg.norm(z_arch),1e-30))
     baseline={
         "sample":a.sample,"frequency_hz":backend.omega/(2*np.pi),
-        "baseline_tolerance":1e-3,
+        "baseline_tolerance":1e-5,
         "v148_isothermal_Zsea_relative_error":warm_rel,
         "v148_M4_archived_Zsea_relative_error":archive_rel,
         "warm_Zsea_ohm":pair(cold.sea_z),
         "original_Zsea_ohm":pair(z_ref),
-        "isothermal_baseline_pass":bool(warm_rel<=1e-3),
+        "isothermal_baseline_pass":bool(warm_rel<=1e-5),
     }
     if a.check_only:
         a.out.parent.mkdir(parents=True,exist_ok=True)
