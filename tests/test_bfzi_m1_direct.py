@@ -115,3 +115,20 @@ def test_fixed_core_grid_coordinates_across_R():
     x = lambda m: np.unique(np.round(m.nodes[:,0], 12))
     inner = lambda z: z[(z>=-.30) & (z<=.30)]
     assert_allclose(inner(x(one)), inner(x(two)), atol=1e-12)
+
+
+def test_m1_open_boundary_couples_seawater():
+    scene = build_demo_scene()
+    mesh = axis_aligned_bfzi_tetra_mesh(
+        scene, far_step_m=.50, box_layers=1)
+    closed = solve_m1(scene, mesh, 200000, panels_per_corner=3)
+    opened = solve_m1(scene, mesh, 200000,
+                      panels_per_corner=3, open_steps=2)
+    i = np.array([1., .4+.3j])
+    assert np.isfinite(opened.z_sea).all()
+    assert opened.volume_power(i) > 0
+    assert np.linalg.norm(opened.z_sea-closed.z_sea) > 1e-6
+    assert abs(opened.port_sea_power(i)-opened.volume_power(i)) / opened.volume_power(i) < .01
+    assert_allclose(opened.z_sea, opened.z_sea.T, atol=5e-8)
+    with pytest.raises(ValueError, match="open_steps"):
+        solve_m1(scene, mesh, 200000, panels_per_corner=3, open_steps=-1)

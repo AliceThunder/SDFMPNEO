@@ -61,12 +61,44 @@ def _weighted_closed_source(strands, field_factory):
     return field
 
 
+def _green_boundary(mesh, reaction):
+    """Free-space secondary A on the outer surface from FEM seawater J.
+
+    One constant volume-current moment per wet tetra; exterior queries
+    stay away from cell centroids. This is a boundary *approximation*;
+    the full solution is refined by fixed-point re-solves.
+    """
+    wet=np.flatnonzero(mesh.sigma>0)
+    xyz=mesh.nodes[mesh.tetrahedra[wet]]
+    pts=xyz.mean(axis=1)
+    v=abs(np.linalg.det(xyz[:,1:,:]-xyz[:,0,None,:]))/6
+    jv=reaction.current_at_cells[:,wet,:]*v[None,:,None]
+    from .direct3d_aphi import MU0
+
+    def field(x):
+        x=np.asarray(x,dtype=float)
+        out=np.zeros((len(jv),len(x),3),dtype=complex)
+        for start in range(0,len(x),16):
+            r=np.linalg.norm(x[start:start+16,None,:]-pts[None,:,:],axis=2)
+            if np.any(r<=0):
+                raise ValueError("Green boundary point intersects current cell center")
+            out[:,start:start+16,:]=(
+                MU0/(4*np.pi)*np.einsum(
+                    'kn,pnc->pkc',1/r,jv,optimize=True))
+        return out
+    return field
+
+
 def solve_closed_primary_secondary(mesh, frequency_hz, source_strands, *,
-                                   gauge='tree'):
+                                   gauge='tree', open_steps=0):
     """Solve analytic-primary / FEM-material-reaction A-phi directly.
 
     Uniform mu=mu0, exp(+iwt), insulating enclosed ideal closed strands.
-    The outer *reaction* tangential A is zero on the finite domain.
+    With open_steps=0, the outer reaction tangential A is zero.
+    With open_steps>0, use free-space volume-current Green traces
+    (one moment per wet tetra) as prescribed reaction boundary data
+    and re-solve the same PDE. This is a finite-step approximate
+    open-boundary coupling, requiring independent h/R verification.
     Returned volume_overlap_z is an auxiliary finite-domain energy dual,
     NOT automatically the actual closed-wire port impedance:
     finite-boundary terms and discretization may separate it from
@@ -79,9 +111,22 @@ def solve_closed_primary_secondary(mesh, frequency_hz, source_strands, *,
         port, closed_polyline_potential) for port in source_strands)
     b = tuple(_weighted_closed_source(
         port, closed_polyline_magnetic) for port in source_strands)
+    if not isinstance(open_steps,int) or isinstance(open_steps,bool) or not 0<=open_steps<=10:
+        raise ValueError("open_steps must be an integer 0..10")
     response = solve_aphi(
         mesh, frequency_hz, list(a), outer_bc="secondary_zero",
         gauge=gauge)
+    for _ in range(open_steps):
+        boundary=_green_boundary(mesh,response)
+        prescribed=tuple(
+            (lambda x,k=k,boundary=boundary: a[k](x)+boundary(x)[k])
+            for k in range(len(a))
+        )
+        response=solve_aphi(
+            mesh,frequency_hz,list(a),
+            outer_bc="prescribed_total",
+            boundary_total_potentials=prescribed,
+            gauge=gauge)
     line_z = closed_source_port_impedance_exact(
         response, frequency_hz, source_strands)
     return PrimarySecondary3D(

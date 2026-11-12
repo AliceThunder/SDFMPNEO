@@ -61,6 +61,8 @@ def main(argv=None):
                     help="Fixed inner cube half-width for comparable outer-R meshes")
     ap.add_argument("--box-layers", type=int, default=1)
     ap.add_argument("--panels", type=int, default=6)
+    ap.add_argument("--open-steps", type=int, default=0,
+                    help="Free-space seawater reaction A boundary correction iterations")
     ap.add_argument("--rx-rotvec", type=float, nargs=3, default=(0, 0, 0))
     ap.add_argument("--probe", type=float, nargs=3, action="append")
     ap.add_argument("--currents", type=float, nargs=4, default=(1, 0, .4, .3),
@@ -98,7 +100,8 @@ def main(argv=None):
             near_step_m=args.near_step, inner_core_radius_m=args.core_radius)
         mesh_kind = "axis-aligned conforming smoke"
     result = solve_m1(scene, mesh, args.frequency,
-                      panels_per_corner=args.panels)
+                      panels_per_corner=args.panels,
+                      open_steps=args.open_steps)
     i = np.asarray([complex(args.currents[0], args.currents[1]),
                     complex(args.currents[2], args.currents[3])])
     x = np.asarray(args.probe or [[0, 0, 0], [.12, 0, 0]], dtype=float)
@@ -108,7 +111,10 @@ def main(argv=None):
     p_port = result.port_sea_power(i)
     p_closed = result.closed_port_sea_power(i)
     report = {
-        "status": "M1 same-source power closure PASS; D2 reference accuracy OPEN",
+        "status": "M1 open-boundary prototype; h/R accuracy OPEN" if args.open_steps else
+                  "M1 finite model same-source power closure PASS; D2 reference accuracy OPEN",
+        "open_steps": args.open_steps,
+        "open_boundary": "volume Green J coupling, piecewise constant wet-tetra quadrature" if args.open_steps else "zero secondary A tangential trace",
         "sea_impedance_readout": "free-space source-J overlap on finite-domain induced current",
         "closed_path_readout": "FEM reaction-A line integral, separate boundary diagnostic",
         "scene": "two real closed continuous BFZI spirals / dual insulating boxes",

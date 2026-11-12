@@ -1,8 +1,9 @@
 """M1 physical two-port BFZI seawater direct solution.
 
-Analytic closed primary sources drive the 3-D A-phi PDE.  All queried
-E/J/B/q and the induced closed-path Z share this solved material reaction.
-Finite-box, tetrahedral and source-chord convergence remain independent.
+Analytic closed primary sources drive the 3-D A-phi PDE. Queried
+E/J/B/q and source-J overlap Z use the same seawater reaction. A finite
+outer boundary may be improved with an optional free-space Green trace.
+Physical h/R, boundary Green and source-chord convergence remain separate.
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ class M1Direct:
     physical: object
     sources: object
     paths: tuple
+    open_steps: int = 0
 
     @property
     def z_sea(self):
@@ -114,7 +116,8 @@ class M1Direct:
         }
 
 
-def solve_m1(scene, mesh: TetraMesh, frequency_hz, *, panels_per_corner=6):
+def solve_m1(scene, mesh: TetraMesh, frequency_hz, *,
+             panels_per_corner=6, open_steps=0):
     """Compute two independently excited closed UMFC ports on a real 3-D mesh.
 
     The mesh must conform to both insulating packages and the outer domain.
@@ -127,6 +130,6 @@ def solve_m1(scene, mesh: TetraMesh, frequency_hz, *, panels_per_corner=6):
     paths = tuple(((1., polygonal_port_vertices(
         a, panels_per_corner=panels_per_corner)),) for a in scene.assemblies)
     physical = solve_closed_primary_secondary(
-        mesh, frequency_hz, paths, gauge="tree")
+        mesh, frequency_hz, paths, gauge="tree", open_steps=open_steps)
     sources = build_bfzi_source(scene, frequency_hz, order=3)
-    return M1Direct(scene, float(frequency_hz), physical, sources, paths)
+    return M1Direct(scene, float(frequency_hz), physical, sources, paths, open_steps)
