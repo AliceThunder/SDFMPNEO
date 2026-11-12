@@ -16,14 +16,13 @@
 
 在原 `solve_closed_primary_secondary` 上增加可选参数 `open_steps`，先计算零边界解，再用得到的海水电流近似外域反应矢势：
 
-[
-mathbf A_{mathrm{react}}(mathbf x)
-approxrac{mu_0}{4pi}
-sum_{tinOmega_{mathrm{sea}}}
-rac{V_toverline{mathbf J}_t}
-{|mathbf x-mathbf x_t|},
-quad mathbf xinpartialOmega.
-]
+\[
+\mathbf A_{\mathrm{react}}(\mathbf x)
+\approx \frac{\mu_0}{4\pi}
+\sum_{t\in\Omega_{\mathrm{sea}}}
+\frac{V_t\overline{\mathbf J}_t}{\lVert\mathbf x-\mathbf x_t\rVert},
+\qquad \mathbf x\in\partial\Omega.
+\]
 
 这里 `x_t` 是海水四面体中心、`V_t` 为单元体积、`J̄_t` 为该单元的实际求解海水平均复电流。
 
