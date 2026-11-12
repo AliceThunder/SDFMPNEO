@@ -158,6 +158,34 @@ def test_coupled_heat_balance():
     assert abs(deposited-stored-cooling) < 1e-5*deposited
 
 
+
+def test_package_flux_and_material_energy_budget():
+    # The two enclosure nodes store heat independently and route copper
+    # dissipation through package and seawater FV cells.
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.08,pkg_sea_g=.04,outer_h=.1,
+                  external=np.diag([.5,.5]))
+    dt=.1
+    old=et.zeros()
+    new=et.advance(old,[8.,0.],dt)
+    _,_,heat,_,_=et.em(new,[8.,0.])
+    cp,ps,amb=et.heat_flux(new)
+    cond=et.H@new
+    assert cp.shape==ps.shape==(2,)
+    assert np.allclose(cond[et.cu],cp,atol=1e-12)
+    assert np.allclose(cond[et.pkg],ps-cp,atol=1e-12)
+    assert np.isclose(cond[:et.count].sum(),amb-ps.sum(),atol=1e-12)
+    for ids,gain in (
+        (slice(0,et.count),heat[:et.count].sum()+ps.sum()-amb),
+        (et.pkg,cp.sum()-ps.sum()),
+        (et.cu,heat[et.cu].sum()-cp.sum())
+    ):
+        de=np.sum(et.cap[ids]*(new[ids]-old[ids]))
+        assert np.isclose(de,dt*gain,rtol=1e-4,atol=1e-6)
+    assert et.cap[et.pkg].shape==(2,)
+    assert np.all(et.cap[et.pkg]>0)
+
+
 def test_v148_circuit_efficiency():
     et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
                   sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
