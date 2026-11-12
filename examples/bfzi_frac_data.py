@@ -54,6 +54,8 @@ def main(argv=None):
                    help="Original BFZI V150 dual-port rounded-square/circular sample")
     p.add_argument("--limit",type=int,default=None,
                    help="First N physical histories, for targeted cross-geometry runs")
+    p.add_argument("--indices",nargs="+",type=int,default=None,
+                   help="Explicit original program IDs; keep geometry splits aligned")
     args=p.parse_args(argv)
     if args.step<=0 or 600%args.step:
         p.error("step must divide 600 seconds")
@@ -77,11 +79,17 @@ def main(argv=None):
     times=np.arange(0,600+args.step,args.step,dtype=float)
     temp=[]; zs=[]; vin=[]; eff=[]; cur=[]; split=[]; cases=[]
     allcases=programs()
+    if args.indices is not None:
+        if any(i<0 or i>=len(allcases) for i in args.indices):
+            p.error("--indices must be original program IDs from 0 to 29")
+        allcases=[(i,allcases[i]) for i in args.indices]
+    else:
+        allcases=list(enumerate(allcases))
     if args.limit is not None:
         if args.limit<=0:
             p.error("--limit must be positive")
         allcases=allcases[:args.limit]
-    for cid,(v,windows,tag) in enumerate(allcases):
+    for cid,(v,windows,tag) in allcases:
         fn=lambda t: drive(v,windows,t)
         tr=et.trajectory(times,fn)
         temp.append(np.stack([a.temp for a in tr])+et.amb)
@@ -97,6 +105,20 @@ def main(argv=None):
             print(f"teacher {cid+1}/{len(allcases)} "
                   f"elapsed={time.perf_counter()-t0:.1f}s",flush=True)
     args.out.parent.mkdir(parents=True,exist_ok=True)
+    fam=data["families"]
+    # Physical geometry is read exclusively from original BFZI coil objects.
+    coils=[f.coil for f in fam]
+    geom=np.array([
+        *[float(c.outer_radius_m) for c in coils],
+        *[float(c.rounded_square_core_half_m) for c in coils],
+        *[float(c.rounded_square_alpha) for c in coils],
+        *[float(c.turns) for c in coils],
+        *[float(c.wire_radius_m) for c in coils],
+        float(np.linalg.norm(np.asarray(coils[0].center)
+                             -np.asarray(coils[1].center))),
+        *np.asarray(model.air,float).reshape(-1)[[0,1,3]],
+        *np.asarray(et.cap[et.cu],float)
+    ],float)
     np.savez_compressed(
         args.out,time_s=times,voltage_v=np.asarray(vin),
         temp_K=np.asarray(temp),z6=np.asarray(zs),
@@ -107,6 +129,7 @@ def main(argv=None):
         pkg_xyz_m=np.asarray(et.pkg_xyz),
         pkg_vol_m3=np.asarray(et.pkg_vol),
         sample=np.asarray(args.sample),
+        geometry=geom,
         cases_json=json.dumps(cases),bfzi_isothermal_relative_error=rel)
     print(json.dumps(dict(out=str(args.out),cases=len(allcases),
                           train=int(sum(split)),test=int(len(split)-sum(split)),
