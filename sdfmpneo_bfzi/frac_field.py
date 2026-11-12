@@ -100,7 +100,8 @@ class SeaHead:
         on=p>1e-10
         if not np.any(on):
             raise ValueError("nonzero port Joule power required")
-        shape=q[on]/p[on,None]
+        shape=np.zeros_like(q)
+        shape[on]=q[on]/p[on,None]
         q0=np.mean((q[cold]/p[cold,None]),axis=0)
         q0=np.maximum(q0,0.)
         q0/=q0@vol
