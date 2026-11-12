@@ -23,7 +23,8 @@ def originals(root):
 
 
 def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
-           shift_mm=(0.,0.,0.),tilt_deg=0.,box_mm=None):
+           shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
+           pitch_deg=0.,box_mm=None):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -80,7 +81,9 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
             rounded_square_core_half_m=core,
             inner_radius_m=inner_r,
             rounded_corner_radius_m=r0,
-            shape_family=family,roll_deg=angle)
+            shape_family=family,roll_deg=angle,
+            yaw_deg=float(c.yaw_deg)+(float(yaw_deg) if p==1 else 0.),
+            pitch_deg=float(c.pitch_deg)+(float(pitch_deg) if p==1 else 0.))
     if box_mm is not None:
         box=float(box_mm)
         if box<=0 or box<2.*max(
@@ -123,6 +126,8 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                           for c in coils],
                  coil_center_m=[list(c.center) for c in coils],
                  roll_deg=[float(c.roll_deg) for c in coils],
+                 yaw_deg=[float(c.yaw_deg) for c in coils],
+                 pitch_deg=[float(c.pitch_deg) for c in coils],
                  box_mm=box_mm,
                  sea_cells=len(points),
                  bfzi_prep_sec=time.perf_counter()-t0)
@@ -137,7 +142,10 @@ def main():
     p.add_argument("--core-mm",type=float,default=None)
     p.add_argument("--shift-mm",nargs=3,type=float,
                    default=[0.,0.,0.])
-    p.add_argument("--tilt-deg",type=float,default=0.)
+    p.add_argument("--tilt-deg",type=float,default=0.,
+                   help="Receiver native roll-angle adjustment in degrees")
+    p.add_argument("--yaw-deg",type=float,default=0.)
+    p.add_argument("--pitch-deg",type=float,default=0.)
     p.add_argument("--box-mm",type=float,default=None)
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_param_anchor.npz"))
@@ -146,11 +154,14 @@ def main():
     p.add_argument("--voltage",type=float,default=75.)
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
+    p.add_argument("--heat",type=float,default=None)
+    p.add_argument("--cool",type=float,default=None)
     a=p.parse_args()
     bf,original=originals(a.bfzi_root)
     data,info=create(
         bf,original,a.sample,alpha=a.alpha,core_mm=a.core_mm,
-        shift_mm=a.shift_mm,tilt_deg=a.tilt_deg,box_mm=a.box_mm)
+        shift_mm=a.shift_mm,tilt_deg=a.tilt_deg,
+        yaw_deg=a.yaw_deg,pitch_deg=a.pitch_deg,box_mm=a.box_mm)
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
     from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
     from sdfmpneo_bfzi.geom_heat import GeomHeat
@@ -167,8 +178,19 @@ def main():
                 original_cold_Z6=anchor.z0.tolist(),
                 anchor_build_sec=time.perf_counter()-t0)
     if a.probe:
+        if a.step<=0 or a.horizon<=0:
+            p.error("positive horizon and time step required")
         t=np.arange(0.,a.horizon+a.step/2,a.step)
-        seq=et.trajectory(t,lambda t:np.array([a.voltage,0.],complex))
+        v=np.full(len(t),float(a.voltage))
+        if a.heat is not None or a.cool is not None:
+            if a.heat is None or a.cool is None:
+                p.error("--heat and --cool must be specified together")
+            v=np.where((t<=a.heat)|(t>a.heat+a.cool),
+                       a.voltage,0.)
+        def drive(now):
+            j=int(np.argmin(abs(t-now)))
+            return np.array([v[j],0.],complex)
+        seq=et.trajectory(t,drive)
         state=np.asarray([s.temp for s in seq])
         z=np.asarray([[
             s.impedance[0,0].real,s.impedance[0,0].imag,
@@ -178,7 +200,8 @@ def main():
                     max_temperature_K=float(state.max()+et.amb),
                     final_Z6=z[-1].tolist())
         np.savez_compressed(a.out.with_name(a.out.stem+"_probe.npz"),
-                            time_s=t,temp_K=state+et.amb,z6=z)
+                            time_s=t,voltage_v=v,
+                            temp_K=state+et.amb,z6=z)
     a.out.with_suffix(".json").write_text(
         json.dumps(info,indent=2),encoding="utf-8")
     print(json.dumps(info,indent=2),flush=True)
