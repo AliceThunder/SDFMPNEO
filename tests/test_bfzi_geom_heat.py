@@ -19,7 +19,7 @@ def case():
     cap=np.full(10,25.)
     unit=np.ones((4,2,3),complex)*(.1+.01j)
     weak=np.broadcast_to(np.eye(2)[None],(4,2,2))*3.
-    xyz=np.zeros((4,3))
+    xyz=np.array([[-.1,0.,0.],[.1,0.,0.],[0.,0.,-.1],[0.,0.,.1]])
     pkg=np.array([
         [[0.,-.04,0.],[.02,-.04,0.]],
         [[0., .04,0.],[.02, .04,0.]]])
