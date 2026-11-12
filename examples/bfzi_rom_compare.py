@@ -32,6 +32,10 @@ def main():
         jr=np.asarray(q["Jsea_unit_A_m2_per_A"])
         heat_f=np.asarray(d["qsea_W_m3"])
         heat_r=np.asarray(q["qsea_W_m3"])
+        tsea_f=np.asarray(d["Tsea_K"])
+        tsea_r=np.asarray(q["Tsea_K"])
+        tpkg_f=np.asarray(d["Tpkg_K"])
+        tpkg_r=np.asarray(q["Tpkg_K"])
         rms_j=float(np.linalg.norm(jf-jr)/max(np.linalg.norm(jf),1e-30))
         rms_q=float(np.linalg.norm(heat_f-heat_r)/max(np.linalg.norm(heat_f),1e-30))
     t_full=float(full["trajectory_runtime_sec"])
@@ -39,17 +43,21 @@ def main():
     data={
         "direct":str(a.direct),"rom":str(a.rom),
         "rom_basis":red.get("rom"),
+        "heat_rom_basis":red.get("heat_rom"),
         "steps":len(f),
         "complex_Z_relative_L2":float(np.linalg.norm(zf-zr)/np.linalg.norm(zf)),
         "complex_Z_max_abs_ohm":float(np.max(abs(zf-zr))),
         "sea_J_unit_relative_L2":rms_j,
         "sea_q_relative_L2":rms_q,
         "Tsea_max_absolute_K":float(np.max(abs(tf-tr))),
+        "Tsea_spatial_max_absolute_K":float(np.max(abs(tsea_f-tsea_r))),
+        "Tpkg_max_absolute_K":float(np.max(abs(tpkg_f-tpkg_r))),
         "Tcu_max_absolute_K":float(np.max(abs(cf-cr))),
         "eta_max_absolute":float(np.max(abs(ef-er))),
         "direct_trajectory_sec":t_full,
         "rom_trajectory_sec":t_rom,
-        "speedup":t_full/max(t_rom,1e-30)
+        "speedup":t_full/max(t_rom,1e-30),
+        "rom_thermal_balance_max":max(x["thermal_balance_relative_gap"] or 0 for x in r)
     }
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(data,indent=2),encoding="utf-8")
