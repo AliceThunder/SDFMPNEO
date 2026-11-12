@@ -59,10 +59,20 @@ def test_m4_check_only_uses_original_bfzi_base(monkeypatch, tmp_path):
               "--check-only","--out",str(outfile)])
     result=json.loads(outfile.read_text())
     assert result["isothermal_baseline_pass"]
+    assert result["bfzi_frontend"]=="v148/v149"
+    assert result["bfzi_em_solver"].startswith("bfzi_v148_results")
     assert result["v148_original_solver_pass"]
     assert result["v148_M4_archive_pass"]
     assert result["v148_isothermal_Zsea_relative_error"]<1e-12
     assert result["v148_M4_archived_Zsea_relative_error"]<1e-12
+
+    # A v150 checkout uses the same M4 electromagnetic solver.
+    (tmp_path/"run_v150.py").write_text("# v150 frontend marker\n")
+    cli.main(["--bfzi-root",str(tmp_path),
+              "--check-only","--out",str(outfile)])
+    newer=json.loads(outfile.read_text())
+    assert newer["bfzi_frontend"]=="v150"
+    assert newer["isothermal_baseline_pass"]
 
     # An incomplete or stale archive must not silently pass the M4 gate.
     archive=outdir/"bfzi_v148_all_samples_matrix.csv"
