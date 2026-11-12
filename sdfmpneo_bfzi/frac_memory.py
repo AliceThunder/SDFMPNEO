@@ -36,24 +36,27 @@ class FracNet(nn.Module):
 
     def __init__(self, nout=20, mode="frac", hidden=96, nrate=14):
         super().__init__()
-        if mode not in ("frac","exp"):
-            raise ValueError("mode must be frac or exp")
+        if mode not in ("frac","exp","hybrid"):
+            raise ValueError("mode must be frac, exp or hybrid")
         self.mode=mode
         self.nout=int(nout)
         self.register_buffer("rates",torch.tensor(
             np.geomspace(1/2400.,1/12.,nrate),dtype=torch.float32))
         self.raw=nn.Parameter(torch.tensor([-0.9,0.,0.9]))
+        if mode=="hybrid":
+            self.raw_tau=nn.Parameter(torch.tensor([-0.9,0.,0.9]))
         self.net=nn.Sequential(
-            nn.Linear(6,hidden),nn.SiLU(),
+            nn.Linear(9 if mode=="hybrid" else 6,hidden),nn.SiLU(),
             nn.Linear(hidden,hidden),nn.SiLU(),
             nn.Linear(hidden,self.nout))
 
     def init_state(self,batch=1):
-        n=len(self.rates) if self.mode=="frac" else 1
+        n=(len(self.rates)+1 if self.mode=="hybrid" else
+           len(self.rates) if self.mode=="frac" else 1)
         return self.rates.new_zeros((batch,3,n))
 
     def orders(self):
-        if self.mode=="frac":
+        if self.mode in ("frac","hybrid"):
             return .12+.83*torch.sigmoid(self.raw)
         # Conventional single exponential with learned time constants.
         return torch.exp(np.log(1/2400.)+
@@ -61,22 +64,41 @@ class FracNet(nn.Module):
 
     def step(self,h,u,dt):
         """Advance only the newly elapsed interval; no full-history storage."""
-        if self.mode=="frac":
+        if self.mode in ("frac","hybrid"):
+            if self.mode=="hybrid":
+                hf,he=h[...,:-1],h[...,-1:]
+            else:
+                hf=h
             dec=torch.exp(-self.rates*dt)
-            h=h*dec+(1-dec)*u[...,None]
+            hf=hf*dec+(1-dec)*u[...,None]
             alpha=self.orders()
-            # log-lambda quadrature of t^(alpha-1) / Gamma(alpha):
-            # w_j~lambda_j^(-alpha) for normalized exponential states.
+            # Log-lambda quadrature of t^(alpha-1) / Gamma(alpha).
             w=torch.softmax(
                 -alpha[:,None]*torch.log(self.rates[None,:]),dim=-1)
-            mem=torch.sum(h*w[None,:,:],dim=-1)
+            mem=torch.sum(hf*w[None,:,:],dim=-1)
+            if self.mode=="hybrid":
+                lam=torch.exp(
+                    np.log(1/2400.)+torch.sigmoid(self.raw_tau)
+                    *np.log(2400/12.))
+                ae=torch.exp(-lam*dt)
+                he=he*ae[None,:,None]+(1-ae)[None,:,None]*u[...,None]
+                mexp=he[...,0]
+                h=torch.cat([hf,he],dim=-1)
+                inp=torch.cat([u,mem,mexp],dim=-1)
+                amp=.5*(mem.mean(dim=-1,keepdim=True)
+                         +mexp.mean(dim=-1,keepdim=True))
+            else:
+                h=hf
+                inp=torch.cat([u,mem],dim=-1)
+                amp=mem.mean(dim=-1,keepdim=True)
         else:
             lam=self.orders()
             dec=torch.exp(-lam*dt)
             h=h*dec[None,:,None]+(1-dec)[None,:,None]*u[...,None]
             mem=h[...,0]
-        inp=torch.cat([u,mem],dim=-1)
-        y=self.net(inp)*torch.mean(mem,dim=-1,keepdim=True)
+            inp=torch.cat([u,mem],dim=-1)
+            amp=mem.mean(dim=-1,keepdim=True)
+        y=self.net(inp)*amp
         return h,y
 
     def forward(self,src,times):
