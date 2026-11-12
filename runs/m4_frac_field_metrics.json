@@ -1,0 +1,26 @@
+{
+  "teacher_train_files": [
+    "runs\\m4_pkg3d_weak_30v.npz",
+    "runs\\m4_pkg3d_weak_150v.npz"
+  ],
+  "test_file": "runs\\m4_pkg3d_weak_100v.npz",
+  "neural_model": "runs\\m4_frac_multi_hybrid.pt",
+  "field_file": "runs\\m4_frac_field.npz",
+  "train_seconds": 0.017974300077185035,
+  "rollout_seconds": 0.0083072999259457,
+  "sea_cells": 384,
+  "temperatures_used": "direct+neural comparisons",
+  "direct_temperature_inputs": {
+    "sea_J_relative_L2": 1.0325844593203465e-07,
+    "weak_q_relative_L2": 4.682855194469447e-05,
+    "Zsea_relative_L2": 2.1257157329731037e-08
+  },
+  "neural_temperature_inputs": {
+    "sea_J_relative_L2": 0.00010232537769506482,
+    "weak_q_relative_L2": 0.0001486675223621338,
+    "Zsea_relative_L2": 4.942194875309668e-05,
+    "sea_port_power_relative_L2": 9.434225101184048e-05,
+    "q_min_W_m3": 0.0,
+    "q_integral_vs_port_max_abs_W": 3.552713678800501e-15
+  }
+}
