@@ -47,6 +47,7 @@ def test_m4_check_only_uses_original_bfzi_base(monkeypatch, tmp_path):
         def __init__(self, data, calc, **kwargs):
             assert data["name"]=="M4"
             assert calc.base is base
+            assert kwargs.get("sea_only") is True
 
         def solve(self,sea_t,cu_t):
             assert np.all(sea_t==293.15)
