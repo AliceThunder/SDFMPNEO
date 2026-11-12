@@ -115,6 +115,11 @@ class SeaHead:
             raise ValueError("predicted seawater temperature dimensions mismatch")
         return ((t-self.amb)@self.basis)/self.sc
 
+    def sea_z(self,sea_t):
+        """Thermal seawater 2x2 impedance from trained BFZI unit fields."""
+        f=self.features(sea_t)
+        return zmat(self.z0+f@self.zfit)
+
     def at(self,sea_t,amps):
         t=np.asarray(sea_t,float)
         I=np.asarray(amps,complex)
