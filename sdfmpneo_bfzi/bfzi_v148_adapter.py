@@ -79,6 +79,24 @@ class V148State:
     unit_j: np.ndarray
     sigma: np.ndarray
     residual: object
+    weak_q: np.ndarray | None = None  # port-compatible W/m3 per unit-current pair
+
+
+def _weak_q(C, X, G, GX, sigma, mass, vol, omega, mu):
+    """Local BFZI port weak-form real dissipation, W/m3/(A^2).
+
+    Uses exactly the inherited Z_rect(C,X)-Z_rect(G,GX)+Delta Z
+    bilinear expression, retaining its local source-mass correction.
+    """
+    C=np.stack(C,axis=1)
+    X=np.stack(X,axis=1)
+    G=np.stack(G,axis=1)
+    GX=np.stack(GX,axis=1)
+    mat=(np.einsum("pic,pjc->pij",C,X,optimize=True)
+         -np.einsum("pic,pjc->pij",G,GX,optimize=True))
+    mat=.5*(mat+np.swapaxes(mat,1,2))
+    w=(omega*mu)**2
+    return w*sigma[:,None,None]*(mat.real+mass/vol[:,None,None])
 
 
 def _mass(data, calc, order=3):
@@ -146,9 +164,13 @@ class BFZIV148Adapter:
     """Original BFZI v148 two-port EM with locally temperature-dependent sea."""
 
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
-                 copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False):
+                 copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False,
+                 heat_mode="j2"):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
+        if heat_mode not in ("j2","port-weak"):
+            raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
+        self.heat_mode=heat_mode
         self.calc = calc
         self.base = dict(data)
         self.ambient = float(ambient)
@@ -217,21 +239,27 @@ class BFZIV148Adapter:
                else self.copper.conductor_internal_impedance(tc))
         total = z+1j*self.omega*self.air+np.diag(zcu)
         unit_j = np.stack([-gamma[:,None]*px for px in P],axis=1)
-        return V148State(z,total,zcu,unit_j,sig,res)
+        weak=(_weak_q(C,X,G,GX,sig,self.mass,self.vol,self.omega,self.mu)
+              if self.heat_mode=="port-weak" else None)
+        return V148State(z,total,zcu,unit_j,sig,res,weak)
 
     def heat(self, state, currents):
         I = np.asarray(currents,complex)
         if I.shape != (2,):
             raise ValueError("currents must have two complex ports")
-        j = np.einsum("npc,p->nc",state.unit_j,I,optimize=True)
-        q = .5*np.sum(abs(j)**2,axis=1)/state.sigma
-        # Original v148 local source shape-mass Delta M_p accounts for
-        # intra-cell C variations unresolved by the FV-averaged current.
-        # Its real port correction is Delta Z_p=(w*mu)^2 sigma_p Delta M_p.
-        # Assign the SAME positive quadratic loss to each original wet cell
-        # rather than feeding its resistance into Z without thermal Joule.
-        variance = np.real(np.einsum(
-            "i,pij,j->p",np.conjugate(I),self.mass,I,optimize=True))
-        q += .5*(self.omega*self.mu)**2*state.sigma*variance/self.vol
-        cu = .5*state.copper_z.real*abs(I)**2
+        if getattr(self,"heat_mode","j2")=="port-weak":
+            if state.weak_q is None:
+                raise ValueError("weak-form BFZI dissipation matrix missing")
+            q=.5*np.real(np.einsum(
+                "i,pij,j->p",I.conj(),state.weak_q,I,optimize=True))
+            if np.min(q)<-1e-10:
+                raise ValueError("negative cellwise BFZI weak-form dissipation")
+        else:
+            j=np.einsum("npc,p->nc",state.unit_j,I,optimize=True)
+            q=.5*np.sum(abs(j)**2,axis=1)/state.sigma
+            # Local source-mass correction also contributes real Joule heat.
+            variance=np.real(np.einsum(
+                "i,pij,j->p",I.conj(),self.mass,I,optimize=True))
+            q+=.5*(self.omega*self.mu)**2*state.sigma*variance/self.vol
+        cu=.5*state.copper_z.real*abs(I)**2
         return q,cu
