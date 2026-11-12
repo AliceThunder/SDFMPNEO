@@ -6,6 +6,7 @@ requiring heavy full v148 Green matrix construction.
 """
 from types import SimpleNamespace
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from sdfmpneo_bfzi.bfzi_v148_adapter import WeightedFV, BFZIV148Adapter, V148State
@@ -187,3 +188,20 @@ def test_v148_local_mass_heat_matches_port():
     assert np.isclose(np.dot(q,adapter.vol),p_mass,rtol=2e-14)
     assert np.all(q>=0)
     assert np.isclose(pcu[0],.5*.08*abs(I[0])**2)
+
+
+def test_v148_rejects_failed_original_resolvent():
+    adapter=BFZIV148Adapter.__new__(BFZIV148Adapter)
+    adapter.omega=2*np.pi*200000.
+    adapter.mu=4e-7*np.pi
+    adapter.vol=np.ones(4)*.01
+    adapter.ambient=293.15
+    adapter.alpha=.02
+    adapter.sigma0=5.
+    adapter.proj=Grid()
+    adapter.base={"C":[np.zeros((4,3)),np.zeros((4,3))]}
+    core=SimpleNamespace(solve_operator=lambda *args,**kwargs: (
+        [], {"gmres_infos":"[1, 0]"}))
+    adapter.calc=SimpleNamespace(core=core)
+    with pytest.raises(RuntimeError,match="GMRES"):
+        adapter.solve(np.full(4,293.15),np.full(2,293.15))
