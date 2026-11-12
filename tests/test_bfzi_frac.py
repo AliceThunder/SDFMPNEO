@@ -61,3 +61,18 @@ def test_fractional_predict_is_cold_exact():
     assert np.allclose(res["temp_K"][0],293.15)
     assert np.array_equal(res["current_A"][2],np.zeros(2))
     assert res["eta"][2]==0.
+
+
+def test_hybrid_fractional_and_exponential_memory():
+    net=FracNet(8,"hybrid")
+    t=np.array([0.,30.,60.,120.])
+    src=torch.zeros((2,len(t),3),dtype=torch.float32)
+    src[0,1,2]=4.
+    src[1,1:3,2]=2.
+    y=net(src,t)
+    assert y.shape==(2,len(t),8)
+    assert torch.all(y[:,0]==0)
+    y.sum().backward()
+    assert torch.linalg.vector_norm(net.raw.grad)>0
+    assert torch.linalg.vector_norm(net.raw_tau.grad)>0
+    assert torch.isfinite(y).all()
