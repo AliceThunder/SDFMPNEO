@@ -39,6 +39,13 @@ def main():
         tsea_r=np.asarray(q["Tsea_K"])
         tpkg_f=np.asarray(d["Tpkg_K"])
         tpkg_r=np.asarray(q["Tpkg_K"])
+        pkg_field=None
+        if "Tpkg_cells_K" in d and "Tpkg_cells_K" in q:
+            pkf=np.asarray(d["Tpkg_cells_K"])
+            pkr=np.asarray(q["Tpkg_cells_K"])
+            if pkf.shape!=pkr.shape:
+                raise ValueError("3-D package grid shapes differ")
+            pkg_field=float(np.max(abs(pkf-pkr)))
         rms_j=float(np.linalg.norm(jf-jr)/max(np.linalg.norm(jf),1e-30))
         rms_q=float(np.linalg.norm(heat_f-heat_r)/max(np.linalg.norm(heat_f),1e-30))
     t_full=float(full["trajectory_runtime_sec"])
@@ -62,6 +69,8 @@ def main():
         "speedup":t_full/max(t_rom,1e-30),
         "rom_thermal_balance_max":max(x["thermal_balance_relative_gap"] or 0 for x in r)
     }
+    if pkg_field is not None:
+        data["Tpkg_spatial_max_absolute_K"]=pkg_field
     if has_pkg:
         for name,key in (
             ("Qcu_to_pkg_max_absolute_W","Qcu_to_pkg_W"),
