@@ -151,3 +151,60 @@ def test_sea_field_head_power_and_saved_inference(tmp_path):
     assert np.allclose(j1,j)
     assert np.allclose(q1,q)
     assert np.allclose(z1,z)
+
+
+
+def test_port_model_exact_skin_and_physical_neural_circuit(tmp_path):
+    from sdfmpneo_bfzi.frac_port import PortModel
+    from sdfmpneo_bfzi.frac_field import SeaHead
+    import numpy as np
+    port=PortModel(
+        2*np.pi*200000,
+        np.array([[15.83,5.077],[5.077,15.83]])*1e-6,
+        np.array([12.,12.]),np.array([.0006,.0006]),
+        np.array([5.8e7,5.8e7]),np.array([.00393,.00393]),
+        np.array([4e-7*np.pi]*2),np.array([293.15]*2))
+    cold=port.copper(np.full(2,293.15))
+    hot=port.copper(np.full(2,343.15))
+    assert np.all(cold.real>0) and np.all(hot.real>cold.real)
+    p=tmp_path/"port.npz"
+    port.save(p)
+    port=PortModel.load(p)
+    assert np.allclose(port.copper(np.full(2,293.15)),cold)
+    vol=np.full(4,.1)
+    head=SeaHead(vol,np.eye(4,1),np.array([1.]),
+                 np.zeros((4,2,3),complex),
+                 np.ones(4)/(vol.sum()),
+                 np.array([.1278138,-.00385,.1080589,-.00373,
+                           .1278138,-.00385]),
+                 np.zeros((1,24),complex),np.zeros((1,4)),
+                 np.zeros((1,6)))
+    zfull=port.total(head.sea_z(np.full(4,293.15)),
+                     np.full(2,293.15))
+    assert np.allclose(zfull,zfull.T)
+    model=FracNet(9,"hybrid")
+    ts=torch.ones(6)
+    basis=torch.zeros((6,3))
+    basis[0,0]=1
+    ck=dict(
+        external_z=torch.eye(2,dtype=torch.complex64)*.5,
+        z0=torch.tensor([zfull[0,0].real,zfull[0,0].imag,
+                         zfull[0,1].real,zfull[0,1].imag,
+                         zfull[1,1].real,zfull[1,1].imag],
+                        dtype=torch.float32),
+        t_scale=ts,basis=basis,
+        y_scale=torch.ones(9),src_scale=torch.ones(3),
+        ambient=293.15)
+    times=np.array([0.,15.,30.,45.])
+    volts=np.array([40.,40.,0.,40.])
+    res=predict(model,ck,volts,times,field=head,port=port)
+    assert res["z6"].shape==(4,6)
+    assert res["Zcu_ohm"].shape==(4,2)
+    assert res["Zsea_ohm"].shape==(4,2,2)
+    for k in range(4):
+        z=zmat(res["z6"][k])
+        t=res["temp_K"][k]
+        expect=port.total(head.sea_z(t[:4]),t[-2:])
+        assert np.allclose(z,expect,rtol=2e-7,atol=2e-6)
+    assert np.all(res["current_A"][2]==0)
+    assert res["eta"][2]==0.
