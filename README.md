@@ -1,3 +1,16 @@
+> **V2.1 2026-11-12 最新电磁热神经代理：** 继原 BFZI V150 M4 真实 30 s/15 s 双时间网格、3-D 海水/双封装/铜的 450 热态与分数阶记忆神经训练后，新增**分材料 POD+空间热点监督**，使留出 15 s 封装平均最高温度误差从 **0.6735→0.5494 K**、30 s 从 **0.4198→0.3435 K**。另外从**独立原 BFZI** 保存空气自感互感、铜丝尺寸及温度物性，按原圆柱趋肤公式与神经海水复阻抗组装 `Ztotal=Zsea+jωLair+diag(Zcu)`，实际反馈到两端口电流和下一时间步。100 V 留出中原 BFZI 物理总阻抗重组最大差 **1.11e-16 Ω**，物理组装后的神经动态 ΔZ 误差 **6.33%**，最大电路功率差 **2.84e-14 W**、空间 q 与端口海水功率差 **1.78e-15 W**。**19 项专项测试通过**。训练模型、原 BFZI 物理参数、完整 Z/I/效率及 3D 温度/J/q 推理已保存。[完整方法与实测](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_material_port.md)。
+
+```powershell
+# 已有模型无需原 BFZI 软件即可直接推理（同时输出三材料温度、3D 海水 J/q、物理组装复阻抗）
+python -m examples.bfzi_frac infer --model runs/m4_frac_mat_hybrid.pt --field runs/m4_frac_field.npz --port runs/m4_frac_port.npz --voltage 100 --heat 210 --cool 210 --step 15 --out runs/m4_frac_mat_infer.json
+
+# 导出 BFZI 空气/铜物理常量及直接法留出验证（只有重新导出时需 BFZI checkout）
+python -m examples.bfzi_frac_port --bfzi-root D:/work/bfzi-et-v2.1/BFZI --model runs/m4_frac_mat_hybrid.pt --field runs/m4_frac_field.npz --port runs/m4_frac_port.npz
+
+# 双时间网格分材料与热点训练
+python -m examples.bfzi_frac train --data runs/m4_frac_teacher.npz runs/m4_frac_teacher_15s.npz --modes hybrid --basis-mode material --material-loss .3 --hotspot-loss .15 --baseline runs/m4_frac_multi_hybrid.pt --model runs/m4_frac_mat.pt --out runs/m4_frac_mat_metrics.json --epochs 2400
+```
+
 > **V2.1 最新分数阶电磁热神经代理（2026-11-12）：** 已基于独立 BFZI V150 M4 的 **30 条 30 s + 30 条 15 s**真实通电/关断/再启动数据，联合训练可独立推理的**分数阶 SOE + 指数双记忆网络**。每条物理教师包含 384 海水 FV + 双封装各 32 三维热单元 + 2 铜热态，共 **450 维温度**；网络通过自己预测的复 2×2 阻抗重新求解电流并递推热记忆。15 s 的 10 条独立留出历史上，双网格训练使铜温度平均最大误差从 **1.860→1.492 K**、动态复阻抗变化相对误差从 **6.95%→6.06%**；海水和封装误差仍在改进。进一步新增可独立加载的**三维海水 J/q 空间场解码器**，30/150 V 训练、100 V 留出实测 J/q 相对误差 **1.02e-4/1.49e-4**，弱形式 q 空间积分与预测海水端口功率闭合至 **3.55e-15 W**。已在 115 V 三次启动工况实测 30/15 s 神经时程相对原 BFZI 加速 **408×/299×**；**18 项专项测试通过**。[完整方法、真实数据和对照](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_fractional_multigrid_fields.md)。
 
 ```powershell
