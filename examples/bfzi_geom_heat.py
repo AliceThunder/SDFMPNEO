@@ -15,6 +15,7 @@ import torch
 
 from sdfmpneo_bfzi.geom_memory import GeomFrac
 from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
+from sdfmpneo_bfzi.geom_rom import GeomHeatROM
 
 
 def relative(a,b):
@@ -57,6 +58,12 @@ def main():
     p.add_argument("--query",type=Path,default=None,
                    help="Optional Nx3 .npy positions for continuous xyz temperature queries")
     p.add_argument("--query-time",type=float,default=600.)
+    p.add_argument("--rom-rank",type=int,default=0,
+                   help="Use capacity-weighted 5-material energy ROM; 0 means full FV")
+    p.add_argument("--rom-file",type=Path,default=None,
+                   help="Saved geometry-specific basis; built from cold operator if absent")
+    p.add_argument("--compare-full",action="store_true",
+                   help="Measure ROM spatial error and speed against full thermal FV")
     args=p.parse_args()
     torch.set_num_threads(2)
     start=time.perf_counter()
@@ -78,6 +85,22 @@ def main():
     else:
         head=GeomHeat.load(args.anchor)
     anchor_seconds=time.perf_counter()-start
+    full=head
+    rom_build_seconds=0.
+    if args.rom_rank:
+        t0=time.perf_counter()
+        if args.rom_file is not None and args.rom_file.exists():
+            head=GeomHeatROM.load(full,args.rom_file)
+            if head.rank>args.rom_rank:
+                raise ValueError("saved ROM rank exceeds requested rank")
+        else:
+            head=GeomHeatROM.build(full,rank=args.rom_rank)
+            if args.rom_file is not None:
+                args.rom_file.parent.mkdir(parents=True,exist_ok=True)
+                head.save(args.rom_file)
+        rom_build_seconds=time.perf_counter()-t0
+    elif args.compare_full:
+        p.error("--compare-full requires --rom-rank")
     ck=torch.load(args.model,map_location="cpu",weights_only=True)
     net=GeomFrac(ng=int(ck["ng"]))
     net.load_state_dict(ck["state"])
@@ -123,6 +146,28 @@ def main():
         if ztrue is not None:
             one["dynamic_Z_relative_L2"]=relative(
                 pr["z6"]-ztrue[i,0],ztrue[i]-ztrue[i,0])
+        if args.rom_rank:
+            one["rom_rank"]=head.rank
+            one["rom_setup_sec"]=rom_build_seconds
+            one["max_material_energy_gap_W"]=float(
+                np.max(abs(pr["material_budget_W"])))
+        if args.compare_full:
+            tref=time.perf_counter()
+            direct=full.rollout(net,ck,v[i],t)
+            full_sec=time.perf_counter()-tref
+            delta=pr["temp_K"]-direct["temp_K"]
+            one["full_FV_surrogate_sec"]=full_sec
+            one["rom_vs_full_speedup"]=full_sec/sec
+            one["rom_vs_full_sea_max_abs_K"]=float(
+                np.max(abs(delta[:,:head.ns])))
+            one["rom_vs_full_pkg_max_abs_K"]=float(
+                np.max(abs(delta[:,head.ns:head.cu.start])))
+            one["rom_vs_full_cu_max_abs_K"]=float(
+                np.max(abs(delta[:,head.cu])))
+            one["rom_vs_full_Z_relative_L2"]=relative(
+                pr["z6"]-direct["z6"],direct["z6"]-direct["z6"][0])
+            one["rom_vs_full_q_relative_L2"]=relative(
+                pr["qsea_W_m3"]-direct["qsea_W_m3"],direct["qsea_W_m3"])
         if args.bench_direct:
             if et is None or true is None:
                 raise ValueError("--bench-direct requires --bfzi-root")
@@ -164,6 +209,9 @@ def main():
               history="learned causal fractional SOE sea delta",
               heat="original 3-D BFZI FV conservative heat operator",
               no_dynamic_BFZI_EM_solve=True,
+              reduced_heat_rank=head.rank if args.rom_rank else None,
+              rom_setup_seconds=rom_build_seconds,
+              rom_file=str(args.rom_file) if args.rom_file else None,
               results=results)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(data,indent=2),encoding="utf-8")
@@ -173,6 +221,8 @@ def main():
         sea_xyz_m=head.xyz,pkg_xyz_m=head.pkg_xyz,sea_vol_m3=head.vol)
     if true is not None:
         saved.update(temp_true_K=true,z_true=ztrue)
+    if args.rom_rank:
+        saved["material_budget_W"]=head.budgets
     if args.query is not None:
         pts=np.asarray(np.load(args.query),float).reshape(-1,3)
         k=int(np.argmin(abs(t-args.query_time)))
