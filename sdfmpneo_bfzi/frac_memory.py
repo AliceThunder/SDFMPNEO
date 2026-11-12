@@ -123,8 +123,10 @@ def build_sources(volt,z6,ext):
 
 
 @torch.no_grad()
-def predict(model, ckpt, volts, times):
-    """Autoregressive inference without access to a BFZI field solver."""
+def predict(model, ckpt, volts, times, *, field=None, port=None):
+    """Causal surrogate; optional physical BFZI sea+air+copper assembly."""
+    if port is not None and field is None:
+        raise ValueError("physical port assembly needs the seawater field head")
     v=np.asarray(volts,float)
     t=np.asarray(times,float)
     if v.ndim!=1 or t.shape!=v.shape or t[0]!=0 or np.any(np.diff(t)<=0):
@@ -136,9 +138,15 @@ def predict(model, ckpt, volts, times):
     scale=ckpt["y_scale"].cpu().numpy()
     src_scale=ckpt["src_scale"].cpu().numpy()
     state=model.init_state(1)
-    temp=[]; z=[]; curr=[]; eta=[]; src=[]
-    last=zmat(z0)
+    temp=[]; z=[]; zraw=[]; curr=[]; eta=[]; src=[]; zsea=[]; zcu=[]
     amb=float(ckpt["ambient"])
+    last=(port.total(field.sea_z(np.full(len(field.vol),amb)),
+                     np.full(2,amb))
+          if port is not None else zmat(z0))
+    def pack(x):
+        return np.array([x[0,0].real,x[0,0].imag,
+                         x[0,1].real,x[0,1].imag,
+                         x[1,1].real,x[1,1].imag])
     for k,tm in enumerate(t):
         if k:
             inp=sources(float(v[k]),last,ex)
@@ -148,20 +156,41 @@ def predict(model, ckpt, volts, times):
                 float(t[k]-t[k-1]))
             yy=y[0].cpu().numpy()*scale
             th=(yy[:-6]@basis.T)*ts+amb
-            zk=z0+yy[-6:]
-            last=zmat(zk)
+            zn=z0+yy[-6:]
+            if port is not None:
+                zs=field.sea_z(th[:len(field.vol)])
+                zc=port.copper(th[-2:])
+                last=zs+1j*port.omega*port.air+np.diag(zc)
+                zsea.append(zs)
+                zcu.append(zc)
+                zk=pack(last)
+            else:
+                zk=zn
+                last=zmat(zk)
         else:
             inp=np.zeros(3)
             th=np.full(len(ts),amb)
-            zk=z0.copy()
+            zn=z0.copy()
+            if port is not None:
+                zs=field.sea_z(th[:len(field.vol)])
+                zc=port.copper(th[-2:])
+                zsea.append(zs)
+                zcu.append(zc)
+            zk=pack(last) if port is not None else zn
         ii=np.linalg.solve(last+ex,np.array([v[k],0],complex))
         pin=.5*np.real(np.vdot([v[k],0],ii))
         pl=.5*float(ex[1,1].real)*abs(ii[1])**2
         temp.append(th)
         z.append(zk)
+        zraw.append(zn)
         curr.append(ii)
         eta.append(float(pl/pin) if pin>0 else 0.)
         src.append(inp)
-    return dict(temp_K=np.asarray(temp),z6=np.asarray(z),
+    result=dict(temp_K=np.asarray(temp),z6=np.asarray(z),
                 current_A=np.asarray(curr),eta=np.asarray(eta),
                 source=np.asarray(src))
+    if port is not None:
+        result.update(z6_network=np.asarray(zraw),
+                      Zsea_ohm=np.asarray(zsea),
+                      Zcu_ohm=np.asarray(zcu))
+    return result
