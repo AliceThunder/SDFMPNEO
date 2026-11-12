@@ -176,11 +176,19 @@ def main():
     if args.query is not None:
         pts=np.asarray(np.load(args.query),float).reshape(-1,3)
         k=int(np.argmin(abs(t-args.query_time)))
+        jq=head.query_sea(pts,jpred[0][k])
+        qq=head.query_sea(pts,qpred[0][k])
+        is_pkg=np.any(np.stack([
+            np.all(abs(pts-head._pkg_mid[j])<=head._pkg_half[j]+1e-10,
+                   axis=1) for j in range(2)]),axis=0)
+        jq[is_pkg]=np.nan+1j*np.nan
+        qq[is_pkg]=np.nan
         saved.update(
             query_xyz_m=pts,query_time_s=float(t[k]),
+            query_material=np.where(is_pkg,"package","seawater"),
             query_temp_K=head.query_temp(pts,state[0][k]),
-            query_sea_J_A_m2=head.query_sea(pts,jpred[0][k]),
-            query_sea_q_W_m3=head.query_sea(pts,qpred[0][k]))
+            query_sea_J_A_m2=jq,
+            query_sea_q_W_m3=qq)
     np.savez_compressed(args.out.with_suffix(".npz"),**saved)
     print("SAVED",args.out,flush=True)
 
