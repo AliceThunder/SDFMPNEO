@@ -114,17 +114,17 @@ P_{\mathrm{load}}(t)=\tfrac12 R_{\mathrm{load}}\lvert I_2(t)\rvert^2,\quad
 
 原 V148 海水复阻抗带有近线圈**源形状质量修正**：对每个近源海水体单元 `p` 缓存源场的 `ΔM_p=∫_p C_i·C_j dV−V_p Cbar_i·Cbar_j`。该项在原 V148 阻抗中形成实阻抗修正
 
-[
-Delta mathbf Z_p=(omegamu)^2sigma_p(T),Deltamathbf M_p .
-]
+\[
+\Delta\mathbf Z_p=(\omega\mu)^2\sigma_p(T)\,\Delta\mathbf M_p .
+\]
 
 上一版三维海水热源仅取有限体积单元平均电流的焦耳热，**漏掉了这一近源阻抗修正对应的局部焦耳热**。现改为
 
-[
-q_p=rac{|mathbf J_p|^2}{2sigma_p}
- +rac{(omegamu)^2sigma_p}{2V_p}
- mathbf I^daggerDeltamathbf M_pmathbf I .
-]
+\[
+q_p=\frac{\lVert\mathbf J_p\rVert^2}{2\sigma_p}
++\frac{(\omega\mu)^2\sigma_p}{2V_p}\,
+\mathbf I^\dagger\Delta\mathbf M_p\mathbf I .
+\]
 
 新项按原 BFZI 的相同源积分、几何掩码和单元材料参数分布在原海水体单元；保留真实双端口电流交叉项，按定义满足 `Σ V_p Δq_p = 0.5 Re(Iᴴ ΔZ I)`。这修复了原阻抗已包含局部修正而热源未包含的物理分账遗漏。其他原 Green/resolvent、FV 标量势投影和复阻抗读出保持不变。
 
