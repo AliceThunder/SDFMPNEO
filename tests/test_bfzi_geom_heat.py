@@ -20,7 +20,9 @@ def case():
     unit=np.ones((4,2,3),complex)*(.1+.01j)
     weak=np.broadcast_to(np.eye(2)[None],(4,2,2))*3.
     xyz=np.zeros((4,3))
-    pkg=np.zeros((2,2,3))
+    pkg=np.array([
+        [[0.,-.04,0.],[.02,-.04,0.]],
+        [[0., .04,0.],[.02, .04,0.]]])
     return GeomHeat(g,pack(z),np.diag([.5,.5]),
                     vol,xyz,pkg,cap,H,unit,weak)
 
@@ -60,3 +62,16 @@ def test_neural_field_rollout_is_exactly_power_conservative():
     assert np.allclose(pred["qsea_W_m3"]@b.vol,
                        pred["Psea_W"],atol=1e-10)
     assert np.all(pred["qsea_W_m3"][2]==0)
+
+
+def test_continuous_xyz_temperature_and_complex_J_queries():
+    h=case()
+    state=np.full(len(h.cap),293.15)
+    state[h.ns:h.ns+4]=[300.,301.,302.,303.]
+    p=np.array([[0.,-.04,0.],[.02,.04,0.]])
+    ans=h.query_temp(p,state)
+    assert np.allclose(ans,[300.,303.],atol=1e-6)
+    sea=h.query_temp(np.array([[0.,0.,0.]]),state)
+    assert np.allclose(sea,[293.15])
+    j=np.arange(h.ns*3).reshape(h.ns,3)*(1+.1j)
+    assert np.allclose(h.query_sea(h.xyz[:1],j),j[:1])
