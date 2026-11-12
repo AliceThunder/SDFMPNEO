@@ -174,5 +174,23 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
     curr=np.asarray([
         np.linalg.solve(zmat(zi)+ex,np.array([a,0.],complex))
         for zi,a in zip(out[:,:6],v)])
-    return dict(z6=out[:,:6],temp_rise_K=out[:,6:],
+    result=dict(z6=out[:,:6],temp_rise_K=out[:,6:],
                 current_A=curr,source=src)
+    if sea_mode:
+        zs=[];zc=[];ps=[];pc=[];gap=[]
+        for k,I in enumerate(curr):
+            cu=port.copper(293.15+out[k,-2:])
+            sea=zmat(out[k,:6])-1j*port.omega*port.air-np.diag(cu)
+            psea=.5*np.vdot(I,sea@I).real
+            pcu=.5*cu.real*abs(I)**2
+            pin=.5*np.real(v[k]*I[0].conj())
+            extloss=.5*np.vdot(I,ex@I).real
+            zs.append(sea);zc.append(cu)
+            ps.append(psea);pc.append(pcu)
+            gap.append(float(abs(pin-extloss-psea-pcu.sum())))
+        result.update(Zsea_ohm=np.asarray(zs),
+                      Zcu_ohm=np.asarray(zc),
+                      Psea_W=np.asarray(ps),
+                      Pcu_W=np.asarray(pc),
+                      circuit_gap_W=np.asarray(gap))
+    return result
