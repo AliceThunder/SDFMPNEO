@@ -1,0 +1,217 @@
+"""Train geometry-conditioned fractional surrogate on original BFZI M1/M4.
+
+Both shape families use the original BFZI construction, with different 3-D
+seawater grids. Only physically comparable port and material observables are
+shared across shapes. M2 is a fully held-out rounded-square geometry.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from sdfmpneo_bfzi.frac_memory import build_sources
+from sdfmpneo_bfzi.geom_memory import GeomFrac,geom_feat,thermal_summary,rollout
+
+
+def data_file(path,probe=None):
+    with np.load(path) as d:
+        times=np.asarray(d["time_s"],float)
+        vin=np.asarray(d["voltage_v"],float)
+        temp=np.asarray(d["temp_K"],float)
+        z=np.asarray(d["z6"],float)
+        train=np.asarray(d["train"],bool)
+        ext=np.asarray(d["external_z"],complex)
+        ns=int(d["nsea"])
+        npkg=int(d["npkg"])
+        amb=float(d["ambient_K"])
+        cases=json.loads(str(d["cases_json"]))
+        if "geometry" in d:
+            geom=np.asarray(d["geometry"],float)
+        elif probe:
+            with np.load(probe) as b:
+                geom=np.asarray(b["geometry"],float)
+        else:
+            raise ValueError("original BFZI geometry descriptor missing")
+        if "sea_vol_m3" in d:
+            vol=np.asarray(d["sea_vol_m3"],float)
+        elif probe:
+            with np.load(probe) as b:
+                vol=np.asarray(b["sea_vol_m3"],float)
+        else:
+            raise ValueError("original BFZI sea volumes missing")
+        sample=str(d["sample"]) if "sample" in d else (
+            "M4" if probe else "unknown")
+    if temp.shape[-1]!=ns+2*npkg+2 or temp.shape[:2]!=vin.shape:
+        raise ValueError("BFZI sea/package/copper dimensions mismatch")
+    if (np.any(np.diff(times)<=0) or times[0]!=0 or
+            len(vol)!=ns):
+        raise ValueError("invalid original BFZI time or FV volume")
+    z0=z[0,0]
+    if np.max(abs(z[:,0]-z0))>1e-7:
+        raise ValueError("original BFZI cold Z must match per geometry")
+    summ=np.stack([thermal_summary(a,ns,npkg,vol,amb)
+                   for a in temp])
+    return dict(sample=sample,geom=geom,z0=z0,ext=ext,
+                times=times,v=vin,z=z,train=train,
+                src=build_sources(vin,z,ext),temp=summ,
+                cases=cases)
+
+
+def data_all(files,probe):
+    arr=[data_file(path,probe if str(path).lower().find("m4_")>=0
+                   else None) for path in files]
+    t=arr[0]["times"]
+    if any(not np.array_equal(t,d["times"]) for d in arr):
+        raise ValueError("first cross-geometry experiment uses a common time grid")
+    fit=[];val=[];test={}
+    for d in arr:
+        train_ids=np.flatnonzero(d["train"])
+        val_ids=[i for i in train_ids if d["cases"][i]["id"]%5==1]
+        fit_ids=[i for i in train_ids if i not in val_ids]
+        for ids,target in ((fit_ids,fit),(val_ids,val)):
+            for i in ids:
+                target.append((d,int(i)))
+        test[d["sample"]]=[(d,int(i)) for i in np.flatnonzero(~d["train"])]
+    if not fit or not val:
+        raise ValueError("geometry training and validation histories required")
+    return fit,val,test
+
+
+def tensors(rows,src_scale,y_scale):
+    src=np.stack([d["src"][i] for d,i in rows])/src_scale
+    y=np.stack([np.concatenate(
+        (d["z"][i]-d["z0"],d["temp"][i]),axis=-1)
+        for d,i in rows])/y_scale
+    geom=np.stack([geom_feat(d["geom"],d["z0"])
+                   for d,i in rows])
+    return (torch.tensor(src,dtype=torch.float32),
+            torch.tensor(y,dtype=torch.float32),
+            torch.tensor(geom,dtype=torch.float32))
+
+
+def score(model,ck,rows):
+    scores=[]
+    for d,i in rows:
+        p=rollout(model,ck,d["v"][i],d["times"],
+                  d["geom"],d["z0"],d["ext"])
+        z=d["z"][i]
+        err=p["z6"]-z
+        ref=z-z[0]
+        temp=p["temp_rise_K"]-d["temp"][i]
+        scores.append(dict(
+            sample=d["sample"],
+            case=int(d["cases"][i]["id"]),
+            voltage_v=float(d["cases"][i]["voltage_v"]),
+            dynamic_Z_relative_L2=float(
+                np.linalg.norm(err)/max(np.linalg.norm(ref),1e-12)),
+            full_Z_relative_L2=float(
+                np.linalg.norm(err)/np.linalg.norm(z)),
+            Tsea_mean_max_K=float(np.max(abs(temp[:,0]))),
+            Tsea_hot_max_K=float(np.max(abs(temp[:,1]))),
+            Tpkg_mean_max_K=float(np.max(abs(temp[:,2:4]))),
+            Tpkg_hot_max_K=float(np.max(abs(temp[:,4:6]))),
+            Tcu_max_K=float(np.max(abs(temp[:,6:8])))))
+    keys=[x for x in scores[0] if x not in ("sample","case","voltage_v")]
+    agg=dict(cases=len(scores))
+    for k in keys:
+        agg[k+"_mean"]=float(np.mean([r[k] for r in scores]))
+        agg[k+"_max"]=float(np.max([r[k] for r in scores]))
+    return agg,scores
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--train-files",nargs="+",type=Path,default=[
+        Path("runs/m4_frac_teacher.npz"),
+        Path("runs/m1_frac_teacher.npz")])
+    p.add_argument("--m4-geom",type=Path,
+                   default=Path("runs/m4_geom_probe.npz"))
+    p.add_argument("--test-geo",type=Path,
+                   default=Path("runs/m2_frac_holdout.npz"))
+    p.add_argument("--model",type=Path,
+                   default=Path("runs/bfzi_geom_frac.pt"))
+    p.add_argument("--out",type=Path,
+                   default=Path("runs/bfzi_geom_frac_metrics.json"))
+    p.add_argument("--epochs",type=int,default=1600)
+    p.add_argument("--patience",type=int,default=280)
+    args=p.parse_args()
+    torch.set_num_threads(2)
+    torch.manual_seed(41)
+    fit,val,hold=data_all(args.train_files,args.m4_geom)
+    sample,t=fit[0][0]["sample"],fit[0][0]["times"]
+    other=data_file(args.test_geo)
+    hold[other["sample"]]=[(other,i) for i in range(len(other["v"]))]
+    sy=np.stack([np.concatenate((d["z"][i]-d["z0"],d["temp"][i]),-1)
+                 for d,i in fit])
+    ystd=np.std(sy[:,1:].reshape(-1,14),axis=0)
+    yscale=np.maximum(ystd,np.r_[
+        np.full(6,max(float(max(ystd[:6]))*.001,1e-7)),
+        np.full(8,max(float(max(ystd[6:]))*.001,1e-3))])
+    src_scale=np.maximum(np.max(
+        np.stack([d["src"][i] for d,i in fit]),axis=(0,1)),1e-4)
+    u,y,g=tensors(fit,src_scale,yscale)
+    uv,yv,gv=tensors(val,src_scale,yscale)
+    model=GeomFrac()
+    opt=torch.optim.Adam(model.parameters(),lr=.003)
+    best=1e30;state=None;best_epoch=0
+    t0=time.perf_counter()
+    for epoch in range(args.epochs):
+        model.train()
+        opt.zero_grad(set_to_none=True)
+        pred=model(u,t,g)
+        loss=(pred-y).square().mean()+.45*(
+            pred[:,:,:6]-y[:,:,:6]).square().mean()
+        loss.backward()
+        opt.step()
+        model.eval()
+        with torch.no_grad():
+            vpred=model(uv,t,gv)
+            vloss=float((vpred-yv).square().mean()+.45*
+                        (vpred[:,:,:6]-yv[:,:,:6]).square().mean())
+        if vloss<best-1e-7:
+            best=vloss;best_epoch=epoch+1
+            state={k:v.detach().clone()
+                   for k,v in model.state_dict().items()}
+        if epoch+1-best_epoch>=args.patience:
+            break
+    model.load_state_dict(state)
+    model.eval()
+    ck=dict(
+        state=model.state_dict(),
+        src_scale=src_scale,y_scale=yscale,
+        ng=model.ng,history="fractional SOE + exponential",
+        trained_samples=[d["sample"] for d in
+                         {id(d):d for d,i in fit}.values()])
+    args.model.parent.mkdir(parents=True,exist_ok=True)
+    torch.save(ck,args.model)
+    output=dict(
+        model=str(args.model),
+        train_samples=sorted(set(d["sample"] for d,i in fit)),
+        heldout_geometry=other["sample"],
+        train_cases=len(fit),val_cases=len(val),
+        trained_steps=len(t),epochs=epoch+1,best_epoch=best_epoch,
+        val_loss=best,
+        train_seconds=time.perf_counter()-t0,
+        fractional_orders=model.orders().detach().numpy().tolist())
+    for sample,rows in hold.items():
+        if rows:
+            agg,details=score(model,ck,rows)
+            output[sample]=dict(aggregate=agg,cases=details)
+    args.out.parent.mkdir(parents=True,exist_ok=True)
+    args.out.write_text(json.dumps(output,indent=2),encoding="utf-8")
+    print(json.dumps(dict(
+        model=str(args.model),train_samples=output["train_samples"],
+        heldout_geometry=other["sample"],train_cases=len(fit),
+        val_cases=len(val),best_epoch=best_epoch,
+        result={k:v["aggregate"] for k,v in output.items()
+                if isinstance(v,dict) and "aggregate" in v}),
+        indent=2),flush=True)
+
+
+if __name__=="__main__":
+    main()
