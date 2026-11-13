@@ -69,8 +69,8 @@ def main():
                 s=direct(et,t["time_s"],t["voltage_v"])
                 file=a.runs/f"bfzi_pose_{name.lower()}_adj_{key}.npz"
                 pack_save(file,s)
-                legacy=(a.runs/f"bfzi_pose_{name.lower()}_disjoint_"+
-                        ("oriented_medium" if key=="medium" else key)+".npz")
+                oldkey="oriented_medium" if key=="medium" else key
+                legacy=a.runs/f"bfzi_pose_{name.lower()}_disjoint_{oldkey}.npz"
                 row.update(
                     direct_sec=s["elapsed_sec"],
                     max_budget_W=s["max_budget_W"],
