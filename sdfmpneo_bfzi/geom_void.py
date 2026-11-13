@@ -37,29 +37,38 @@ def report(head, mesh):
     half=np.asarray(head._pkg_half,float)
     rot=np.asarray(head._pkg_axes,float)
     boxes=mesh["inner_boxes"]
-    if len(boxes)!=2:
-        raise ValueError("expected original BFZI dual-package void boxes")
+    if len(boxes) not in (2,4):
+        raise ValueError("expected two BFZI packages with optional dry risers")
     aabb=[]
     for box in boxes:
         lo=np.asarray(box["min_m"],float)
         hi=np.asarray(box["max_m"],float)
         aabb.append((lo,hi))
-    volumes=np.array([float(np.prod(hi-lo)) for lo,hi in aabb])
-    inter=float(np.prod(np.maximum(
-        np.minimum(aabb[0][1],aabb[1][1])-
-        np.maximum(aabb[0][0],aabb[1][0]),0.)))
-    void=float(volumes.sum()-inter)
+    base=[aabb[i] for i in ((0,1) if len(aabb)==2 else (0,2))]
+    def union(items):
+        total=0.
+        for mask in range(1,1<<len(items)):
+            idx=[i for i in range(len(items)) if mask & (1<<i)]
+            lo=np.max([items[i][0] for i in idx],axis=0)
+            hi=np.min([items[i][1] for i in idx],axis=0)
+            vol=float(np.prod(np.maximum(hi-lo,0.)))
+            total+=vol if len(idx)%2 else -vol
+        return total
+    void=union(aabb)
+    package_void=union(base)
+    volumes=np.array([float(np.prod(hi-lo)) for lo,hi in base])
     physical=8*np.prod(half,axis=1)
     actual_aabb=np.array([8*np.prod(np.abs(rot[i])@half[i])
                           for i in range(2)])
     return dict(
-        original_BFZI_AABB_void_m3=void,
+        original_BFZI_AABB_void_m3=float(void),
+        original_BFZI_package_AABB_union_m3=float(package_void),
         original_BFZI_AABB_individual_m3=volumes.tolist(),
-        original_BFZI_AABB_intersection_m3=inter,
+        additional_dry_riser_void_m3=float(void-package_void),
         physical_oriented_individual_m3=physical.tolist(),
         physical_box_sum_m3=float(physical.sum()),
-        AABB_void_excess_lower_bound_m3=float(void-physical.sum()),
-        BFZI_AABB_over_physical_sum=float(void/physical.sum()),
+        AABB_void_excess_lower_bound_m3=float(package_void-physical.sum()),
+        BFZI_AABB_over_physical_sum=float(package_void/physical.sum()),
         physical_packages_overlap=overlap(mid,half,rot),
         physical_box_AABB_m3=actual_aabb.tolist(),
         BFZI_AABB_to_physical_box_ratio=(volumes/physical).tolist())
