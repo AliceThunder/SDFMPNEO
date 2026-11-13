@@ -50,9 +50,8 @@ def report(head, mesh):
         np.maximum(aabb[0][0],aabb[1][0]),0.)))
     void=float(volumes.sum()-inter)
     physical=8*np.prod(half,axis=1)
-    actual_aabb=8*np.prod(np.abs(rot)@half[:,:,None] if False else
-                         np.stack([np.abs(rot[i])@half[i]
-                                   for i in range(2)]),axis=1)
+    actual_aabb=np.array([8*np.prod(np.abs(rot[i])@half[i])
+                          for i in range(2)])
     return dict(
         original_BFZI_AABB_void_m3=void,
         original_BFZI_AABB_individual_m3=volumes.tolist(),
