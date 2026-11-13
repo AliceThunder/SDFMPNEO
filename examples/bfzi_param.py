@@ -193,6 +193,8 @@ def main():
                    help="Original BFZI 600s programs for new pose-conditional neural training")
     p.add_argument("--indices",type=int,nargs="+",default=[0,1,4,8,9,20,29])
     p.add_argument("--case-name",type=str,default="P01")
+    p.add_argument("--sea-tangent-rank",type=int,default=0,
+                   help="Precompute original BFZI sea-Z thermal Jacobian in physical 3D ROM modes")
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
     p.add_argument("--heat",type=float,default=None)
@@ -217,6 +219,18 @@ def main():
     anchor=GeomHeat.from_original(em,et,ex)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     anchor.save(a.out)
+    if a.sea_tangent_rank:
+        from sdfmpneo_bfzi.geom_tangent import SeaTangent
+        from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+        temp_rom=GeomHeatROM.build(
+            anchor,rank=max(32,a.sea_tangent_rank+5))
+        tangent=SeaTangent.build(em,anchor,temp_rom.phi,
+                                  rank=a.sea_tangent_rank)
+        tangent_path=a.out.with_name(
+            a.out.stem+"_sea_tangent.npz")
+        tangent.save(tangent_path)
+        info["sea_tangent_file"]=str(tangent_path)
+        info["sea_tangent_rank"]=len(tangent.jac)
     info.update(geometry=anchor.geom.tolist(),
                 state_count=len(anchor.cap),
                 original_cold_Z6=anchor.z0.tolist(),
