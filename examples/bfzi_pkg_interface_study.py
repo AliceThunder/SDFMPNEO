@@ -40,7 +40,7 @@ def physical(et, t, v):
         bal=et.cap*(theta-seq[k-1].temp)/(t[k]-t[k-1])+et.H@theta-heat
         budget.append([float(sum(bal[g])) for g in groups(
             type("Group",(),dict(ns=et.count,npkg=et.pkg_n,cu=et.cu))())])
-    return T,z,flux,float(np.max(abs(budget))) if budget else 0.
+    return T,z,flux,float(np.max(np.abs(budget))) if budget else 0.
 
 
 def metrics(pred,temp,z,head):
