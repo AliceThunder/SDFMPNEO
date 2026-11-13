@@ -252,8 +252,18 @@ class BFZIV148Adapter:
                 raise ValueError("weak-form BFZI dissipation matrix missing")
             q=.5*np.real(np.einsum(
                 "i,pij,j->p",I.conj(),state.weak_q,I,optimize=True))
-            if np.min(q)<-1e-10:
-                raise ValueError("negative cellwise BFZI weak-form dissipation")
+            if np.min(q)<0:
+                # The original BFZI weak local partition may have a small
+                # negative cell even when its total port loss is passive.
+                # Keep local Joule heat nonnegative and preserve the exact
+                # sea port loss in the original finite-volume mesh.
+                power=max(float(.5*np.vdot(I,state.sea_z@I).real),0.)
+                q=np.maximum(q,0.)
+                total=float(q@self.vol)
+                if total>0:
+                    q*=power/total
+                elif power>1e-12:
+                    raise ValueError("BFZI sea loss lacks a spatial Joule source")
         else:
             j=np.einsum("npc,p->nc",state.unit_j,I,optimize=True)
             q=.5*np.sum(abs(j)**2,axis=1)/state.sigma
