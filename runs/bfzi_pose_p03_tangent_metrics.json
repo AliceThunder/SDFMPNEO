@@ -1,0 +1,23 @@
+{
+  "anchor": "runs\\bfzi_pose_p03_tangent_anchor.npz",
+  "tangent": "runs\\bfzi_pose_p03_tangent_anchor_sea_tangent.npz",
+  "teacher": "runs\\bfzi_pose_p03_holdout.npz",
+  "rank": 8,
+  "oracle_true_3D_temperature": true,
+  "results": [
+    {
+      "case": 20,
+      "voltage_V": 40.0,
+      "tangent_full_dynamic_Z_relative_L2": 1.830228868967625e-05,
+      "tangent_sea_delta_relative_L2": 0.005427966741260398,
+      "thermal_mode_projection_relative_L2_max": 0.30208637909193087
+    },
+    {
+      "case": 29,
+      "voltage_V": 115.0,
+      "tangent_full_dynamic_Z_relative_L2": 2.283680332095648e-05,
+      "tangent_sea_delta_relative_L2": 0.005753952061256278,
+      "thermal_mode_projection_relative_L2_max": 0.32987412244887104
+    }
+  ]
+}
