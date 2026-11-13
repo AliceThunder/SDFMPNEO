@@ -28,7 +28,7 @@ HOLD=("P03","P07")
 
 def cold_em(bf,v150,head,meta):
     c=np.asarray(meta["coil_center_m"],float)
-    dr=(c[1]-c[0])*1000
+    dr=(c[1]-c[0])*1000-np.array([0.,40.,0.])
     data,_=create(bf,v150,"M4",
         alpha1=meta["alpha"][0],alpha2=meta["alpha"][1],
         core1_mm=meta["core_mm"][0],core2_mm=meta["core_mm"][1],
