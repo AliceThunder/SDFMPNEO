@@ -18,6 +18,7 @@ from sdfmpneo_bfzi.frac_memory import zmat
 from sdfmpneo_bfzi.geom_memory import (
     GeomFrac,G_SCALE,geom_feat,geom_port,heat_drive,thermal_summary,rollout)
 from sdfmpneo_bfzi.pose import default_desc
+from sdfmpneo_bfzi.geom_train import port_batch,closed,weights,loss as geo_loss
 
 
 def data_file(path,probe=None):
@@ -180,12 +181,31 @@ def main():
                    help="Condition on BFZI relative 3D translation, rotation and both package sizes")
     p.add_argument("--init-model",type=Path,default=None,
                    help="Initialize first 22 features and full memory from trained BFZI V5")
+    p.add_argument("--geo-val",type=str,default=None,
+                   help="Reserve an ENTIRE unseen BFZI geometry for model selection")
+    p.add_argument("--balanced",action="store_true",
+                   help="Equal aggregate loss weight per geometry")
+    p.add_argument("--closed-loss",type=float,default=0.,
+                   help="Train with differentiable autonomous BFZI port/thermal-source rollout")
+    p.add_argument("--closed-warmup",type=int,default=50)
+    p.add_argument("--closed-ramp",type=int,default=150)
+    p.add_argument("--lr",type=float,default=.003)
     args=p.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(41)
     fit,val,hold=data_all(args.train_files,args.m4_geom)
     sample,t=fit[0][0]["sample"],fit[0][0]["times"]
     other=data_file(args.test_geo)
+    if args.geo_val:
+        group=fit+val
+        val=[(d,i) for d,i in group if d["sample"]==args.geo_val]
+        fit=[(d,i) for d,i in group if d["sample"]!=args.geo_val]
+        if not fit or not val or args.geo_val==other["sample"]:
+            p.error("nonempty independent BFZI train/validation/test geometries required")
+    if any(d["sample"]==other["sample"] for d,i in fit+val):
+        p.error("final geometry cannot appear in BFZI training/validation")
+    if args.closed_loss<0 or args.lr<=0:
+        p.error("--closed-loss and --lr must be nonnegative/positive respectively")
     hold[other["sample"]]=[(other,i) for i in range(len(other["v"]))]
     sy=np.stack([np.concatenate(
         (d["sea_delta"][i] if args.port_sea else
@@ -200,11 +220,19 @@ def main():
     init=(torch.load(args.init_model,map_location="cpu",weights_only=True)
           if args.init_model else None)
     if init is not None:
+        if args.geo_val and args.geo_val in init.get("trained_samples",[]):
+            p.error("geo-val geometry was already used in initial checkpoint")
         # Preserve the physical scale of the V5 warm start.
         src_scale=np.asarray(init["src_scale"],float)
         yscale=np.asarray(init["y_scale"],float)
     u,y,g,cu=tensors(fit,src_scale,yscale,args.port_sea,args.with_pose)
     uv,yv,gv,cuv=tensors(val,src_scale,yscale,args.port_sea,args.with_pose)
+    fw=weights(fit) if args.balanced else torch.ones(len(fit))
+    vw=weights(val) if args.balanced else torch.ones(len(val))
+    if args.closed_loss and not args.port_sea:
+        p.error("--closed-loss requires --port-sea")
+    fp=port_batch(fit,geom_port) if args.closed_loss else None
+    vp=port_batch(val,geom_port) if args.closed_loss else None
     if args.phys_loss and not args.port_sea:
         p.error("--phys-loss requires --port-sea")
     ysc=torch.tensor(yscale,dtype=torch.float32)
@@ -243,26 +271,48 @@ def main():
             model.load_state_dict(extra)
         else:
             raise ValueError("pretrained BFZI geometry dimension mismatch")
-    opt=torch.optim.Adam(model.parameters(),lr=.003)
+    opt=torch.optim.Adam(model.parameters(),lr=args.lr)
     best=1e30;state=None;best_epoch=0
     t0=time.perf_counter()
     for epoch in range(args.epochs):
         model.train()
         opt.zero_grad(set_to_none=True)
         pred=model(u,t,g)
-        loss=((pred-y).square().mean()+.45*
-              (pred[:,:,:6]-y[:,:,:6]).square().mean()
-              +args.phys_loss*physical_loss(pred,y,cu)
-              +temp_loss(pred,y))
+        if args.balanced:
+            loss=geo_loss(pred,y,cu,yscale,fw,
+                          args.phys_loss,args.pkg_loss,args.sea_loss)
+        else:
+            loss=((pred-y).square().mean()+.45*
+                  (pred[:,:,:6]-y[:,:,:6]).square().mean()
+                  +args.phys_loss*physical_loss(pred,y,cu)
+                  +temp_loss(pred,y))
+        if args.closed_loss and epoch>=args.closed_warmup:
+            mix=min(1.,(epoch+1-args.closed_warmup)/
+                    max(1,args.closed_ramp))
+            free=closed(model,g,t,u,src_scale,yscale,fp,mix=mix)
+            loss=loss+args.closed_loss*geo_loss(
+                free,y,cu,yscale,fw,
+                args.phys_loss,args.pkg_loss,args.sea_loss)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(),3.)
         opt.step()
         model.eval()
         with torch.no_grad():
             vpred=model(uv,t,gv)
-            vloss=float((vpred-yv).square().mean()+.45*
-                        (vpred[:,:,:6]-yv[:,:,:6]).square().mean()
-                        +args.phys_loss*physical_loss(vpred,yv,cuv)
-                        +temp_loss(vpred,yv))
+            if args.balanced:
+                vl=geo_loss(vpred,yv,cuv,yscale,vw,
+                            args.phys_loss,args.pkg_loss,args.sea_loss)
+            else:
+                vl=((vpred-yv).square().mean()+.45*
+                    (vpred[:,:,:6]-yv[:,:,:6]).square().mean()
+                    +args.phys_loss*physical_loss(vpred,yv,cuv)
+                    +temp_loss(vpred,yv))
+            if args.closed_loss:
+                vf=closed(model,gv,t,uv,src_scale,yscale,vp,mix=1.)
+                vl=vl+args.closed_loss*geo_loss(
+                    vf,yv,cuv,yscale,vw,
+                    args.phys_loss,args.pkg_loss,args.sea_loss)
+            vloss=float(vl)
         if vloss<best-1e-7:
             best=vloss;best_epoch=epoch+1
             state={k:v.detach().clone()
@@ -278,6 +328,9 @@ def main():
         ng=model.ng,with_pose=bool(args.with_pose),
         port_sea=bool(args.port_sea),
         history="fractional SOE + exponential",
+        validation_geometries=sorted(set(d["sample"] for d,i in val)),
+        geo_val=args.geo_val,closed_loss=float(args.closed_loss),
+        balanced=bool(args.balanced),
         trained_samples=[d["sample"] for d in
                          {id(d):d for d,i in fit}.values()])
     args.model.parent.mkdir(parents=True,exist_ok=True)
@@ -286,7 +339,9 @@ def main():
         model=str(args.model),
         train_samples=sorted(set(d["sample"] for d,i in fit)),
         heldout_geometry=other["sample"],port_sea=bool(args.port_sea),
-        with_pose=bool(args.with_pose),
+        with_pose=bool(args.with_pose),geo_val=args.geo_val,
+        closed_loop_weight=float(args.closed_loss),
+        geometry_balanced=bool(args.balanced),
         physics_loss_weight=float(args.phys_loss),
         package_loss_weight=float(args.pkg_loss),
         sea_loss_weight=float(args.sea_loss),
