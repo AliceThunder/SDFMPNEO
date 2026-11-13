@@ -1,0 +1,485 @@
+{
+  "method": "original BFZI native sea FV boundary-face convergence",
+  "geometry_training_used": false,
+  "interface": "oriented physical face-resistance",
+  "h_W_m2K": 20.0,
+  "full_surrogate": true,
+  "geometries": {
+    "P03": {
+      "original_program": 29,
+      "voltage_V": 115.0,
+      "time_points": 21,
+      "levels": {
+        "legacy": {
+          "grid_xz_m": null,
+          "grid_y_m": null,
+          "sea_cells": 384,
+          "source_3D_volume_m3": 0.08699836102296798,
+          "mesh_rel_volume_error": 0.0,
+          "cold_precompute_sec": 1.0619131000003108,
+          "direct_time_sec": 2.2628375999993295,
+          "direct_material_budget_W": 1.3948076116321317e-07,
+          "peak_pkg_interface_flux_W": [
+            0.024884311063782822,
+            3.1941956100617306
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 56.19253071456335,
+              "wet_p10_gap_mm": 95.48229350688473,
+              "linked_wet_gap_median_mm": 95.48229350688473,
+              "linked_wet_gap_max_mm": 126.44507104330765,
+              "interface_G_W_K": 0.42612039097453985,
+              "links": 1017,
+              "linked_wet_cells": 77
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 16.480955052234886,
+              "wet_p10_gap_mm": 85.58782300519705,
+              "linked_wet_gap_median_mm": 82.06517871954122,
+              "linked_wet_gap_max_mm": 130.3500347755963,
+              "interface_G_W_K": 0.5220283195024524,
+              "links": 1001,
+              "linked_wet_cells": 72
+            }
+          ],
+          "cold_z6": [
+            0.1951550643973936,
+            20.00640932029845,
+            0.03920792689869886,
+            6.341811667201038,
+            0.17271979660293563,
+            17.75426556834905
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_native_legacy.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.00011207589126782617,
+            "thermal_delta_Z_relative_L2": 0.005730986102399371,
+            "absolute_Z_difference_over_thermal_delta": 0.44885782506299715,
+            "sea_interpolated_max_abs_K": 0.7569388798880254,
+            "package_max_abs_K": 0.38764577502956854,
+            "copper_max_abs_K": 0.19125645139058634
+          }
+        },
+        "face_coarse": {
+          "grid_xz_m": 0.2,
+          "grid_y_m": 0.15,
+          "sea_cells": 400,
+          "source_3D_volume_m3": 0.08699836102296798,
+          "mesh_rel_volume_error": 0.0,
+          "cold_precompute_sec": 0.7948293999997986,
+          "direct_time_sec": 2.21783989999858,
+          "direct_material_budget_W": 1.395517941205071e-07,
+          "peak_pkg_interface_flux_W": [
+            0.007938300840835376,
+            3.5219778121290664
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 31.80544133349576,
+              "wet_p10_gap_mm": 42.33316893426627,
+              "linked_wet_gap_median_mm": 43.7085296398875,
+              "linked_wet_gap_max_mm": 102.80187082781401,
+              "interface_G_W_K": 0.5093544004236235,
+              "links": 1023,
+              "linked_wet_cells": 89
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 9.789010246287887,
+              "wet_p10_gap_mm": 44.055427210261286,
+              "linked_wet_gap_median_mm": 45.905372783827566,
+              "linked_wet_gap_max_mm": 116.43466975265528,
+              "interface_G_W_K": 0.6231953245169544,
+              "links": 1023,
+              "linked_wet_cells": 92
+            }
+          ],
+          "cold_z6": [
+            0.19512229441749745,
+            20.00661869127399,
+            0.037332351240285125,
+            6.341976300891356,
+            0.16812746982516855,
+            17.75442426431493
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_native_face_coarse.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.00012577140094338827,
+            "thermal_delta_Z_relative_L2": 0.0032626334041522768,
+            "absolute_Z_difference_over_thermal_delta": 0.5009674513427181,
+            "sea_interpolated_max_abs_K": 0.7073936985303249,
+            "package_max_abs_K": 0.1897754013029953,
+            "copper_max_abs_K": 0.05815526203173249
+          }
+        },
+        "face_medium": {
+          "grid_xz_m": 0.14,
+          "grid_y_m": 0.12,
+          "sea_cells": 436,
+          "source_3D_volume_m3": 0.08699836102296798,
+          "mesh_rel_volume_error": 0.0,
+          "cold_precompute_sec": 0.8046898000011424,
+          "direct_time_sec": 2.4765742999989016,
+          "direct_material_budget_W": 1.3948748289749346e-07,
+          "peak_pkg_interface_flux_W": [
+            0.018964022645967752,
+            3.5311530177095496
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 41.28444597517738,
+              "wet_p10_gap_mm": 49.507371288747365,
+              "linked_wet_gap_median_mm": 54.59788763459776,
+              "linked_wet_gap_max_mm": 117.51785909811653,
+              "interface_G_W_K": 0.5013899721978969,
+              "links": 1004,
+              "linked_wet_cells": 95
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 15.286228427554736,
+              "wet_p10_gap_mm": 51.15525946581617,
+              "linked_wet_gap_median_mm": 55.951823893583004,
+              "linked_wet_gap_max_mm": 114.09283566769399,
+              "interface_G_W_K": 0.6102837773808736,
+              "links": 1020,
+              "linked_wet_cells": 101
+            }
+          ],
+          "cold_z6": [
+            0.19628262855904421,
+            20.006593018004175,
+            0.037941210661741255,
+            6.341946266731888,
+            0.16938029032555613,
+            17.754386419672883
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_native_face_medium.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 6.487710335679763e-05,
+            "thermal_delta_Z_relative_L2": 0.003111403681675515,
+            "absolute_Z_difference_over_thermal_delta": 0.25885529119569894,
+            "sea_interpolated_max_abs_K": 0.7164074329648997,
+            "package_max_abs_K": 0.2152125001974241,
+            "copper_max_abs_K": 0.05306650473659147
+          }
+        },
+        "face_fine": {
+          "grid_xz_m": 0.11,
+          "grid_y_m": 0.09,
+          "sea_cells": 552,
+          "source_3D_volume_m3": 0.08699836102296798,
+          "mesh_rel_volume_error": 0.0,
+          "cold_precompute_sec": 0.8823625999993965,
+          "direct_time_sec": 3.2165714999991906,
+          "direct_material_budget_W": 1.39443820046381e-07,
+          "peak_pkg_interface_flux_W": [
+            0.07561544558734842,
+            3.6098698390295043
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 11.28444597517739,
+              "wet_p10_gap_mm": 54.68689615991847,
+              "linked_wet_gap_median_mm": 54.746745003577956,
+              "linked_wet_gap_max_mm": 112.66726927196781,
+              "interface_G_W_K": 0.5762940121686441,
+              "links": 964,
+              "linked_wet_cells": 102
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 6.950822153024794,
+              "wet_p10_gap_mm": 50.19717588591087,
+              "linked_wet_gap_median_mm": 51.56354900645052,
+              "linked_wet_gap_max_mm": 119.90391807287449,
+              "interface_G_W_K": 0.6403762057766318,
+              "links": 997,
+              "linked_wet_cells": 105
+            }
+          ],
+          "cold_z6": [
+            0.19697732363101975,
+            20.00652581887842,
+            0.03933543340014469,
+            6.341904561522226,
+            0.17024511331199116,
+            17.754365850217365
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_native_face_fine.npz",
+          "surrogate_k6": {
+            "dynamic_Z_relative_L2": 9.281450240511464e-05,
+            "sea_max_abs_K": 0.0014430446272513109,
+            "pkg_max_abs_K": 0.0003958241414920849,
+            "cu_max_abs_K": 8.864178653311683e-07,
+            "q_port_gap_W": 2.6645352591003757e-15,
+            "material_budget_gap_W": 7.44613259939797e-11,
+            "inference_sec": 0.10155100000156381,
+            "directional_EM_solves": 6,
+            "directional_EM_sec": 0.20409710000058112
+          },
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.0,
+            "thermal_delta_Z_relative_L2": 0.0,
+            "absolute_Z_difference_over_thermal_delta": 0.0,
+            "sea_interpolated_max_abs_K": 0.0,
+            "package_max_abs_K": 0.0,
+            "copper_max_abs_K": 0.0
+          }
+        }
+      }
+    },
+    "P07": {
+      "original_program": 18,
+      "voltage_V": 150.0,
+      "time_points": 41,
+      "levels": {
+        "legacy": {
+          "grid_xz_m": null,
+          "grid_y_m": null,
+          "sea_cells": 384,
+          "source_3D_volume_m3": 0.08318853445202873,
+          "mesh_rel_volume_error": 1.6682332366147387e-16,
+          "cold_precompute_sec": 1.2068792000009125,
+          "direct_time_sec": 5.399213599999712,
+          "direct_material_budget_W": 6.589736827322668e-07,
+          "peak_pkg_interface_flux_W": [
+            0.05110436258533321,
+            6.620260126832809
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 73.5415761833726,
+              "wet_p10_gap_mm": 105.2384162795891,
+              "linked_wet_gap_median_mm": 109.8894694417279,
+              "linked_wet_gap_max_mm": 152.60204388549286,
+              "interface_G_W_K": 0.3862120285379152,
+              "links": 970,
+              "linked_wet_cells": 78
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 19.221835568028066,
+              "wet_p10_gap_mm": 98.90491493582256,
+              "linked_wet_gap_median_mm": 96.54420529885437,
+              "linked_wet_gap_max_mm": 155.519082209885,
+              "interface_G_W_K": 0.49087746592705234,
+              "links": 966,
+              "linked_wet_cells": 71
+            }
+          ],
+          "cold_z6": [
+            0.17316309365893207,
+            20.00697038255808,
+            0.02755929919161046,
+            6.529503956313809,
+            0.16570713401321652,
+            18.125799433444612
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_native_legacy.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 7.529652553303063e-05,
+            "thermal_delta_Z_relative_L2": 0.004291613888374898,
+            "absolute_Z_difference_over_thermal_delta": 0.13696135435963003,
+            "sea_interpolated_max_abs_K": 2.2336684856622924,
+            "package_max_abs_K": 0.6340706440527129,
+            "copper_max_abs_K": 0.43776959478066146
+          }
+        },
+        "face_coarse": {
+          "grid_xz_m": 0.2,
+          "grid_y_m": 0.15,
+          "sea_cells": 390,
+          "source_3D_volume_m3": 0.08318853445202873,
+          "mesh_rel_volume_error": 1.6682332366147387e-16,
+          "cold_precompute_sec": 0.7678706000006059,
+          "direct_time_sec": 4.985458299999664,
+          "direct_material_budget_W": 6.531452356739464e-07,
+          "peak_pkg_interface_flux_W": [
+            0.09563041991223128,
+            7.74692218440086
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 13.108736039047601,
+              "wet_p10_gap_mm": 51.2560670356416,
+              "linked_wet_gap_median_mm": 52.00000000000001,
+              "linked_wet_gap_max_mm": 125.43340393735942,
+              "interface_G_W_K": 0.5274738214201812,
+              "links": 1019,
+              "linked_wet_cells": 81
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 10.554473260226795,
+              "wet_p10_gap_mm": 52.57464267080451,
+              "linked_wet_gap_median_mm": 58.77243945623649,
+              "linked_wet_gap_max_mm": 131.56729769720656,
+              "interface_G_W_K": 0.6288227780458642,
+              "links": 1022,
+              "linked_wet_cells": 92
+            }
+          ],
+          "cold_z6": [
+            0.16805245865665452,
+            20.00712551469603,
+            0.02638858211875312,
+            6.529617326242925,
+            0.16142975005047694,
+            18.12587949914788
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_native_face_coarse.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.00024218102082112657,
+            "thermal_delta_Z_relative_L2": 0.00022834121002831076,
+            "absolute_Z_difference_over_thermal_delta": 0.4331221239074363,
+            "sea_interpolated_max_abs_K": 1.5908545590294239,
+            "package_max_abs_K": 0.23319196828134636,
+            "copper_max_abs_K": 0.018556945258922042
+          }
+        },
+        "face_medium": {
+          "grid_xz_m": 0.14,
+          "grid_y_m": 0.12,
+          "sea_cells": 453,
+          "source_3D_volume_m3": 0.08318853445202873,
+          "mesh_rel_volume_error": 1.6682332366147387e-16,
+          "cold_precompute_sec": 0.7424277999998594,
+          "direct_time_sec": 5.893544900000052,
+          "direct_material_budget_W": 6.517945863038221e-07,
+          "peak_pkg_interface_flux_W": [
+            0.09545707322293916,
+            7.981256971590555
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 13.108736039047601,
+              "wet_p10_gap_mm": 52.00000000000001,
+              "linked_wet_gap_median_mm": 52.697095791210266,
+              "linked_wet_gap_max_mm": 125.43340393735942,
+              "interface_G_W_K": 0.5353892157561384,
+              "links": 1014,
+              "linked_wet_cells": 96
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 6.509742299165891,
+              "wet_p10_gap_mm": 52.97360303564734,
+              "linked_wet_gap_median_mm": 54.762233283396995,
+              "linked_wet_gap_max_mm": 115.91701214232425,
+              "interface_G_W_K": 0.653429945389546,
+              "links": 1015,
+              "linked_wet_cells": 92
+            }
+          ],
+          "cold_z6": [
+            0.1686307359486186,
+            20.007126298077836,
+            0.027113516398302874,
+            6.529623722094263,
+            0.16282524449760583,
+            18.125881369540018
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_native_face_medium.npz",
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.00020380612783142896,
+            "thermal_delta_Z_relative_L2": 0.0009875129144219085,
+            "absolute_Z_difference_over_thermal_delta": 0.3645324336800713,
+            "sea_interpolated_max_abs_K": 1.7226745105121495,
+            "package_max_abs_K": 0.2931878438029685,
+            "copper_max_abs_K": 0.10669408535858338
+          }
+        },
+        "face_fine": {
+          "grid_xz_m": 0.11,
+          "grid_y_m": 0.09,
+          "sea_cells": 536,
+          "source_3D_volume_m3": 0.08318853445202873,
+          "mesh_rel_volume_error": 1.6682332366147387e-16,
+          "cold_precompute_sec": 0.8380595999988145,
+          "direct_time_sec": 7.005564400000367,
+          "direct_material_budget_W": 6.528091063273678e-07,
+          "peak_pkg_interface_flux_W": [
+            0.055035306045093886,
+            7.7045761419121765
+          ],
+          "interface_near": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 13.108736039047603,
+              "wet_p10_gap_mm": 59.59258622954118,
+              "linked_wet_gap_median_mm": 60.22834978125144,
+              "linked_wet_gap_max_mm": 121.83485294343608,
+              "interface_G_W_K": 0.5136454642194785,
+              "links": 958,
+              "linked_wet_cells": 90
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 13.513510776607042,
+              "wet_p10_gap_mm": 56.286048184906,
+              "linked_wet_gap_median_mm": 55.78519435921475,
+              "linked_wet_gap_max_mm": 126.75201390745406,
+              "interface_G_W_K": 0.6253725868887556,
+              "links": 1014,
+              "linked_wet_cells": 96
+            }
+          ],
+          "cold_z6": [
+            0.1741427965117608,
+            20.007078585536007,
+            0.027842576938252414,
+            6.529595200444347,
+            0.163887766601026,
+            18.12586275659653
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_native_face_fine.npz",
+          "surrogate_k6": {
+            "dynamic_Z_relative_L2": 4.684131285326712e-05,
+            "sea_max_abs_K": 0.006714471526322541,
+            "pkg_max_abs_K": 0.001991405617957298,
+            "cu_max_abs_K": 1.2448307984413987e-06,
+            "q_port_gap_W": 5.329070518200751e-15,
+            "material_budget_gap_W": 1.262208115804242e-10,
+            "inference_sec": 0.1613600000000588,
+            "directional_EM_solves": 6,
+            "directional_EM_sec": 0.1961102999994182
+          },
+          "vs_face_fine": {
+            "cold_Z_relative_L2": 0.0,
+            "thermal_delta_Z_relative_L2": 0.0,
+            "absolute_Z_difference_over_thermal_delta": 0.0,
+            "sea_interpolated_max_abs_K": 0.0,
+            "package_max_abs_K": 0.0,
+            "copper_max_abs_K": 0.0
+          }
+        }
+      }
+    }
+  }
+}

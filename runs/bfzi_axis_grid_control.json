@@ -1,0 +1,683 @@
+{
+  "source": "original BFZI V150 physical 3D direct EM-thermal",
+  "control": "equal 204 mm axis-aligned boxes, 40 mm center distance",
+  "physical_box_only": true,
+  "voltage_V": 150.0,
+  "time_step_s": 15.0,
+  "duration_s": 600.0,
+  "levels": {
+    "legacy": {
+      "grid_xz_m": null,
+      "grid_y_m": null,
+      "nsea": 384,
+      "downsampled": false,
+      "mesh_rel_volume_error": 1.459522361408088e-16,
+      "cold_z6": [
+        0.2611555058451962,
+        20.00451976262026,
+        0.10957853436674524,
+        6.37608515517237,
+        0.2611555058451961,
+        20.00451976262026
+      ],
+      "setup_sec": 0.9401111000006495,
+      "direct_sec": 5.918180000000575,
+      "max_material_budget_W": 6.859198578013093e-07,
+      "package_interface_flux_W": [
+        0.2017710425526022,
+        15.213282027567034
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 1.512500000000005,
+          "wet_p10_gap_mm": 42.355823865796495,
+          "linked_wet_gap_median_mm": 42.355823865796474,
+          "linked_wet_gap_max_mm": 73.00000000000001,
+          "interface_G_W_K": 0.6619858608377368,
+          "links": 1024,
+          "linked_wet_cells": 68
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 1.512500000000005,
+          "wet_p10_gap_mm": 42.35582386579649,
+          "linked_wet_gap_median_mm": 42.355823865796474,
+          "linked_wet_gap_max_mm": 73.00000000000001,
+          "interface_G_W_K": 0.6619858608377366,
+          "links": 1024,
+          "linked_wet_cells": 68
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_legacy.npz",
+      "vs_face_fine": {
+        "cold_Z_relative_L2": 0.0004811260689639174,
+        "thermal_delta_Z_relative_L2": 0.003001837488096307,
+        "absolute_Z_difference_over_thermal_delta": 0.6546154592769661,
+        "sea_interpolated_max_abs_K": 8.78544523362359,
+        "package_max_abs_K": 0.921175335147268,
+        "copper_max_abs_K": 0.23102739863327315
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 0.0001367612756390313,
+        "thermal_delta_Z_relative_L2": 0.006568154932120059,
+        "absolute_Z_difference_over_thermal_delta": 0.18646556775898623,
+        "sea_interpolated_max_abs_K": 4.740908554559667,
+        "package_max_abs_K": 1.5449410851998664,
+        "copper_max_abs_K": 0.9342319202114027
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.00018822789562668448,
+        "thermal_delta_Z_relative_L2": 0.010685132249164071,
+        "absolute_Z_difference_over_thermal_delta": 0.2618081040046257,
+        "sea_interpolated_max_abs_K": 1.5390324958326573,
+        "package_max_abs_K": 1.8615259670688715,
+        "copper_max_abs_K": 1.1712506779136334
+      }
+    },
+    "face_coarse": {
+      "grid_xz_m": 0.2,
+      "grid_y_m": 0.15,
+      "nsea": 272,
+      "downsampled": false,
+      "mesh_rel_volume_error": 0.0,
+      "cold_z6": [
+        0.25888726534388873,
+        20.004674061597175,
+        0.09850243613769756,
+        6.376229331397534,
+        0.25888726534388873,
+        20.004674061597175
+      ],
+      "setup_sec": 0.773809500000425,
+      "direct_sec": 4.298716100000092,
+      "max_material_budget_W": 6.972137995830963e-07,
+      "package_interface_flux_W": [
+        0.249200362598829,
+        14.160954366578013
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000003,
+          "wet_p10_gap_mm": 25.071148757087272,
+          "linked_wet_gap_median_mm": 37.25,
+          "linked_wet_gap_max_mm": 61.551299742572446,
+          "interface_G_W_K": 0.6252515751351374,
+          "links": 1008,
+          "linked_wet_cells": 92
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000003,
+          "wet_p10_gap_mm": 25.071148757087272,
+          "linked_wet_gap_median_mm": 37.250000000000014,
+          "linked_wet_gap_max_mm": 61.55129974257245,
+          "interface_G_W_K": 0.6252515751351378,
+          "links": 1008,
+          "linked_wet_cells": 92
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_coarse.npz",
+      "vs_face_fine": {
+        "cold_Z_relative_L2": 0.00027434454950697973,
+        "thermal_delta_Z_relative_L2": 0.0065788193067384156,
+        "absolute_Z_difference_over_thermal_delta": 0.36986870607137334,
+        "sea_interpolated_max_abs_K": 8.234635575061532,
+        "package_max_abs_K": 0.662984885505125,
+        "copper_max_abs_K": 0.3095351499548542
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 0.00036960003103586196,
+        "thermal_delta_Z_relative_L2": 0.01350857392404686,
+        "absolute_Z_difference_over_thermal_delta": 0.512436009799371,
+        "sea_interpolated_max_abs_K": 4.820065130138005,
+        "package_max_abs_K": 1.9199044666986538,
+        "copper_max_abs_K": 1.47479446879953
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.0005084269286956547,
+        "thermal_delta_Z_relative_L2": 0.019222795190958365,
+        "absolute_Z_difference_over_thermal_delta": 0.7032694526363275,
+        "sea_interpolated_max_abs_K": 1.443675379591184,
+        "package_max_abs_K": 2.2134777536740557,
+        "copper_max_abs_K": 1.7118132265017607
+      }
+    },
+    "face_medium": {
+      "grid_xz_m": 0.14,
+      "grid_y_m": 0.12,
+      "nsea": 312,
+      "downsampled": false,
+      "mesh_rel_volume_error": 0.0,
+      "cold_z6": [
+        0.25877313183943307,
+        20.00480367950714,
+        0.09643420644508655,
+        6.3763487551977756,
+        0.2587731318394332,
+        20.00480367950714
+      ],
+      "setup_sec": 0.7898674999996729,
+      "direct_sec": 4.802043900001081,
+      "max_material_budget_W": 6.946929715923034e-07,
+      "package_interface_flux_W": [
+        0.3079667336661477,
+        14.380858839077415
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000001,
+          "wet_p10_gap_mm": 37.25,
+          "linked_wet_gap_median_mm": 44.654926939812576,
+          "linked_wet_gap_max_mm": 61.551299742572446,
+          "interface_G_W_K": 0.6472984042534498,
+          "links": 1020,
+          "linked_wet_cells": 106
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000001,
+          "wet_p10_gap_mm": 37.250000000000014,
+          "linked_wet_gap_median_mm": 44.654926939812576,
+          "linked_wet_gap_max_mm": 61.55129974257245,
+          "interface_G_W_K": 0.6472984042534501,
+          "links": 1020,
+          "linked_wet_cells": 106
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_medium.npz",
+      "vs_face_fine": {
+        "cold_Z_relative_L2": 0.00029370683130454644,
+        "thermal_delta_Z_relative_L2": 0.005496389747687076,
+        "absolute_Z_difference_over_thermal_delta": 0.3970622320391481,
+        "sea_interpolated_max_abs_K": 7.499883412235249,
+        "package_max_abs_K": 0.5436814269121442,
+        "copper_max_abs_K": 0.19331267005350128
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 0.0004322961878985522,
+        "thermal_delta_Z_relative_L2": 0.01256532544825199,
+        "absolute_Z_difference_over_thermal_delta": 0.5968788915529525,
+        "sea_interpolated_max_abs_K": 4.314926472946638,
+        "package_max_abs_K": 1.7902148355541385,
+        "copper_max_abs_K": 1.358571988898177
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.0005711047190303098,
+        "thermal_delta_Z_relative_L2": 0.018179820445378428,
+        "absolute_Z_difference_over_thermal_delta": 0.787243428154887,
+        "sea_interpolated_max_abs_K": 2.4912181649711442,
+        "package_max_abs_K": 2.1609672964694937,
+        "copper_max_abs_K": 1.5955907466004078
+      }
+    },
+    "face_fine": {
+      "grid_xz_m": 0.11,
+      "grid_y_m": 0.09,
+      "nsea": 400,
+      "downsampled": false,
+      "mesh_rel_volume_error": 0.0,
+      "cold_z6": [
+        0.2511007192155217,
+        20.004623966246605,
+        0.1000844994175181,
+        6.376171362644073,
+        0.25929797717734193,
+        20.004623966246605
+      ],
+      "setup_sec": 0.8836978999988787,
+      "direct_sec": 5.990994699999646,
+      "max_material_budget_W": 6.907791103571981e-07,
+      "package_interface_flux_W": [
+        0.5381901313683866,
+        14.562764398794455
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000008,
+          "wet_p10_gap_mm": 47.24999999999999,
+          "linked_wet_gap_median_mm": 48.999999999999986,
+          "linked_wet_gap_max_mm": 59.92703897240378,
+          "interface_G_W_K": 0.695850813484254,
+          "links": 1024,
+          "linked_wet_cells": 124
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.249999999999995,
+          "wet_p10_gap_mm": 47.25000000000001,
+          "linked_wet_gap_median_mm": 48.999999999999986,
+          "linked_wet_gap_max_mm": 59.92703897240378,
+          "interface_G_W_K": 0.6958508134842545,
+          "links": 1024,
+          "linked_wet_cells": 124
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_fine.npz",
+      "vs_face_fine": {
+        "cold_Z_relative_L2": 0.0,
+        "thermal_delta_Z_relative_L2": 0.0,
+        "absolute_Z_difference_over_thermal_delta": 0.0,
+        "sea_interpolated_max_abs_K": 0.0,
+        "package_max_abs_K": 0.0,
+        "copper_max_abs_K": 0.0
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 0.0005078011581888838,
+        "thermal_delta_Z_relative_L2": 0.008668594115801339,
+        "absolute_Z_difference_over_thermal_delta": 0.696147652233978,
+        "sea_interpolated_max_abs_K": 3.94789115307492,
+        "package_max_abs_K": 1.3948171937219058,
+        "copper_max_abs_K": 1.1652593188446758
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.0006285091906307076,
+        "thermal_delta_Z_relative_L2": 0.013389651342457076,
+        "absolute_Z_difference_over_thermal_delta": 0.8602197792816313,
+        "sea_interpolated_max_abs_K": 5.965048535371636,
+        "package_max_abs_K": 1.8332578447181618,
+        "copper_max_abs_K": 1.4022780765469065
+      }
+    },
+    "face_finer": {
+      "grid_xz_m": 0.09,
+      "grid_y_m": 0.075,
+      "nsea": 612,
+      "downsampled": false,
+      "mesh_rel_volume_error": -1.459522361408088e-16,
+      "cold_z6": [
+        0.2619185625407169,
+        20.004491892650158,
+        0.10571904684333161,
+        6.376058484615124,
+        0.26191856254071677,
+        20.004491892650158
+      ],
+      "setup_sec": 0.9787894000000961,
+      "direct_sec": 9.253705400000399,
+      "max_material_budget_W": 6.792044331405123e-07,
+      "package_interface_flux_W": [
+        0.132943574237353,
+        15.936612133011264
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000003,
+          "wet_p10_gap_mm": 22.46494182300749,
+          "linked_wet_gap_median_mm": 20.583333333333343,
+          "linked_wet_gap_max_mm": 74.50000000000001,
+          "interface_G_W_K": 0.7299532052658301,
+          "links": 1024,
+          "linked_wet_cells": 88
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000003,
+          "wet_p10_gap_mm": 22.464941823007482,
+          "linked_wet_gap_median_mm": 20.58333333333333,
+          "linked_wet_gap_max_mm": 74.49999999999997,
+          "interface_G_W_K": 0.7299532052658296,
+          "links": 1024,
+          "linked_wet_cells": 88
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_finer.npz",
+      "hybrid_k6": {
+        "dynamic_Z_relative_L2": 7.294648872007574e-05,
+        "sea_max_abs_K": 0.003489606064306372,
+        "pkg_max_abs_K": 0.0018568606382132202,
+        "cu_max_abs_K": 5.126024404944474e-06,
+        "q_port_gap_W": 2.1316282072803006e-14,
+        "material_budget_gap_W": 1.213464884131099e-10,
+        "inference_sec": 0.2469240999998874,
+        "directional_EM_solves": 6,
+        "directional_EM_sec": 0.308406099999047
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 8.601856157397149e-05,
+        "thermal_delta_Z_relative_L2": 0.005813090085644297,
+        "absolute_Z_difference_over_thermal_delta": 0.11647498685267813,
+        "sea_interpolated_max_abs_K": 4.371533788244733,
+        "package_max_abs_K": 1.008515726825749,
+        "copper_max_abs_K": 0.6188826476740701
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.00022127232853797596,
+        "thermal_delta_Z_relative_L2": 0.006774347577786409,
+        "absolute_Z_difference_over_thermal_delta": 0.3044958347534821,
+        "sea_interpolated_max_abs_K": 1.156415583325611,
+        "package_max_abs_K": 1.205322505530546,
+        "copper_max_abs_K": 0.8559014053763008
+      }
+    },
+    "face_extra": {
+      "grid_xz_m": 0.075,
+      "grid_y_m": 0.06,
+      "nsea": 848,
+      "downsampled": false,
+      "mesh_rel_volume_error": 0.0,
+      "cold_z6": [
+        0.26336730049968005,
+        20.004460046156886,
+        0.10714156053259127,
+        6.376032902876567,
+        0.26336730049968005,
+        20.004460046156886
+      ],
+      "setup_sec": 1.2764803999998549,
+      "direct_sec": 13.5258002999999,
+      "max_material_budget_W": 6.85634027774995e-07,
+      "package_interface_flux_W": [
+        0.38883968167279487,
+        16.795415034079756
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 1.5357142857142947,
+          "wet_p10_gap_mm": 28.70196618372667,
+          "linked_wet_gap_median_mm": 26.04461665504922,
+          "linked_wet_gap_max_mm": 42.0267771783657,
+          "interface_G_W_K": 0.8149800405123722,
+          "links": 1024,
+          "linked_wet_cells": 144
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 1.5357142857142947,
+          "wet_p10_gap_mm": 28.70196618372667,
+          "linked_wet_gap_median_mm": 26.04461665504922,
+          "linked_wet_gap_max_mm": 42.0267771783657,
+          "interface_G_W_K": 0.8149800405123738,
+          "links": 1024,
+          "linked_wet_cells": 144
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_extra.npz",
+      "hybrid_k6": {
+        "dynamic_Z_relative_L2": 2.6197743305296786e-05,
+        "sea_max_abs_K": 0.00685354908574709,
+        "pkg_max_abs_K": 0.0034904695640989303,
+        "cu_max_abs_K": 4.790925800080004e-06,
+        "q_port_gap_W": 2.1316282072803006e-14,
+        "material_budget_gap_W": 1.2118306358388509e-10,
+        "inference_sec": 0.23501129999931436,
+        "directional_EM_solves": 6,
+        "directional_EM_sec": 0.41154699999970035
+      },
+      "vs_face_extra": {
+        "cold_Z_relative_L2": 0.0,
+        "thermal_delta_Z_relative_L2": 0.0,
+        "absolute_Z_difference_over_thermal_delta": 0.0,
+        "sea_interpolated_max_abs_K": 0.0,
+        "package_max_abs_K": 0.0,
+        "copper_max_abs_K": 0.0
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.00013892561491992284,
+        "thermal_delta_Z_relative_L2": 0.007988421027881084,
+        "absolute_Z_difference_over_thermal_delta": 0.19345293155755564,
+        "sea_interpolated_max_abs_K": 1.277567902141243,
+        "package_max_abs_K": 0.6620839584675196,
+        "copper_max_abs_K": 0.2370187577022307
+      }
+    },
+    "face_ultra": {
+      "grid_xz_m": 0.065,
+      "grid_y_m": 0.055,
+      "nsea": 1256,
+      "downsampled": false,
+      "mesh_rel_volume_error": 1.459522361408088e-16,
+      "cold_z6": [
+        0.26495632218165305,
+        20.00433283612694,
+        0.1104789927966919,
+        6.375915850164737,
+        0.26495632218165294,
+        20.00433283612694
+      ],
+      "setup_sec": 1.6715607000005548,
+      "direct_sec": 26.20649770000091,
+      "max_material_budget_W": 6.813484176859674e-07,
+      "package_interface_flux_W": [
+        0.17015162765917255,
+        17.439669371640022
+      ],
+      "interface": [
+        {
+          "package": 1,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000001,
+          "wet_p10_gap_mm": 23.819929273871576,
+          "linked_wet_gap_median_mm": 20.428571428571406,
+          "linked_wet_gap_max_mm": 49.49999999999999,
+          "interface_G_W_K": 0.8296305509424496,
+          "links": 1024,
+          "linked_wet_cells": 142
+        },
+        {
+          "package": 2,
+          "wet_inside_box": 0,
+          "wet_min_gap_mm": 7.250000000000001,
+          "wet_p10_gap_mm": 23.819929273871576,
+          "linked_wet_gap_median_mm": 20.428571428571406,
+          "linked_wet_gap_max_mm": 49.50000000000001,
+          "interface_G_W_K": 0.8296305509424499,
+          "links": 1024,
+          "linked_wet_cells": 142
+        }
+      ],
+      "oriented_void": {
+        "original_BFZI_AABB_void_m3": 0.0009155520000000006,
+        "original_BFZI_package_AABB_union_m3": 0.0009155520000000006,
+        "original_BFZI_AABB_individual_m3": [
+          0.0004577760000000003,
+          0.0004577760000000003
+        ],
+        "additional_dry_riser_void_m3": 0.0,
+        "physical_oriented_individual_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "physical_box_sum_m3": 0.000915552,
+        "AABB_void_excess_lower_bound_m3": 5.421010862427522e-19,
+        "BFZI_AABB_over_physical_sum": 1.0000000000000007,
+        "physical_packages_overlap": false,
+        "physical_box_AABB_m3": [
+          0.000457776,
+          0.000457776
+        ],
+        "BFZI_AABB_to_physical_box_ratio": [
+          1.0000000000000007,
+          1.0000000000000007
+        ]
+      },
+      "physical_file": "runs\\bfzi_axis_grid_face_ultra.npz",
+      "hybrid_k6": {
+        "dynamic_Z_relative_L2": 0.00042466730995319076,
+        "sea_max_abs_K": 0.004193513536392857,
+        "pkg_max_abs_K": 0.0014299533601729308,
+        "cu_max_abs_K": 5.942242887613247e-05,
+        "q_port_gap_W": 2.842170943040401e-14,
+        "material_budget_gap_W": 1.2114753644709708e-10,
+        "inference_sec": 0.34476490000088234,
+        "directional_EM_solves": 6,
+        "directional_EM_sec": 0.6946622999985266
+      },
+      "vs_face_ultra": {
+        "cold_Z_relative_L2": 0.0,
+        "thermal_delta_Z_relative_L2": 0.0,
+        "absolute_Z_difference_over_thermal_delta": 0.0,
+        "sea_interpolated_max_abs_K": 0.0,
+        "package_max_abs_K": 0.0,
+        "copper_max_abs_K": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "test": "BFZI original warm 3D FV vs physical tangent and 32D ROM",
+  "original_temperature_and_Z_used_only_for_evaluation": true,
+  "levels": {
+    "face_extra": {
+      "cold_response_k6": {
+        "oracle_dynamic_Z_relative_L2": 2.456086453928161e-05,
+        "max_sea_mode_projection_rel": 0.25644249419089216,
+        "full_FV": {
+          "dynamic_Z_relative_L2": 2.6164040783359764e-05,
+          "sea_max_abs_K": 2.548539117697146e-05,
+          "package_max_abs_K": 2.348720784084435e-06,
+          "copper_max_abs_K": 4.376760898594512e-06,
+          "q_port_gap_W": 2.1316282072803006e-14,
+          "inference_sec": 0.26627929999995104
+        },
+        "ROM32": {
+          "dynamic_Z_relative_L2": 2.6197743305296786e-05,
+          "sea_max_abs_K": 0.00685354908574709,
+          "package_max_abs_K": 0.0034904695640989303,
+          "copper_max_abs_K": 4.790925800080004e-06,
+          "q_port_gap_W": 2.1316282072803006e-14,
+          "inference_sec": 0.24202629999854253
+        }
+      },
+      "forward_k8": {
+        "oracle_dynamic_Z_relative_L2": 1.2834048533572546e-05,
+        "max_sea_mode_projection_rel": 0.25583264262745187,
+        "full_FV": {
+          "dynamic_Z_relative_L2": 1.2225304239292226e-05,
+          "sea_max_abs_K": 2.6406785309518455e-05,
+          "package_max_abs_K": 2.342006439448596e-06,
+          "copper_max_abs_K": 2.3997915832296712e-06,
+          "q_port_gap_W": 2.842170943040401e-14,
+          "inference_sec": 0.2955210000000079
+        },
+        "ROM32": {
+          "dynamic_Z_relative_L2": 1.218623739691665e-05,
+          "sea_max_abs_K": 0.006854442649910197,
+          "package_max_abs_K": 0.0034912165058926803,
+          "copper_max_abs_K": 1.7501150750831584e-06,
+          "q_port_gap_W": 2.1316282072803006e-14,
+          "inference_sec": 0.2124325000004319
+        }
+      }
+    },
+    "face_ultra": {
+      "cold_response_k6": {
+        "oracle_dynamic_Z_relative_L2": 0.00041873825672073645,
+        "max_sea_mode_projection_rel": 0.16256635066650957,
+        "full_FV": {
+          "dynamic_Z_relative_L2": 0.00042455256868005744,
+          "sea_max_abs_K": 7.000101891208033e-05,
+          "package_max_abs_K": 1.2567498913540476e-05,
+          "copper_max_abs_K": 5.962858745078847e-05,
+          "q_port_gap_W": 3.552713678800501e-14,
+          "inference_sec": 0.35094050000043353
+        },
+        "ROM32": {
+          "dynamic_Z_relative_L2": 0.00042466730995319076,
+          "sea_max_abs_K": 0.004193513536392857,
+          "package_max_abs_K": 0.0014299533601729308,
+          "copper_max_abs_K": 5.942242887613247e-05,
+          "q_port_gap_W": 2.842170943040401e-14,
+          "inference_sec": 0.26488049999898067
+        }
+      },
+      "forward_k8": {
+        "oracle_dynamic_Z_relative_L2": 2.7571826490747583e-05,
+        "max_sea_mode_projection_rel": 0.15385172165433508,
+        "full_FV": {
+          "dynamic_Z_relative_L2": 2.600797068296339e-05,
+          "sea_max_abs_K": 4.299895419990207e-05,
+          "package_max_abs_K": 5.8372202715872845e-06,
+          "copper_max_abs_K": 9.67901490867007e-06,
+          "q_port_gap_W": 2.842170943040401e-14,
+          "inference_sec": 0.3543830999988131
+        },
+        "ROM32": {
+          "dynamic_Z_relative_L2": 2.5949164519613907e-05,
+          "sea_max_abs_K": 0.004224945992291396,
+          "package_max_abs_K": 0.0014398489211089327,
+          "copper_max_abs_K": 9.474138664700149e-06,
+          "q_port_gap_W": 2.842170943040401e-14,
+          "inference_sec": 0.3006377000001521
+        }
+      }
+    }
+  }
+}
