@@ -165,12 +165,15 @@ class BFZIV148Adapter:
 
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
                  copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False,
-                 heat_mode="j2"):
+                 heat_mode="j2",fv_faces="approx"):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
         if heat_mode not in ("j2","port-weak"):
             raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
+        if fv_faces not in ("approx","exact"):
+            raise ValueError("BFZI FV face area mode must be approx or exact")
         self.heat_mode=heat_mode
+        self.fv_faces=fv_faces
         self.calc = calc
         self.base = dict(data)
         self.ambient = float(ambient)
@@ -182,6 +185,9 @@ class BFZIV148Adapter:
         self.sigma0 = float(data["sample"]["sigma_sw_s_per_m"])
         self.proj = calc.core.StrictFVScalarPotentialProjector(
             data["records"] or [],self.points,variant="fv_internal_only")
+        if fv_faces=="exact":
+            from .obb_faces import apply
+            self.proj=apply(self.proj,data["records"],data["vol_meta"])
         self.mass = _mass(data,calc)
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
