@@ -16,6 +16,7 @@ import torch
 from sdfmpneo_bfzi.geom_memory import GeomFrac
 from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+from sdfmpneo_bfzi.pose import isinside
 
 
 def relative(a,b):
@@ -231,8 +232,8 @@ def main():
         jq=head.query_sea(pts,jpred[0][k])
         qq=head.query_sea(pts,qpred[0][k])
         is_pkg=np.any(np.stack([
-            np.all(abs(pts-head._pkg_mid[j])<=head._pkg_half[j]+1e-10,
-                   axis=1) for j in range(2)]),axis=0)
+            isinside(pts,head._pkg_mid[j],head._pkg_half[j],
+                     head._pkg_axes[j]) for j in range(2)]),axis=0)
         jq[is_pkg]=np.nan+1j*np.nan
         qq[is_pkg]=np.nan
         saved.update(
