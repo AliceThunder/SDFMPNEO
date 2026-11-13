@@ -17,6 +17,7 @@ from sdfmpneo_bfzi.geom_memory import GeomFrac
 from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
 from sdfmpneo_bfzi.geom_ensemble import load as load_ensemble
+from sdfmpneo_bfzi.geom_tangent import SeaTangent
 from sdfmpneo_bfzi.pose import isinside
 
 
@@ -64,6 +65,10 @@ def main():
     p.add_argument("--query",type=Path,default=None,
                    help="Optional Nx3 .npy positions for continuous xyz temperature queries")
     p.add_argument("--query-time",type=float,default=600.)
+    p.add_argument("--sea-tangent",type=Path,default=None,
+                   help="Original BFZI 3D cold sea-Z temperature Jacobian")
+    p.add_argument("--tangent-weight",type=float,default=1.,
+                   help="Physical sea-Z tangent fraction relative to neural delta, from 0 to 1")
     p.add_argument("--rom-rank",type=int,default=0,
                    help="Use capacity-weighted 5-material energy ROM; 0 means full FV")
     p.add_argument("--rom-file",type=Path,default=None,
@@ -138,10 +143,12 @@ def main():
         cold_err=relative(head.z0,z0)
         if cold_err>1e-8:
             raise ValueError(f"original BFZI cold complex port mismatch: {cold_err}")
+    tangent=SeaTangent.load(args.sea_tangent,full) if args.sea_tangent else None
     results=[];state=[];zpred=[];qpred=[];jpred=[]
     for i in range(len(v)):
         t0=time.perf_counter()
-        pr=head.rollout(net,ck,v[i],t)
+        pr=head.rollout(net,ck,v[i],t,
+                        tangent=tangent,blend=args.tangent_weight)
         sec=time.perf_counter()-t0
         one=(metrics(pr["temp_K"],true[i],head.ns,head.npkg,ztrue[i])
              if true is not None else {})
@@ -162,7 +169,8 @@ def main():
                 np.max(abs(pr["material_budget_W"])))
         if args.compare_full:
             tref=time.perf_counter()
-            direct=full.rollout(net,ck,v[i],t)
+            direct=full.rollout(net,ck,v[i],t,
+                                tangent=tangent,blend=args.tangent_weight)
             full_sec=time.perf_counter()-tref
             delta=pr["temp_K"]-direct["temp_K"]
             one["full_FV_surrogate_sec"]=full_sec
@@ -222,6 +230,8 @@ def main():
               history="learned causal fractional SOE sea delta",
               heat="original 3-D BFZI FV conservative heat operator",
               no_dynamic_BFZI_EM_solve=True,
+              cold_BFZI_sea_tangent=str(args.sea_tangent) if args.sea_tangent else None,
+              physical_tangent_weight=float(args.tangent_weight) if tangent is not None else 0.,
               reduced_heat_rank=head.rank if args.rom_rank else None,
               rom_setup_seconds=rom_build_seconds,
               rom_file=str(args.rom_file) if args.rom_file else None,
