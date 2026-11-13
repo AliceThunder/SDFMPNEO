@@ -50,6 +50,9 @@ def main():
                  f"bfzi_pose_{name.lower()}_disjoint_anchor.npz")
         cold=em.solve(np.full(head.ns,head.amb),np.full(2,head.amb))
         p0=cold.unit_j/(-1j*em.omega*em.mu*em.sigma0)
+        cold_proj=WeightedFV(
+            em.proj,np.full(head.ns,em.sigma0)).project(
+            [p0[:,i] for i in range(2)])
         with np.load(a.runs/
              f"bfzi_pose_{name.lower()}_disjoint_oriented_medium.npz") as s:
             t=s["time_s"].copy()
@@ -68,8 +71,11 @@ def main():
             sigma=em.sigma0*(1+em.alpha*(T[j,:head.ns]-head.amb))
             probe=WeightedFV(em.proj,sigma)
             fields=probe.project([p0[:,i] for i in range(2)])
-            unit=np.stack([-1j*em.omega*em.mu*sigma[:,None]*f
-                           for f in fields],axis=1)
+            unit=np.stack([
+                cold.unit_j[:,i]*(sigma/em.sigma0)[:,None]
+                -1j*em.omega*em.mu*sigma[:,None]*
+                    (fields[i]-cold_proj[i])
+                for i in range(2)],axis=1)
             Jnew=np.einsum("npc,p->nc",unit,I,optimize=True)
             eps=np.maximum(np.sum(abs(Jbase)**2,axis=1),1e-30)
             weight=np.sum(abs(Jnew)**2,axis=1)/eps
