@@ -195,6 +195,14 @@ def main():
     p.add_argument("--teacher-step",type=int,default=30,
                    help="Original BFZI direct dynamic teacher grid in seconds")
     p.add_argument("--case-name",type=str,default="P01")
+    p.add_argument("--pkg-sea-model",choices=("nearest","face-resistance"),
+                   default="nearest",help="Legacy total-G or oriented surface-resistance FV interface")
+    p.add_argument("--pkg-sea-h",type=float,default=20.,
+                   help="Oriented interface surface coefficient W/(m2 K)")
+    p.add_argument("--pkg-sea-quad",type=int,default=2,
+                   help="Quadrature points per package surface edge")
+    p.add_argument("--pkg-sea-near",type=int,default=4,
+                   help="Wet FV cells per package surface quadrature point")
     p.add_argument("--sea-tangent-rank",type=int,default=0,
                    help="Precompute original BFZI sea-Z thermal Jacobian in physical 3D ROM modes")
     p.add_argument("--sea-tangent-fd",choices=("central","forward"),
@@ -224,7 +232,10 @@ def main():
     em=BFZIV148Adapter(data,bf,heat_mode="port-weak")
     ex=np.diag([.5-1j*em.omega*em.air[0,0],
                 .5-1j*em.omega*em.air[1,1]])
-    et=BFZIV148Pkg3D(em,external=ex,pkg_shape=(4,2,4),pkg_k=.25)
+    et=BFZIV148Pkg3D(
+        em,external=ex,pkg_shape=(4,2,4),pkg_k=.25,
+        pkg_sea_model=a.pkg_sea_model,pkg_sea_h=a.pkg_sea_h,
+        pkg_sea_quad=a.pkg_sea_quad,pkg_sea_near=a.pkg_sea_near)
     anchor=GeomHeat.from_original(em,et,ex)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     anchor.save(a.out)
@@ -259,6 +270,13 @@ def main():
         info["sea_tangent_directional_solves"]=tangent.nsolve
         info["sea_tangent_build_sec"]=time.perf_counter()-t_tan
     info.update(geometry=anchor.geom.tolist(),
+                pkg_sea_model=a.pkg_sea_model,
+                pkg_sea_h_W_m2K=(a.pkg_sea_h if a.pkg_sea_model=="face-resistance" else None),
+                pkg_sea_quad=(a.pkg_sea_quad if a.pkg_sea_model=="face-resistance" else None),
+                pkg_sea_near=(a.pkg_sea_near if a.pkg_sea_model=="face-resistance" else None),
+                pkg_sea_total_G_W_K=[
+                    float(sum(edge[2] for edge in links))
+                    for links in et.pkg_links],
                 state_count=len(anchor.cap),
                 original_cold_Z6=anchor.z0.tolist(),
                 pose_extra18=anchor.pose.tolist(),
