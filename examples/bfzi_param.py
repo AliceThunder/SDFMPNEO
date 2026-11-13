@@ -202,6 +202,8 @@ def main():
                    help="Central: 2 BFZI solves per mode; forward: 1 using cached cold Z")
     p.add_argument("--sea-tangent-amplitude",type=float,default=.2,
                    help="Maximum absolute sea temperature perturbation in K")
+    p.add_argument("--sea-tangent-cold-subspace",action="store_true",
+                   help="Use k cold-heat-response directions (k <= 8) instead of k original ROM modes")
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
     p.add_argument("--heat",type=float,default=None)
@@ -232,10 +234,21 @@ def main():
         temp_rom=GeomHeatROM.build(
             anchor,rank=max(32,a.sea_tangent_rank+5))
         t_tan=time.perf_counter()
-        tangent=SeaTangent.build(em,anchor,temp_rom.phi,
-                                  rank=a.sea_tangent_rank,
-                                  amplitude=a.sea_tangent_amplitude,
-                                  method=a.sea_tangent_fd)
+        if a.sea_tangent_cold_subspace:
+            if a.sea_tangent_fd!="forward" or a.sea_tangent_rank>8:
+                p.error("cold heat-response subspace requires forward FD and rank <= 8")
+            from sdfmpneo_bfzi.geom_tangent import basis
+            from sdfmpneo_bfzi.geom_tangent_subspace import build as cold_build
+            modes=basis(anchor.vol,temp_rom.phi[:anchor.ns],rank=8)
+            tangent,stats=cold_build(
+                em,anchor,temp_rom,modes,a.sea_tangent_rank,
+                amplitude=a.sea_tangent_amplitude)
+            info["sea_tangent_cold_response"]=stats
+        else:
+            tangent=SeaTangent.build(em,anchor,temp_rom.phi,
+                                      rank=a.sea_tangent_rank,
+                                      amplitude=a.sea_tangent_amplitude,
+                                      method=a.sea_tangent_fd)
         tangent_path=a.out.with_name(
             a.out.stem+"_sea_tangent.npz")
         tangent.save(tangent_path)
