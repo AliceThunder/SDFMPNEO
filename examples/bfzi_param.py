@@ -27,7 +27,7 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
            shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
            pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None,
            grid_xz=None,grid_y=None,grid_layers=0,grid_factor=.5,
-           grid_max_nodes=1400,mesh_only=False):
+           grid_max_nodes=1400,mesh_only=False,physical_box_only=False):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -113,6 +113,13 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
         # Original BFZI sea volume has a shared envelope setting;
         # each thermal package below uses its independent sample half-size.
         cfg["BSR_PACKAGE_PLANE_HALF_M"]=max(sizes)*.0005
+    if physical_box_only:
+        # Physically isolated sealed package control: no dry riser and no
+        # additional world-axis wall extensions. The original BFZI OBB AABB
+        # is then exact when both coils are axis aligned.
+        cfg=dict(cfg,BSR_PACKAGE_TOP_RISER_ENABLE=False,
+                 BSR_PACKAGE_WALL_X_EXTRA_M=0.,
+                 BSR_PACKAGE_WALL_NEG_Z_EXTRA_M=0.)
     if (grid_xz is None)!=(grid_y is None):
         raise ValueError("both original BFZI physical grid sizes are required")
     if grid_xz is not None:
@@ -226,6 +233,8 @@ def main():
     p.add_argument("--sea-grid-layers",type=int,default=0)
     p.add_argument("--sea-grid-factor",type=float,default=.5)
     p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
+    p.add_argument("--physical-box-only",action="store_true",
+                   help="Disable BFZI riser/extra walls for an isolated sealed-box control")
     p.add_argument("--sea-grid-mesh-only",action="store_true",
                    help="Inspect native BFZI seawater FV grid without EM")
     p.add_argument("--pkg-sea-model",choices=("nearest","face-resistance"),
@@ -261,7 +270,8 @@ def main():
         grid_xz=a.sea_grid_xz,grid_y=a.sea_grid_y,
         grid_layers=a.sea_grid_layers,grid_factor=a.sea_grid_factor,
         grid_max_nodes=a.sea_grid_max_nodes,
-        mesh_only=a.sea_grid_mesh_only)
+        mesh_only=a.sea_grid_mesh_only,
+        physical_box_only=a.physical_box_only)
     if a.sea_grid_mesh_only:
         print(json.dumps(info,indent=2))
         return
