@@ -197,6 +197,11 @@ def main():
     p.add_argument("--case-name",type=str,default="P01")
     p.add_argument("--sea-tangent-rank",type=int,default=0,
                    help="Precompute original BFZI sea-Z thermal Jacobian in physical 3D ROM modes")
+    p.add_argument("--sea-tangent-fd",choices=("central","forward"),
+                   default="central",
+                   help="Central: 2 BFZI solves per mode; forward: 1 using cached cold Z")
+    p.add_argument("--sea-tangent-amplitude",type=float,default=1.,
+                   help="Maximum absolute sea temperature perturbation in K")
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
     p.add_argument("--heat",type=float,default=None)
@@ -226,13 +231,20 @@ def main():
         from sdfmpneo_bfzi.geom_rom import GeomHeatROM
         temp_rom=GeomHeatROM.build(
             anchor,rank=max(32,a.sea_tangent_rank+5))
+        t_tan=time.perf_counter()
         tangent=SeaTangent.build(em,anchor,temp_rom.phi,
-                                  rank=a.sea_tangent_rank)
+                                  rank=a.sea_tangent_rank,
+                                  amplitude=a.sea_tangent_amplitude,
+                                  method=a.sea_tangent_fd)
         tangent_path=a.out.with_name(
             a.out.stem+"_sea_tangent.npz")
         tangent.save(tangent_path)
         info["sea_tangent_file"]=str(tangent_path)
         info["sea_tangent_rank"]=len(tangent.jac)
+        info["sea_tangent_fd"]=tangent.method
+        info["sea_tangent_amplitude_K"]=tangent.amplitude
+        info["sea_tangent_directional_solves"]=tangent.nsolve
+        info["sea_tangent_build_sec"]=time.perf_counter()-t_tan
     info.update(geometry=anchor.geom.tolist(),
                 state_count=len(anchor.cap),
                 original_cold_Z6=anchor.z0.tolist(),
