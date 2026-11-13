@@ -68,7 +68,7 @@ class GeomHeat:
         rel=np.stack([(self.pkg_xyz[j]-self._pkg_mid[j])@
                       self._pkg_axes[j] for j in range(2)])
         span=np.max(abs(rel),axis=1)
-        self._pkg_half=(span*np.array([4./3,2.,4./3])
+        self._pkg_half=(np.maximum(span*np.array([4./3,2.,4./3]),1e-6)
                         if pkg_half is None else np.asarray(pkg_half,float))
         self.pose=(None if pose is None else np.asarray(pose,float))
         if (self._pkg_axes.shape!=(2,3,3) or self._pkg_mid.shape!=(2,3)
