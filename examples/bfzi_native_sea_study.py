@@ -14,6 +14,7 @@ import numpy as np
 from examples.bfzi_param import create, originals
 from sdfmpneo_bfzi.geom_heat import GeomHeat
 from sdfmpneo_bfzi.pkg_interface import face_links
+from sdfmpneo_bfzi.geom_void import report as void_report
 
 
 def values(head, wet):
@@ -69,7 +70,7 @@ def main():
         ("layer_coarse",.22,.17,1),
     ]
     out=dict(method="native original BFZI V150 volume FV preview",
-             grids={},geometries={})
+             grids={},geometries={},void_geometry={})
     for name in ("P03","P07"):
         pre=a.runs/f"bfzi_pose_{name.lower()}"
         head=GeomHeat.load(pre.with_name(pre.name+"_anchor.npz"))
@@ -87,6 +88,8 @@ def main():
                       rel_volume_error=m["relative_volume_error"],
                       near_package=values(head,d["points"]))
             cases[label]=diag
+            if label=="legacy":
+                out["void_geometry"][name]=void_report(head,m)
             print(name,label,"cells",diag["sea_cells"],"/",
                   diag["original_cells"],"downsampled",
                   diag["downsampled"],"median_gap_mm",
