@@ -121,7 +121,8 @@ class GeomHeatROM(GeomHeat):
                     raise ValueError("BFZI ROM pose and package sizes differ")
             return cls(head,d["phi"])
 
-    def advance(self,theta,dt,voltage,dsea,*,steps=10,tol=2e-9):
+    def advance(self,theta,dt,voltage,dsea,*,steps=10,tol=2e-9,
+                record=True):
         if dt<=0 or not np.isfinite(dt):
             raise ValueError("positive thermal step required")
         if dt not in self._rsolves:
@@ -145,12 +146,13 @@ class GeomHeatROM(GeomHeat):
         heat,q,J,ps,pc=self.source(new,I,sea)
         bal=self.cap*(new-theta)/dt+self.H@new-heat
         group=np.array([np.sum(bal[sl]) for sl in groups(self)])
-        self.budgets.append(group)
+        if record:
+            self.budgets.append(group)
         return new,z,I,q,J,ps,pc,bal
 
-    def rollout(self,net,ck,voltage,times):
+    def rollout(self,net,ck,voltage,times,**kwargs):
         self.budgets=[]
-        r=super().rollout(net,ck,voltage,times)
+        r=super().rollout(net,ck,voltage,times,**kwargs)
         r["material_budget_W"]=np.asarray(self.budgets)
         r["rom_rank"]=self.rank
         return r
