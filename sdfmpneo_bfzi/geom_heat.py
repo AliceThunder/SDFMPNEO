@@ -198,7 +198,8 @@ class GeomHeat:
         I=np.linalg.solve(z+self.ext,np.array([voltage,0],complex))
         return sea,z,I
 
-    def advance(self,theta,dt,voltage,dsea,*,steps=10,tol=2e-9):
+    def advance(self,theta,dt,voltage,dsea,*,steps=10,tol=2e-9,
+                record=True):
         if dt<=0:
             raise ValueError("positive time step required")
         if dt not in self._lu:
@@ -220,8 +221,10 @@ class GeomHeat:
         return guess,z,I,q,J,ps,pc,bal
 
     @torch.no_grad()
-    def rollout(self,net,ck,voltage,times):
-        """Causal neural impedance + true 3-D FV heat on any BFZI sample."""
+    def rollout(self,net,ck,voltage,times,*,tangent=None,blend=1.):
+        """Causal neural impedance, optional BFZI sea tangent, conserved 3D heat."""
+        if tangent is not None and not 0<=blend<=1:
+            raise ValueError("BFZI neural/physical sea-tangent blend must be 0..1")
         t=np.asarray(times,float)
         v=np.asarray(voltage,float)
         if t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0):
@@ -250,7 +253,16 @@ class GeomHeat:
                     h,torch.tensor((u/sc)[None],dtype=torch.float32),
                     dt,g)
                 dy=y[0].cpu().numpy()*ys
-                dsea=zmat(np.asarray(dy[:6],float))
+                learned=zmat(np.asarray(dy[:6],float))
+                dsea=learned
+                if tangent is not None and blend>0:
+                    # The original BFZI thermal tangent is evaluated at
+                    # the *new* spatial temperature, avoiding a dt-lag.
+                    # Predictor uses the neural Z; no dynamic BFZI EM solve.
+                    warm=self.advance(theta,dt,float(v[k]),learned,
+                                      record=False)[0]
+                    dsea=(1-blend)*learned+blend*tangent.delta(
+                        warm[:self.ns])
                 theta,z,I,q,J,ps,pc,bal=self.advance(
                     theta,dt,float(v[k]),dsea)
                 gaps.append(float(np.max(abs(bal))))
