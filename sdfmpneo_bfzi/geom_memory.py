@@ -12,6 +12,7 @@ from torch.nn import functional as F
 
 from .frac_memory import zmat
 from .frac_port import PortModel
+from .pose import default_desc
 
 G_SCALE=np.array([
     .1,.1,.05,.05,1.,1.,10.,10.,.001,.001,.05,
@@ -144,6 +145,8 @@ def rollout(net,ck,voltage,times,geometry,z0,external,pose=None):
     if (t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0)
             or ex.shape!=(2,2)):
         raise ValueError("invalid BFZI two-port time history")
+    if net.ng>len(G_SCALE):
+        pose=default_desc(geometry) if pose is None else pose
     geom=geom_feat(geometry,z0,pose if net.ng>len(G_SCALE) else None)
     port=geom_port(geometry)
     g=torch.tensor(geom[None,:],dtype=torch.float32)
