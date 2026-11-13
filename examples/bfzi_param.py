@@ -198,9 +198,9 @@ def main():
     p.add_argument("--sea-tangent-rank",type=int,default=0,
                    help="Precompute original BFZI sea-Z thermal Jacobian in physical 3D ROM modes")
     p.add_argument("--sea-tangent-fd",choices=("central","forward"),
-                   default="central",
+                   default="forward",
                    help="Central: 2 BFZI solves per mode; forward: 1 using cached cold Z")
-    p.add_argument("--sea-tangent-amplitude",type=float,default=1.,
+    p.add_argument("--sea-tangent-amplitude",type=float,default=.2,
                    help="Maximum absolute sea temperature perturbation in K")
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
