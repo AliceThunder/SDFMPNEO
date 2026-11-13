@@ -78,9 +78,15 @@ def compare(s,ref):
         e_sea=max(e_sea,float(np.max(abs(t-b[:nr]))))
     pkg=np.max(abs(T[:,ns:-2]-F[:,nr:-2]))
     cu=np.max(abs(T[:,-2:]-F[:,-2:]))
+    dz=Z-Z[0]
+    dr=R-R[0]
     return dict(
-        dynamic_Z_relative_L2=float(np.linalg.norm(Z-R)/
-            max(np.linalg.norm(R-R[0]),1e-12)),
+        cold_Z_relative_L2=float(np.linalg.norm(Z[0]-R[0])/
+                                 max(np.linalg.norm(R[0]),1e-12)),
+        thermal_delta_Z_relative_L2=float(np.linalg.norm(dz-dr)/
+                                          max(np.linalg.norm(dr),1e-12)),
+        absolute_Z_difference_over_thermal_delta=float(
+            np.linalg.norm(Z-R)/max(np.linalg.norm(dr),1e-12)),
         sea_interpolated_max_abs_K=e_sea,
         package_max_abs_K=float(pkg),copper_max_abs_K=float(cu))
 
@@ -97,10 +103,29 @@ def main():
     p.add_argument("--runs",type=Path,default=Path("runs"))
     p.add_argument("--out",type=Path,default=Path(
         "runs/bfzi_native_sea_convergence.json"))
+    p.add_argument("--postprocess",action="store_true",
+                   help="Update convergence metrics using stored physical trajectories")
     p.add_argument("--full-surrogate",action="store_true",
                    help="Evaluate original-physics k6 surrogate at finest mesh")
     p.add_argument("--max-nodes",type=int,default=1400)
     a=p.parse_args()
+    if a.postprocess:
+        out=json.loads(a.out.read_text())
+        for name in ("P03","P07"):
+            runs={}
+            for label in out["geometries"][name]["levels"]:
+                file=a.runs/f"bfzi_pose_{name.lower()}_native_{label}.npz"
+                with np.load(file) as d:
+                    runs[label]=dict(
+                        temp_K=d["temp_K"].copy(),z6=d["z6"].copy(),
+                        sea_xyz=d["sea_xyz"].copy(),nsea=len(d["sea_xyz"]))
+            fine=runs["face_fine"]
+            for label,s in runs.items():
+                out["geometries"][name]["levels"][label][
+                    "vs_face_fine"]=compare(s,fine)
+        a.out.write_text(json.dumps(out,indent=2))
+        print("UPDATED",a.out,flush=True)
+        return
     torch.set_num_threads(2)
     bf,v150=originals(a.bfzi_root)
     ck=net=None
