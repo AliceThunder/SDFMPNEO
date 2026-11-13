@@ -254,7 +254,7 @@ def main():
                    help="Disable BFZI riser/extra walls for an isolated sealed-box control")
     p.add_argument("--sea-grid-mesh-only",action="store_true",
                    help="Inspect native BFZI seawater FV grid without EM")
-    p.add_argument("--pkg-sea-model",choices=("nearest","face-resistance"),
+    p.add_argument("--pkg-sea-model",choices=("nearest","face-resistance","face-adjacent"),
                    default="nearest",help="Legacy total-G or oriented surface-resistance FV interface")
     p.add_argument("--pkg-sea-h",type=float,default=20.,
                    help="Oriented interface surface coefficient W/(m2 K)")
