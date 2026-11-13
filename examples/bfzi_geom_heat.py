@@ -16,6 +16,7 @@ import torch
 from sdfmpneo_bfzi.geom_memory import GeomFrac
 from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+from sdfmpneo_bfzi.geom_ensemble import load as load_ensemble
 from sdfmpneo_bfzi.pose import isinside
 
 
@@ -45,6 +46,10 @@ def main():
                    default=Path("runs/m3_frac_holdout.npz"))
     p.add_argument("--model",type=Path,
                    default=Path("runs/bfzi_geom_frac_v5.pt"))
+    p.add_argument("--ensemble",nargs="+",type=Path,default=None,
+                   help="Optional ensemble of compatible 22D/40D BFZI checkpoints")
+    p.add_argument("--ensemble-weights",nargs="+",type=float,default=None,
+                   help="Nonnegative validation-selected model combination weights")
     p.add_argument("--out",type=Path,
                    default=Path("runs/m3_bfzi_heat_metrics.json"))
     p.add_argument("--bench-direct",action="store_true")
@@ -102,10 +107,13 @@ def main():
         rom_build_seconds=time.perf_counter()-t0
     elif args.compare_full:
         p.error("--compare-full requires --rom-rank")
-    ck=torch.load(args.model,map_location="cpu",weights_only=True)
-    net=GeomFrac(ng=int(ck["ng"]))
-    net.load_state_dict(ck["state"])
-    net.eval()
+    if args.ensemble:
+        net,ck=load_ensemble(args.ensemble,args.ensemble_weights)
+    else:
+        ck=torch.load(args.model,map_location="cpu",weights_only=True)
+        net=GeomFrac(ng=int(ck["ng"]))
+        net.load_state_dict(ck["state"])
+        net.eval()
     true=None;ztrue=None;refI=None
     if args.standalone:
         if args.step<=0 or args.horizon<=0 or args.horizon%args.step:
@@ -205,6 +213,8 @@ def main():
         print(json.dumps(one,indent=2),flush=True)
     data=dict(sample=args.sample,teacher=str(args.teacher),
               model=str(args.model),anchor=str(args.anchor),
+              ensemble=[str(x) for x in args.ensemble] if args.ensemble else None,
+              ensemble_weights=args.ensemble_weights,
               anchor_build_seconds=anchor_seconds,
               cold_Z_relative_error=cold_err,
               sea_cells=head.ns,package_cells_per_box=head.npkg,
