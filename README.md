@@ -1,3 +1,13 @@
+> **2026-11-12 预计算降本新进展：** 原 BFZI V150 的8模态海水热复阻抗灵敏度，新增利用已经保存的原冷态海水复阻抗的**8次单侧温度方向求解**选项（原16次双侧方向调用，减少50%）。支持 `--sea-tangent-fd forward --sea-tangent-amplitude .2`，输出NPZ/JSON记录计算方法、原BFZI EM方向求解次数和实测建基耗时；保留原 `central` 双侧高精度默认。新增 `examples/bfzi_tangent_compare.py`，支持和P03/P07原BFZI全新几何留出、P07真实150V/15s时程同一基准比较，`tests/test_bfzi_tangent_fd.py` 检查线性/非线性源与缓存兼容，沙箱5项相关测试通过。**新8次方向算法真实BFZI精度尚待P03/P07验收**，现有0.002%完整端口误差是已核验的旧16次中央差分模式结果。[详细实现及真实BFZI直接验收命令](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_tangent_precompute.md)。
+
+```powershell
+# 原BFZI完整物理环境：一次新几何冷态建模 + 8次电磁方向解
+python -m examples.bfzi_param --bfzi-root D:/work/bfzi-et-v2.1/BFZI --sample M4 --alpha1 1 --core1-mm 0 --alpha2 .72 --core2-mm 23 --shift-mm 13 0 9 --yaw-deg 7 --pitch-deg 9 --tilt-deg 27 --box1-mm 216 --box2-mm 240 --sea-tangent-rank 8 --sea-tangent-fd forward --sea-tangent-amplitude .2 --out runs/bfzi_pose_p07_fd_anchor.npz
+
+# 不用重训网络，对已有P07 150V/15s完整留出，与旧中央差分对照
+python -m examples.bfzi_tangent_compare --anchor runs/bfzi_pose_p07_anchor.npz --reference runs/bfzi_pose_p07_tangent_anchor_sea_tangent.npz --candidate runs/bfzi_pose_p07_fd_anchor_sea_tangent.npz --teacher runs/bfzi_pose_p07_15s_holdout.npz --out runs/bfzi_pose_p07_fd_compare.json
+```
+
 > **2026-11-13 最新：BFZI 跨几何外推与高精度动态复阻抗已经真实验证。** 原 BFZI V150 连续圆形—圆角方形、原生6D位姿和双独立封装已扩展至 **8种训练几何、51训练/18验证历史**，完全留出的 **P03 约20°、P07 约27°**：纯40维分数阶神经动态ΔZ相对误差由 **4.628%→3.468%**、**5.968%→3.870%**。进一步增加**每新几何离线原BFZI冷态8个空间温度热模态、16次±方向阻抗求导**，动态时由分数阶神经预测、原三维热ROM新温度与物理海水复Z灵敏度双向闭合，铜仍采用原BFZI完整Bessel趋肤阻抗。P03/P07全三维40/115V留出完整复ΔZ误差 **0.00183%～0.00271%**；P07 115V 海水/封装/铜最大空间温差 **0.000485/0.0000614/0.000000110 K**，五材料热收支≤**4.95e−11 W**。新增P07真实 **150V、15s、600s、两条开/关/重启**动态物理直接法对照：最高海水/封装/铜升温 **0.261/22.86/62.76 K**，纯神经动态ΔZ误差 **2.552%/2.513%**，高精度模式 **0.001903%/0.002580%**；高精度代理两条时程合计 **0.283s** 对原BFZI直接法 **10.225s**，动态约 **36.2×** 加速。新几何离线预计算不计入上述时程。原30s训练跨越到15s时步及显著高铜热升温均已实算，带空间三维 T/J/q、海水端口功率与五材料能量守恒。[完整结果、原始权重与复现](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_extrapolation_precision.md)。
 
 ```powershell
