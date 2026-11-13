@@ -31,7 +31,8 @@ class GeomHeat:
 
     def __init__(self,geometry,z0,external,vol,sea_xyz,pkg_xyz,cap,H,
                  unit_j,weak_q,*,ambient=293.15,alpha=.02,
-                 pose=None,pkg_axes=None,pkg_mid=None,pkg_half=None):
+                 pose=None,pkg_axes=None,pkg_mid=None,pkg_half=None,
+                 sea_proj=None):
         self.geom=np.asarray(geometry,float)
         self.z0=np.asarray(z0,float)
         self.ext=np.asarray(external,complex)
@@ -58,6 +59,9 @@ class GeomHeat:
             raise ValueError("BFZI world-space material coordinates mismatch")
         if np.any(self.cap<=0) or np.any(self.vol<=0):
             raise ValueError("positive BFZI material thermal capacities required")
+        self.sea_proj=sea_proj
+        self._proj_base=None
+        self._cold_projected=None
         self._lu={}
         self._sea_tree=cKDTree(self.xyz)
         self._pkg_tree=[cKDTree(p) for p in self.pkg_xyz]
@@ -139,10 +143,21 @@ class GeomHeat:
             pose=desc([f.coil for f in em.base["families"]],et.boxes),
             pkg_axes=np.asarray(et.pkg_axes),
             pkg_mid=np.asarray([b[0] for b in et.boxes]),
-            pkg_half=np.asarray([b[1] for b in et.boxes]))
+            pkg_half=np.asarray([b[1] for b in et.boxes]),
+            sea_proj=dict(
+                edges=np.asarray(em.proj.edges,float),
+                weights=np.asarray(em.proj.weights,float),
+                bdata=em.proj.B.tocsr().data,
+                bind=em.proj.B.tocsr().indices,
+                bptr=em.proj.B.tocsr().indptr,
+                bshape=np.asarray(em.proj.B.shape),
+                sigma0=np.asarray(em.sigma0),
+                omega_mu=np.asarray(em.omega*em.mu)))
 
     def save(self,path):
         m=self.H.tocsr()
+        extra=({f"sea_proj_{k}":v for k,v in self.sea_proj.items()}
+               if self.sea_proj is not None else {})
         np.savez_compressed(Path(path),geometry=self.geom,z0=self.z0,
             external=self.ext,vol=self.vol,sea_xyz=self.xyz,
             pkg_xyz=self.pkg_xyz,cap=self.cap,
@@ -151,7 +166,7 @@ class GeomHeat:
             pose=self.pose if self.pose is not None else np.empty(0),
             pkg_axes=self._pkg_axes,pkg_mid=self._pkg_mid,
             pkg_half=self._pkg_half,
-            ambient=self.amb,alpha=self.alpha)
+            ambient=self.amb,alpha=self.alpha,**extra)
 
     @classmethod
     def load(cls,path):
@@ -159,6 +174,10 @@ class GeomHeat:
             mat=csr_matrix((d["h_data"],d["h_ind"],d["h_ptr"]),
                            shape=tuple(d["h_shape"]))
             pose=d["pose"] if "pose" in d and d["pose"].size else None
+            proj={k[9:]:d[k].copy() for k in d.files
+                  if k.startswith("sea_proj_")}
+            if not proj:
+                proj=None
             return cls(d["geometry"],d["z0"],d["external"],
                        d["vol"],d["sea_xyz"],d["pkg_xyz"],
                        d["cap"],mat,d["unit_j"],d["weak_q"],
@@ -166,7 +185,51 @@ class GeomHeat:
                        pose=pose,
                        pkg_axes=d["pkg_axes"] if "pkg_axes" in d else None,
                        pkg_mid=d["pkg_mid"] if "pkg_mid" in d else None,
-                       pkg_half=d["pkg_half"] if "pkg_half" in d else None)
+                       pkg_half=d["pkg_half"] if "pkg_half" in d else None,
+                       sea_proj=proj)
+
+    def corrected_J(self,theta,I):
+        """Temperature-weighted FV projection perturbation of original J.
+
+        Retains the exact original cold field; only the sigma-dependent
+        potential change is applied. Joule q remains weak-form normalized.
+        This computes a sparse scalar FV projection, never the BFZI EM Green
+        or GMRES solve.
+        """
+        if self.sea_proj is None:
+            raise ValueError("physical BFZI FV projector is unavailable")
+        I=np.asarray(I,complex)
+        if np.max(abs(I))<1e-30:
+            return np.zeros((self.ns,3),complex)
+        from types import SimpleNamespace
+        from .bfzi_v148_adapter import WeightedFV
+        p=self.sea_proj
+        sigma0=float(p["sigma0"])
+        omega_mu=float(p["omega_mu"])
+        if self._proj_base is None:
+            e=np.asarray(p["edges"],float)
+            edges=[(int(x[0]),int(x[1]),int(x[2]),
+                    float(x[3]),float(x[4]),float(x[5])) for x in e]
+            B=csr_matrix((p["bdata"],p["bind"],p["bptr"]),
+                         shape=tuple(p["bshape"]))
+            self._proj_base=SimpleNamespace(
+                n=self.ns,edges=edges,B=B,
+                weights=np.asarray(p["weights"],float),meta={})
+        base=self._proj_base
+        cold=self.unit/(-1j*omega_mu*sigma0)
+        if self._cold_projected is None:
+            self._cold_projected=WeightedFV(
+                base,np.full(self.ns,sigma0)).project(
+                    [cold[:,i] for i in range(2)])
+        sigma=sigma0*(1+self.alpha*np.asarray(theta[:self.ns],float))
+        field=WeightedFV(base,sigma).project(
+            [cold[:,i] for i in range(2)])
+        unit=np.stack([
+            self.unit[:,i]*(sigma/sigma0)[:,None]
+            -1j*omega_mu*sigma[:,None]*
+               (field[i]-self._cold_projected[i])
+            for i in range(2)],axis=1)
+        return np.einsum("npc,p->nc",unit,I,optimize=True)
 
     def source(self,theta,I,sea):
         """Original BFZI cold weak source shape at current local sigma(T).
@@ -275,6 +338,8 @@ class GeomHeat:
             zout.append(pack(z))
             iout.append(I)
             qout.append(q)
+            if self.sea_proj is not None:
+                J=self.corrected_J(theta,I)
             jout.append(J)
             psea.append(ps)
             pcu.append(pc)
