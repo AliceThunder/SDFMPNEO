@@ -84,6 +84,16 @@ def _wet(mn,mx,boxes):
             np.concatenate([w for p,w in valid]))
 
 
+
+def _full(mn,mx):
+    """Original second-order tensor Gauss points for an uncut FV cell."""
+    u=1/np.sqrt(3.)
+    q=np.array(list(product((-u,u),repeat=3)),float)
+    q=.5*(mn+mx)+.5*(mx-mn)*q
+    w=np.full(8,float(np.prod(mx-mn))/8.)
+    return q,w
+
+
 def build(fs,records,meta,coils,sample,cfg,max_nodes=1400):
     """Produce real BFZI FV records with the true rotated sealed-box void.
 
@@ -137,12 +147,12 @@ def build(fs,records,meta,coils,sample,cfg,max_nodes=1400):
                 continue
             size=float(np.sum(w))
             if abs(size-full)<max(full*1e-10,1e-15):
-                q,w=fs._quadrature_for_subboxes([(mn,mx)],2)
+                q,w=_full(mn,mx)
                 size=full
             else:
                 partials+=1
         else:
-            q,w=fs._quadrature_for_subboxes([(mn,mx)],2)
+            q,w=_full(mn,mx)
             size=full
         if size<=0:
             continue
