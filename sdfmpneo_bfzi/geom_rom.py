@@ -101,7 +101,7 @@ class GeomHeatROM(GeomHeat):
 
     def save(self,path):
         np.savez_compressed(path,phi=self.phi,cap=self.cap,
-                            geometry=self.geom,
+                            operator=self.K,geometry=self.geom,
                             pose=self.pose if self.pose is not None else np.empty(0),
                             pkg_axes=self._pkg_axes,pkg_half=self._pkg_half)
 
@@ -111,6 +111,10 @@ class GeomHeatROM(GeomHeat):
             if (not np.array_equal(d["geometry"],head.geom) or
                 not np.allclose(d["cap"],head.cap,rtol=1e-12,atol=1e-12)):
                 raise ValueError("BFZI ROM basis geometry/capacity mismatch")
+            if "operator" in d:
+                k=d["phi"].T@(head.H@d["phi"])
+                if not np.allclose(d["operator"],k,rtol=1e-8,atol=1e-9):
+                    raise ValueError("BFZI ROM heat operator differs from saved interface")
             if "pose" in d:
                 p=head.pose if head.pose is not None else np.empty(0)
                 if (not np.allclose(d["pose"],p,atol=1e-12,rtol=0)
