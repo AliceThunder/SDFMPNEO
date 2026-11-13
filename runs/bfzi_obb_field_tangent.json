@@ -1,0 +1,144 @@
+{
+  "P03": {
+    "EM_directional_solves": 6,
+    "samples": [
+      {
+        "t_s": 0.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 0.0,
+        "Z_thermal_lin_relative_L2": 0.0,
+        "J_cold_relative_L2": 0.0,
+        "J_tangent_relative_L2": 0.0,
+        "q_cold_relative_L2": 0.0,
+        "q_tangent_relative_L2": 0.0,
+        "q_tangent_port_gap_W": 7.105427357601002e-15
+      },
+      {
+        "t_s": 60.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 0.10693514724385977,
+        "Z_thermal_lin_relative_L2": 0.0011823798801391101,
+        "J_cold_relative_L2": 9.52877306780246e-05,
+        "J_tangent_relative_L2": 3.735049220322535e-05,
+        "q_cold_relative_L2": 7.64537196050493e-06,
+        "q_tangent_relative_L2": 2.860086178616615e-05,
+        "q_tangent_port_gap_W": 7.105427357601002e-15
+      },
+      {
+        "t_s": 120.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 0.25698947859001464,
+        "Z_thermal_lin_relative_L2": 0.0011434360875827274,
+        "J_cold_relative_L2": 0.00019535096604403305,
+        "J_tangent_relative_L2": 0.0001391476875873226,
+        "q_cold_relative_L2": 1.5189919948387445e-05,
+        "q_tangent_relative_L2": 0.00010531243750326109,
+        "q_tangent_port_gap_W": 7.105427357601002e-15
+      },
+      {
+        "t_s": 270.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 0.6270115668189646,
+        "Z_thermal_lin_relative_L2": 0.0011944657682237982,
+        "J_cold_relative_L2": 0.0003201268259761758,
+        "J_tangent_relative_L2": 0.0005079473300419157,
+        "q_cold_relative_L2": 2.2987098884063056e-05,
+        "q_tangent_relative_L2": 0.00038849316067418187,
+        "q_tangent_port_gap_W": 2.1316282072803006e-14
+      },
+      {
+        "t_s": 330.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 0.8650866048769217,
+        "Z_thermal_lin_relative_L2": 0.001198673012473579,
+        "J_cold_relative_L2": 0.00043233370395483905,
+        "J_tangent_relative_L2": 0.0007275217790130358,
+        "q_cold_relative_L2": 3.0746841949240856e-05,
+        "q_tangent_relative_L2": 0.0005566843024435832,
+        "q_tangent_port_gap_W": 7.105427357601002e-15
+      },
+      {
+        "t_s": 510.0,
+        "voltage_V": 115.0,
+        "max_sea_K": 1.494703516324762,
+        "Z_thermal_lin_relative_L2": 0.0012650749066303005,
+        "J_cold_relative_L2": 0.0006487231716612574,
+        "J_tangent_relative_L2": 0.0014803503464738852,
+        "q_cold_relative_L2": 4.380424388339891e-05,
+        "q_tangent_relative_L2": 0.0011380968420630997,
+        "q_tangent_port_gap_W": 0.0
+      }
+    ]
+  },
+  "P07": {
+    "EM_directional_solves": 6,
+    "samples": [
+      {
+        "t_s": 0.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 0.0,
+        "Z_thermal_lin_relative_L2": 0.0,
+        "J_cold_relative_L2": 0.0,
+        "J_tangent_relative_L2": 0.0,
+        "q_cold_relative_L2": 0.0,
+        "q_tangent_relative_L2": 0.0,
+        "q_tangent_port_gap_W": 0.0
+      },
+      {
+        "t_s": 90.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 0.3745900885609217,
+        "Z_thermal_lin_relative_L2": 0.0012848916280512937,
+        "J_cold_relative_L2": 0.00035052914605883254,
+        "J_tangent_relative_L2": 0.00014019069656972348,
+        "q_cold_relative_L2": 3.064195168259491e-05,
+        "q_tangent_relative_L2": 0.00011159804586138733,
+        "q_tangent_port_gap_W": 2.842170943040401e-14
+      },
+      {
+        "t_s": 180.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 0.8654473434020247,
+        "Z_thermal_lin_relative_L2": 0.0014302896784187753,
+        "J_cold_relative_L2": 0.0007335404118403473,
+        "J_tangent_relative_L2": 0.0006699105398114295,
+        "q_cold_relative_L2": 6.100514450059441e-05,
+        "q_tangent_relative_L2": 0.0005508173796762509,
+        "q_tangent_port_gap_W": 1.4210854715202004e-14
+      },
+      {
+        "t_s": 285.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 1.8878542452202396,
+        "Z_thermal_lin_relative_L2": 0.001630699960212907,
+        "J_cold_relative_L2": 0.0012429208640663467,
+        "J_tangent_relative_L2": 0.0018258175941799483,
+        "q_cold_relative_L2": 9.99929596042018e-05,
+        "q_tangent_relative_L2": 0.0015238307764349364,
+        "q_tangent_port_gap_W": 1.4210854715202004e-14
+      },
+      {
+        "t_s": 495.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 4.21368944746439,
+        "Z_thermal_lin_relative_L2": 0.0020408245269918374,
+        "J_cold_relative_L2": 0.001957074014182131,
+        "J_tangent_relative_L2": 0.004773167717737745,
+        "q_cold_relative_L2": 0.0001555942663470867,
+        "q_tangent_relative_L2": 0.0040737349568385475,
+        "q_tangent_port_gap_W": 1.4210854715202004e-14
+      },
+      {
+        "t_s": 600.0,
+        "voltage_V": 150.0,
+        "max_sea_K": 5.6433163383239275,
+        "Z_thermal_lin_relative_L2": 0.002083315329769993,
+        "J_cold_relative_L2": 0.0025666982095696954,
+        "J_tangent_relative_L2": 0.006488676542095129,
+        "q_cold_relative_L2": 0.00020209740993147338,
+        "q_tangent_relative_L2": 0.005546273502393946,
+        "q_tangent_port_gap_W": 1.4210854715202004e-14
+      }
+    ]
+  }
+}

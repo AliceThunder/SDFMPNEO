@@ -1,0 +1,382 @@
+{
+  "method": "original BFZI V150 true-OBB sea FV grid convergence",
+  "geometry_training_used": false,
+  "geometries": {
+    "P03": {
+      "reference": "oriented_medium",
+      "reference_nodes": 572,
+      "program_id": 29,
+      "levels": {
+        "fine": {
+          "nodes": 712,
+          "volume_m3": 0.09492283600000054,
+          "volume_error": 4.239821136682213e-15,
+          "cold_precompute_sec": 1.5746654000031413,
+          "direct_sec": 5.177491300004476,
+          "max_budget_W": 5.106886291628143e-07,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 5.084434474246098,
+              "wet_p10_gap_mm": 17.969873686708706,
+              "linked_wet_gap_median_mm": 17.597887634597758,
+              "linked_wet_gap_max_mm": 81.98804549904045,
+              "interface_G_W_K": 0.7067295764640784,
+              "links": 1001,
+              "linked_wet_cells": 135
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 1,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 31.01211569930603,
+              "linked_wet_gap_median_mm": 27.740099203627782,
+              "linked_wet_gap_max_mm": 80.23857246552751,
+              "interface_G_W_K": 0.8542816544113,
+              "links": 1019,
+              "linked_wet_cells": 119
+            }
+          ],
+          "cold_z6": [
+            0.2626715258757929,
+            20.00450791025991,
+            0.09052612750168307,
+            4.291702752647423,
+            0.2538630512284754,
+            17.752262135327253
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_disjoint_fine.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.0002648058219461944,
+            "thermal_delta_Z_relative_L2": 0.012333839546888012,
+            "absolute_Z_difference_over_thermal_delta": 0.4811041691792987,
+            "sea_interpolated_max_abs_K": 1.191024199536173,
+            "package_max_abs_K": 0.5574936045742902,
+            "copper_max_abs_K": 0.08219351898850391
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.00010983943989537934,
+            "thermal_delta_Z_relative_L2": 0.0058578820385791885,
+            "absolute_Z_difference_over_thermal_delta": 0.19652844345488446,
+            "sea_interpolated_max_abs_K": 1.2693748245753795,
+            "package_max_abs_K": 0.9774392038521569,
+            "copper_max_abs_K": 0.3819986914108995
+          }
+        },
+        "finer": {
+          "nodes": 988,
+          "volume_m3": 0.09492283600000061,
+          "volume_error": 4.532222594384434e-15,
+          "cold_precompute_sec": 1.958040700003039,
+          "direct_sec": 7.678373000002466,
+          "max_budget_W": 5.124104731635271e-07,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 8,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 21.09115561921003,
+              "linked_wet_gap_median_mm": 19.661507489771246,
+              "linked_wet_gap_max_mm": 74.50000000000003,
+              "interface_G_W_K": 0.7463790830853021,
+              "links": 1000,
+              "linked_wet_cells": 129
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 2,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 30.566715899969893,
+              "linked_wet_gap_median_mm": 28.711880576234208,
+              "linked_wet_gap_max_mm": 73.7762059572367,
+              "interface_G_W_K": 0.8843826030029152,
+              "links": 1008,
+              "linked_wet_cells": 146
+            }
+          ],
+          "cold_z6": [
+            0.2640721819565811,
+            20.004436604827834,
+            0.0884116109344302,
+            4.291650820437127,
+            0.24617472220846673,
+            17.752230270917185
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_disjoint_finer.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.00011262199626738248,
+            "thermal_delta_Z_relative_L2": 0.002362597090234839,
+            "absolute_Z_difference_over_thermal_delta": 0.20156735462237338,
+            "sea_interpolated_max_abs_K": 1.1272976739143132,
+            "package_max_abs_K": 0.5942058117663578,
+            "copper_max_abs_K": 0.19772716984044791
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.00021254267132235922,
+            "thermal_delta_Z_relative_L2": 0.006187442263676003,
+            "absolute_Z_difference_over_thermal_delta": 0.38193826961075017,
+            "sea_interpolated_max_abs_K": 1.2092516297997804,
+            "package_max_abs_K": 0.8188177663130887,
+            "copper_max_abs_K": 0.2530127263371469
+          }
+        },
+        "extra": {
+          "nodes": 1312,
+          "volume_m3": 0.09492283600000098,
+          "volume_error": 5.994229882895542e-15,
+          "cold_precompute_sec": 2.186504299999797,
+          "direct_sec": 11.327788099995814,
+          "max_budget_W": 5.106854814584949e-07,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 8,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 26.10242724949458,
+              "linked_wet_gap_median_mm": 21.319936397624897,
+              "linked_wet_gap_max_mm": 74.02529247952825,
+              "interface_G_W_K": 0.8296092678892847,
+              "links": 997,
+              "linked_wet_cells": 163
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 5,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 31.99215911217334,
+              "linked_wet_gap_median_mm": 24.863232847327563,
+              "linked_wet_gap_max_mm": 68.7060227750987,
+              "interface_G_W_K": 0.9173634580028985,
+              "links": 1024,
+              "linked_wet_cells": 159
+            }
+          ],
+          "cold_z6": [
+            0.2646102927881051,
+            20.004367796308966,
+            0.09008045585040728,
+            4.2916173378910525,
+            0.2516581885619762,
+            17.752171683863782
+          ],
+          "physical_file": "runs\\bfzi_pose_p03_disjoint_extra.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.00021602838089523232,
+            "thermal_delta_Z_relative_L2": 0.007996999594998215,
+            "absolute_Z_difference_over_thermal_delta": 0.39074650836810115,
+            "sea_interpolated_max_abs_K": 1.104780528262495,
+            "package_max_abs_K": 1.199998584400646,
+            "copper_max_abs_K": 0.4507398961775948
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.0,
+            "thermal_delta_Z_relative_L2": 0.0,
+            "absolute_Z_difference_over_thermal_delta": 0.0,
+            "sea_interpolated_max_abs_K": 0.0,
+            "package_max_abs_K": 0.0,
+            "copper_max_abs_K": 0.0
+          }
+        },
+        "oriented_medium": {
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.0002160318699567361,
+            "thermal_delta_Z_relative_L2": 0.007978893659596479,
+            "absolute_Z_difference_over_thermal_delta": 0.38986182268631214,
+            "sea_interpolated_max_abs_K": 0.8832887459464018,
+            "package_max_abs_K": 1.199998584400646,
+            "copper_max_abs_K": 0.4507398961775948
+          }
+        }
+      }
+    },
+    "P07": {
+      "reference": "oriented_medium",
+      "reference_nodes": 572,
+      "program_id": 18,
+      "levels": {
+        "fine": {
+          "nodes": 712,
+          "volume_m3": 0.09485318400000023,
+          "volume_error": 3.5113940654595944e-15,
+          "cold_precompute_sec": 1.6390315000026021,
+          "direct_sec": 13.134442399998079,
+          "max_budget_W": 2.0497369348504435e-06,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 0,
+              "wet_min_gap_mm": 3.866753857848205,
+              "wet_p10_gap_mm": 20.021519276811844,
+              "linked_wet_gap_median_mm": 19.9213763116846,
+              "linked_wet_gap_max_mm": 58.70743138649487,
+              "interface_G_W_K": 0.7434528300321079,
+              "links": 1005,
+              "linked_wet_cells": 133
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 4,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 36.141607152072126,
+              "linked_wet_gap_median_mm": 35.488329100380405,
+              "linked_wet_gap_max_mm": 96.79994707287817,
+              "interface_G_W_K": 0.8391823833554062,
+              "links": 1024,
+              "linked_wet_cells": 118
+            }
+          ],
+          "cold_z6": [
+            0.2593643843582721,
+            20.004569500441075,
+            0.07839742575455037,
+            3.2518634176830523,
+            0.25655311056039426,
+            18.123462067665727
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_disjoint_fine.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.00026448468217100555,
+            "thermal_delta_Z_relative_L2": 0.007480399646116205,
+            "absolute_Z_difference_over_thermal_delta": 0.11351173421939655,
+            "sea_interpolated_max_abs_K": 4.3984904517329255,
+            "package_max_abs_K": 3.4566306383739516,
+            "copper_max_abs_K": 0.6243988890151968
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.00023797703568425942,
+            "thermal_delta_Z_relative_L2": 0.004967328059170527,
+            "absolute_Z_difference_over_thermal_delta": 0.09710247552733327,
+            "sea_interpolated_max_abs_K": 5.0236738049777045,
+            "package_max_abs_K": 7.034706923954843,
+            "copper_max_abs_K": 3.9365575151711028
+          }
+        },
+        "finer": {
+          "nodes": 768,
+          "volume_m3": 0.09485318400000023,
+          "volume_error": 6.14493961455429e-15,
+          "cold_precompute_sec": 1.6106232999954955,
+          "direct_sec": 14.449234100000467,
+          "max_budget_W": 2.0397449702613812e-06,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 8,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 20.678206420305727,
+              "linked_wet_gap_median_mm": 20.583333333333336,
+              "linked_wet_gap_max_mm": 74.50000000000003,
+              "interface_G_W_K": 0.7769348853331078,
+              "links": 1000,
+              "linked_wet_cells": 115
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 3,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 35.645531059699756,
+              "linked_wet_gap_median_mm": 33.97178760093205,
+              "linked_wet_gap_max_mm": 69.88791874366821,
+              "interface_G_W_K": 0.8831739881401574,
+              "links": 1023,
+              "linked_wet_cells": 128
+            }
+          ],
+          "cold_z6": [
+            0.2645177605875113,
+            20.004446351864555,
+            0.07876890047849505,
+            3.251772566755912,
+            0.2540121809613127,
+            18.123414070867526
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_disjoint_finer.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.00021479719498995202,
+            "thermal_delta_Z_relative_L2": 0.00394395409408749,
+            "absolute_Z_difference_over_thermal_delta": 0.09145059453705978,
+            "sea_interpolated_max_abs_K": 4.534438853177107,
+            "package_max_abs_K": 2.671960881122402,
+            "copper_max_abs_K": 1.2878282425612042
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 6.433441061825843e-05,
+            "thermal_delta_Z_relative_L2": 0.003711633067243616,
+            "absolute_Z_difference_over_thermal_delta": 0.028090633767814163,
+            "sea_interpolated_max_abs_K": 2.843022806636043,
+            "package_max_abs_K": 4.132940715046004,
+            "copper_max_abs_K": 2.0243303835947017
+          }
+        },
+        "extra": {
+          "nodes": 1312,
+          "volume_m3": 0.09485318400000069,
+          "volume_error": 4.535550667885309e-15,
+          "cold_precompute_sec": 2.317486399995687,
+          "direct_sec": 29.53479380000499,
+          "max_budget_W": 2.0318192071044905e-06,
+          "interface": [
+            {
+              "package": 1,
+              "wet_inside_box": 8,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 26.855529237418384,
+              "linked_wet_gap_median_mm": 20.60706633773946,
+              "linked_wet_gap_max_mm": 74.7757817336072,
+              "interface_G_W_K": 0.866695611328883,
+              "links": 997,
+              "linked_wet_cells": 161
+            },
+            {
+              "package": 2,
+              "wet_inside_box": 5,
+              "wet_min_gap_mm": 0.0,
+              "wet_p10_gap_mm": 37.91899712542867,
+              "linked_wet_gap_median_mm": 27.355684880653456,
+              "linked_wet_gap_max_mm": 57.17531442229514,
+              "interface_G_W_K": 0.9491073806893169,
+              "links": 1023,
+              "linked_wet_cells": 148
+            }
+          ],
+          "cold_z6": [
+            0.265256640762231,
+            20.00435663420263,
+            0.08022663526221278,
+            3.251726899769815,
+            0.25462269189275566,
+            18.123334737395318
+          ],
+          "physical_file": "runs\\bfzi_pose_p07_disjoint_extra.npz",
+          "vs_oriented_medium": {
+            "cold_Z_relative_L2": 0.0002720613547835963,
+            "thermal_delta_Z_relative_L2": 0.0072651604998654785,
+            "absolute_Z_difference_over_thermal_delta": 0.11717665593448691,
+            "sea_interpolated_max_abs_K": 2.197834242374654,
+            "package_max_abs_K": 5.1343931472029,
+            "copper_max_abs_K": 3.312158626155906
+          },
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.0,
+            "thermal_delta_Z_relative_L2": 0.0,
+            "absolute_Z_difference_over_thermal_delta": 0.0,
+            "sea_interpolated_max_abs_K": 0.0,
+            "package_max_abs_K": 0.0,
+            "copper_max_abs_K": 0.0
+          }
+        },
+        "oriented_medium": {
+          "vs_extra": {
+            "cold_Z_relative_L2": 0.0002720657846195877,
+            "thermal_delta_Z_relative_L2": 0.007253091777563259,
+            "absolute_Z_difference_over_thermal_delta": 0.11698200469164069,
+            "sea_interpolated_max_abs_K": 3.0411803116119813,
+            "package_max_abs_K": 5.1343931472029,
+            "copper_max_abs_K": 3.312158626155906
+          }
+        }
+      }
+    }
+  }
+}

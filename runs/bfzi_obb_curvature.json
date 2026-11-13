@@ -1,0 +1,150 @@
+{
+  "extra_probe_peak_temperature_K": 5.0,
+  "reference": "full original BFZI warm 3-D EM/thermal direct",
+  "geometries": {
+    "P03": {
+      "extra_probes": {
+        "extra_directional_solves": 6,
+        "extra_directional_sec": 0.2732294000015827,
+        "large_amplitude_K": 5.0,
+        "corrected_modes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "candidates": {
+        "0": {
+          "originalBFZI_EM_directional_solves": 6,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 8.030475248291353e-05,
+            "sea_max_abs_K": 0.004536470416041993,
+            "pkg_max_abs_K": 0.0013400020421840964,
+            "cu_max_abs_K": 8.927317821871839e-06,
+            "q_port_gap_W": 2.842170943040401e-14,
+            "material_budget_gap_W": 5.469757979881251e-11
+          }
+        },
+        "1": {
+          "originalBFZI_EM_directional_solves": 7,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 8.130757223979815e-05,
+            "sea_max_abs_K": 0.004536460029555656,
+            "pkg_max_abs_K": 0.00134000776705534,
+            "cu_max_abs_K": 9.456401301122241e-06,
+            "q_port_gap_W": 2.842170943040401e-14,
+            "material_budget_gap_W": 5.4647841807309305e-11
+          }
+        },
+        "2": {
+          "originalBFZI_EM_directional_solves": 8,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 8.153557854534021e-05,
+            "sea_max_abs_K": 0.004536454902620335,
+            "pkg_max_abs_K": 0.0013400100295370976,
+            "cu_max_abs_K": 9.524977087949082e-06,
+            "q_port_gap_W": 3.552713678800501e-14,
+            "material_budget_gap_W": 5.468336894409731e-11
+          }
+        },
+        "4": {
+          "originalBFZI_EM_directional_solves": 10,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 8.159168612373453e-05,
+            "sea_max_abs_K": 0.004536454263018186,
+            "pkg_max_abs_K": 0.0013400103017602305,
+            "cu_max_abs_K": 9.531061550660525e-06,
+            "q_port_gap_W": 2.1316282072803006e-14,
+            "material_budget_gap_W": 5.469047437145491e-11
+          }
+        },
+        "6": {
+          "originalBFZI_EM_directional_solves": 12,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 8.158621643337544e-05,
+            "sea_max_abs_K": 0.004536454382559896,
+            "pkg_max_abs_K": 0.0013400102497485022,
+            "cu_max_abs_K": 9.529732722057815e-06,
+            "q_port_gap_W": 3.552713678800501e-14,
+            "material_budget_gap_W": 5.467626351673971e-11
+          }
+        }
+      }
+    },
+    "P07": {
+      "extra_probes": {
+        "extra_directional_solves": 6,
+        "extra_directional_sec": 0.26844420000270475,
+        "large_amplitude_K": 5.0,
+        "corrected_modes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "candidates": {
+        "0": {
+          "originalBFZI_EM_directional_solves": 6,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 0.00015424095142946265,
+            "sea_max_abs_K": 0.014105073421660563,
+            "pkg_max_abs_K": 0.013355113498391802,
+            "cu_max_abs_K": 0.0007564539837403572,
+            "q_port_gap_W": 5.684341886080802e-14,
+            "material_budget_gap_W": 1.636891511225258e-09
+          }
+        },
+        "1": {
+          "originalBFZI_EM_directional_solves": 7,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 0.00015427440310622812,
+            "sea_max_abs_K": 0.014104791042029774,
+            "pkg_max_abs_K": 0.013363434444158884,
+            "cu_max_abs_K": 0.0007753994038921519,
+            "q_port_gap_W": 8.526512829121202e-14,
+            "material_budget_gap_W": 1.636891511225258e-09
+          }
+        },
+        "2": {
+          "originalBFZI_EM_directional_solves": 8,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 0.0001542624086120707,
+            "sea_max_abs_K": 0.014104737445734372,
+            "pkg_max_abs_K": 0.013364353666815987,
+            "cu_max_abs_K": 0.0007783288501741481,
+            "q_port_gap_W": 9.947598300641403e-14,
+            "material_budget_gap_W": 1.6368346678063972e-09
+          }
+        },
+        "4": {
+          "originalBFZI_EM_directional_solves": 10,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 0.00015440936396041773,
+            "sea_max_abs_K": 0.01410468107746965,
+            "pkg_max_abs_K": 0.013364903052831778,
+            "cu_max_abs_K": 0.0007802421739597776,
+            "q_port_gap_W": 7.105427357601002e-14,
+            "material_budget_gap_W": 1.6368630895158276e-09
+          }
+        },
+        "6": {
+          "originalBFZI_EM_directional_solves": 12,
+          "dynamic": {
+            "dynamic_Z_relative_L2": 0.00015441085089950099,
+            "sea_max_abs_K": 0.014104679211754956,
+            "pkg_max_abs_K": 0.013364947616196332,
+            "cu_max_abs_K": 0.0007803775359889187,
+            "q_port_gap_W": 9.947598300641403e-14,
+            "material_budget_gap_W": 1.6368062460969668e-09
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "method": "original BFZI V150 true OBB wet FV face polygon",
+  "original_Green_solver": true,
+  "geometries": {
+    "P03": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "setup_sec": 1.4175153999967733,
+          "direct_sec": 3.9690864000003785,
+          "material_budget_W": 5.126578770386914e-07,
+          "FV_edges": 1500,
+          "exact_face_corrected_edges": 172,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.2614422082859488,
+            20.00476635541092,
+            0.08760985610755859,
+            4.29188632018614,
+            0.2473048874521498,
+            17.752452724356978
+          ],
+          "thermal_file": "runs\\bfzi_pose_p03_exact_medium.npz",
+          "interface_G_W_K": [
+            0.6819704687017497,
+            0.8307100270242536
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 4.6257263615779075e-06,
+            "thermal_delta_Z_relative_L2": 6.870933868349921e-05,
+            "absolute_Z_difference_over_thermal_delta": 0.008278032744116476,
+            "sea_interpolated_max_abs_K": 0.11187290158557062,
+            "package_max_abs_K": 0.0023606622530110144,
+            "copper_max_abs_K": 0.0009340192101490175
+          },
+          "vs_exact_extra": {
+            "cold_Z_relative_L2": 0.00021638535617681518,
+            "thermal_delta_Z_relative_L2": 0.008007535459445964,
+            "absolute_Z_difference_over_thermal_delta": 0.3905301165406362,
+            "sea_interpolated_max_abs_K": 1.0222408344967562,
+            "package_max_abs_K": 1.200020089294128,
+            "copper_max_abs_K": 0.45068221237488615
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "setup_sec": 2.323369999998249,
+          "direct_sec": 11.469055200002913,
+          "material_budget_W": 5.10716141377543e-07,
+          "FV_edges": 3562,
+          "exact_face_corrected_edges": 219,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.26454504235421117,
+            20.00437167576216,
+            0.09004182968887355,
+            4.291619966754886,
+            0.2516078733011851,
+            17.752174468544055
+          ],
+          "thermal_file": "runs\\bfzi_pose_p03_exact_extra.npz",
+          "interface_G_W_K": [
+            0.8296092678892847,
+            0.9173634580028985
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 3.365227286670703e-06,
+            "thermal_delta_Z_relative_L2": 5.331050040529149e-05,
+            "absolute_Z_difference_over_thermal_delta": 0.005992106529314482,
+            "sea_interpolated_max_abs_K": 0.15396212694338374,
+            "package_max_abs_K": 0.00466736006632118,
+            "copper_max_abs_K": 0.0008874077294080962
+          },
+          "hybrid_k6": {
+            "dynamic_Z_relative_L2": 5.428401935164573e-05,
+            "sea_max_abs_K": 0.0037519784813184742,
+            "pkg_max_abs_K": 0.0019468220563112482,
+            "cu_max_abs_K": 7.301549374005845e-06,
+            "q_port_gap_W": 2.1316282072803006e-14,
+            "material_budget_gap_W": 5.4420468131866073e-11,
+            "inference_sec": 0.10663299999578157,
+            "directional_EM_solves": 6,
+            "directional_EM_sec": 0.6400347000017064
+          }
+        }
+      }
+    },
+    "P07": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "setup_sec": 1.527612499994575,
+          "direct_sec": 10.115549699999974,
+          "material_budget_W": 2.055430826430893e-06,
+          "FV_edges": 1500,
+          "exact_face_corrected_edges": 186,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.2612055063758586,
+            20.004774456509665,
+            0.07611562720488688,
+            3.2519595992973853,
+            0.2498230079903721,
+            18.123651362049262
+          ],
+          "thermal_file": "runs\\bfzi_pose_p07_exact_medium.npz",
+          "interface_G_W_K": [
+            0.7147485153698501,
+            0.8425454179841427
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 6.283299821563887e-06,
+            "thermal_delta_Z_relative_L2": 6.252716603928319e-05,
+            "absolute_Z_difference_over_thermal_delta": 0.0026138051265942397,
+            "sea_interpolated_max_abs_K": 0.3367510335017414,
+            "package_max_abs_K": 0.010915591595221485,
+            "copper_max_abs_K": 0.011503794150485191
+          },
+          "vs_exact_extra": {
+            "cold_Z_relative_L2": 0.0002737648041435489,
+            "thermal_delta_Z_relative_L2": 0.007282822316543517,
+            "absolute_Z_difference_over_thermal_delta": 0.11773263276384244,
+            "sea_interpolated_max_abs_K": 3.0356664651852725,
+            "package_max_abs_K": 5.1364474337025285,
+            "copper_max_abs_K": 3.3177742054476766
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "setup_sec": 2.5191383000055794,
+          "direct_sec": 29.91596639999625,
+          "material_budget_W": 2.0319936595569743e-06,
+          "FV_edges": 3562,
+          "exact_face_corrected_edges": 271,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.26521384197352355,
+            20.004359574773275,
+            0.08019072585942236,
+            3.2517292660283226,
+            0.2545575278827762,
+            18.123338663201498
+          ],
+          "thermal_file": "runs\\bfzi_pose_p07_exact_extra.npz",
+          "interface_G_W_K": [
+            0.866695611328883,
+            0.9491073806893169
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 3.1630856715690546e-06,
+            "thermal_delta_Z_relative_L2": 2.8201809022766748e-05,
+            "absolute_Z_difference_over_thermal_delta": 0.0013077280925698372,
+            "sea_interpolated_max_abs_K": 0.25982760626169465,
+            "package_max_abs_K": 0.015554643015718739,
+            "copper_max_abs_K": 0.005888214858714491
+          },
+          "hybrid_k6": {
+            "dynamic_Z_relative_L2": 0.0001795656863758099,
+            "sea_max_abs_K": 0.02066920757818025,
+            "pkg_max_abs_K": 0.012546127959126352,
+            "cu_max_abs_K": 0.0010067121477277396,
+            "q_port_gap_W": 7.105427357601002e-14,
+            "material_budget_gap_W": 1.6183037132577738e-09,
+            "inference_sec": 0.28640509999968344,
+            "directional_EM_solves": 6,
+            "directional_EM_sec": 0.7170316999981878
+          }
+        }
+      }
+    }
+  }
+}
