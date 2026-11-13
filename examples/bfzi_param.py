@@ -25,7 +25,7 @@ def originals(root):
 def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
            alpha1=None,alpha2=None,core1_mm=None,core2_mm=None,
            shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
-           pitch_deg=0.,box_mm=None):
+           pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -89,19 +89,28 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
             shape_family=family,roll_deg=angle,
             yaw_deg=float(c.yaw_deg)+(float(yaw_deg) if p==1 else 0.),
             pitch_deg=float(c.pitch_deg)+(float(pitch_deg) if p==1 else 0.))
-    if box_mm is not None:
-        box=float(box_mm)
-        if box<=0 or box<2.*max(
-            float(c.effective_outer_radius_m+c.wire_radius_m)
-            for c in coils)*1000:
-            raise ValueError("package must contain BFZI winding")
+    chosen=(box1_mm if box1_mm is not None else box_mm,
+            box2_mm if box2_mm is not None else box_mm)
+    if any(v is not None for v in chosen):
         cfg=dict(cfg)
-        cfg["BSR_PACKAGE_PLANE_HALF_M"]=box*.0005
-        for p in (1,2):
-            sample[f"coil{p}_outer_package_mm"]=box
-            sample[f"coil{p}_package_x_half_mm"]=box/2.
-            sample[f"coil{p}_package_z_pos_half_mm"]=box/2.
-            sample[f"coil{p}_package_z_neg_half_mm"]=box/2.
+        sizes=[]
+        for p,v in enumerate(chosen):
+            if v is None:
+                v=float(sample.get(f"coil{p+1}_outer_package_mm",
+                                   sample.get("outer_package_mm",204.)))
+            box=float(v)
+            if box<2.*(float(coils[p].effective_outer_radius_m)+
+                       float(coils[p].wire_radius_m))*1000.:
+                raise ValueError("each package must contain its BFZI winding")
+            sizes.append(box)
+            prefix=f"coil{p+1}_"
+            sample[prefix+"outer_package_mm"]=box
+            sample[prefix+"package_x_half_mm"]=box/2.
+            sample[prefix+"package_z_pos_half_mm"]=box/2.
+            sample[prefix+"package_z_neg_half_mm"]=box/2.
+        # Original BFZI sea volume has a shared envelope setting;
+        # each thermal package below uses its independent sample half-size.
+        cfg["BSR_PACKAGE_PLANE_HALF_M"]=max(sizes)*.0005
     # Each operator is called directly from original BFZI; no alternate
     # geometry generator, approximation to the source, or FEM mesh.
     t0=time.perf_counter()
@@ -147,6 +156,10 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                  winding_normal_xyz=[n.tolist() for n in normals],
                  physical_relative_tilt_deg=angle,
                  box_mm=box_mm,
+                 box1_mm=float(sample.get("coil1_outer_package_mm",
+                         sample.get("outer_package_mm",204.))),
+                 box2_mm=float(sample.get("coil2_outer_package_mm",
+                         sample.get("outer_package_mm",204.))),
                  sea_cells=len(points),
                  bfzi_prep_sec=time.perf_counter()-t0)
     return data,details
@@ -169,6 +182,8 @@ def main():
     p.add_argument("--yaw-deg",type=float,default=0.)
     p.add_argument("--pitch-deg",type=float,default=0.)
     p.add_argument("--box-mm",type=float,default=None)
+    p.add_argument("--box1-mm",type=float,default=None)
+    p.add_argument("--box2-mm",type=float,default=None)
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_param_anchor.npz"))
     p.add_argument("--probe",action="store_true",
@@ -185,7 +200,8 @@ def main():
         alpha1=a.alpha1,alpha2=a.alpha2,
         core1_mm=a.core1_mm,core2_mm=a.core2_mm,
         shift_mm=a.shift_mm,tilt_deg=a.tilt_deg,
-        yaw_deg=a.yaw_deg,pitch_deg=a.pitch_deg,box_mm=a.box_mm)
+        yaw_deg=a.yaw_deg,pitch_deg=a.pitch_deg,
+        box_mm=a.box_mm,box1_mm=a.box1_mm,box2_mm=a.box2_mm)
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
     from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
     from sdfmpneo_bfzi.geom_heat import GeomHeat
@@ -200,6 +216,9 @@ def main():
     info.update(geometry=anchor.geom.tolist(),
                 state_count=len(anchor.cap),
                 original_cold_Z6=anchor.z0.tolist(),
+                pose_extra18=anchor.pose.tolist(),
+                oriented_pkg_axes=anchor._pkg_axes.tolist(),
+                pkg_half_sizes_m=anchor._pkg_half.tolist(),
                 anchor_build_sec=time.perf_counter()-t0)
     if a.probe:
         if a.step<=0 or a.horizon<=0:
