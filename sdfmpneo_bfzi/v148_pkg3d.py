@@ -12,7 +12,7 @@ from scipy.spatial import cKDTree
 
 from .v148_et import BFZIV148ET
 from .pose import axes,isinside
-from .pkg_interface import face_links
+from .pkg_interface import face_links,adjacent_links
 
 
 class BFZIV148Pkg3D(BFZIV148ET):
@@ -30,7 +30,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
         dims=tuple(int(x) for x in pkg_shape)
         if len(dims)!=3 or min(dims)<1 or pkg_k<=0:
             raise ValueError("positive 3-D package grid and conductivity required")
-        if pkg_sea_model not in ("nearest","face-resistance"):
+        if pkg_sea_model not in ("nearest","face-resistance","face-adjacent"):
             raise ValueError("BFZI package-sea interface mode invalid")
         self.pkg_sea_model=pkg_sea_model
         self.pkg_sea_h=float(pkg_sea_h)
@@ -81,7 +81,11 @@ class BFZIV148Pkg3D(BFZIV148ET):
                     b=np.ravel_multi_index(tuple(nb),dims)
                     area=vol/size[ax]
                     link(start+a,start+b,pkg_k*area/size[ax])
-            if pkg_sea_model=="face-resistance":
+            if pkg_sea_model=="face-adjacent":
+                links=adjacent_links(
+                    model.points,model.base["records"],cells,half,rot,
+                    dims,start,pkg_k,sea_k,pkg_sea_h,quad=pkg_sea_quad)
+            elif pkg_sea_model=="face-resistance":
                 links=face_links(
                     model.points,cells,half,rot,dims,start,
                     pkg_k,sea_k,pkg_sea_h,
