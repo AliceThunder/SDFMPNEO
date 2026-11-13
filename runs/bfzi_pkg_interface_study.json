@@ -1,0 +1,325 @@
+{
+  "original": "BFZI V150 full warm electromagnetic direct method",
+  "interface": "conservative oriented surface face quadrature",
+  "surface_h_W_m2K": 20.0,
+  "neighbor_count": 4,
+  "quadrature": 2,
+  "geometries": {
+    "P03": {
+      "cold_interface": [
+        {
+          "package": 1,
+          "links": 48,
+          "wet_cells": 24,
+          "conductance_W_K": 0.5999999999999996,
+          "area_m2": 0.09743999999999998,
+          "effective_h_W_m2K": 6.157635467980293,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.06257727363089524,
+          "sea_center_surface_distance_max_m": 0.06786718971699998,
+          "reciprocity_gap_W_K": 0.0
+        },
+        {
+          "package": 2,
+          "links": 50,
+          "wet_cells": 29,
+          "conductance_W_K": 0.5999999999999998,
+          "area_m2": 0.117856,
+          "effective_h_W_m2K": 5.090958457778982,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.06917547533516054,
+          "sea_center_surface_distance_max_m": 0.09260619625939916,
+          "reciprocity_gap_W_K": 0.0
+        }
+      ],
+      "refined_interface": [
+        {
+          "package": 1,
+          "links": 306,
+          "wet_cells": 77,
+          "conductance_W_K": 0.4261203909745396,
+          "area_m2": 0.09743999999999998,
+          "effective_h_W_m2K": 4.373156721824093,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.08491536005538033,
+          "sea_center_surface_distance_max_m": 0.12644507104330766,
+          "reciprocity_gap_W_K": 8.673617379884035e-19
+        },
+        {
+          "package": 2,
+          "links": 296,
+          "wet_cells": 72,
+          "conductance_W_K": 0.5220283195024531,
+          "area_m2": 0.117856,
+          "effective_h_W_m2K": 4.429374147285273,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.07762152958161356,
+          "sea_center_surface_distance_max_m": 0.13035003477559629,
+          "reciprocity_gap_W_K": 1.734723475976807e-18
+        }
+      ],
+      "face_quadrature_total_G_W_K": {
+        "1": [
+          0.42490115147900004,
+          0.5202542521406874
+        ],
+        "2": [
+          0.42612039097453985,
+          0.5220283195024524
+        ],
+        "3": [
+          0.42637209264242976,
+          0.5226552118654315
+        ]
+      },
+      "directional_tangent": {
+        "explained_fraction": 0.9999760176221141,
+        "cold_response_singular_values": [
+          2.027419000153254,
+          0.7144251144905667,
+          0.5888570412975541,
+          0.16712455993523936,
+          0.060327659388109675,
+          0.026951467618408404,
+          0.010896908549714278,
+          0.0010813295004991526
+        ],
+        "n_probes": 6,
+        "directional_sec": 0.14241260000017064
+      },
+      "new_tangent": "runs\\bfzi_pose_p03_interface_rank6.npz",
+      "programs": {
+        "bfzi_pose_p03_holdout.npz": [
+          {
+            "warm_spatial_time_s": 600.0,
+            "warm_spatial": {
+              "J_volume_relative_L2": 1.540358610362366e-05,
+              "q_volume_relative_L2": 2.796014737894665e-06,
+              "original_q_port_gap_W": 1.1102230246251565e-16,
+              "proxy_q_port_gap_W": 0.0
+            },
+            "case": 20,
+            "voltage_V": 40.0,
+            "time_step_s": 30.0,
+            "original_BFZI_direct_sec": 2.31971859999976,
+            "reduced_neural_inference_sec": 0.06150470000102359,
+            "physical_interface_change_max_K": {
+              "sea": 0.0071737115387122685,
+              "package": 0.03320773148590206,
+              "copper": 0.020195122224151874
+            },
+            "physical_interface_change_Z_relative_L2": 0.0036266905874232105,
+            "direct_interface_flux_W_max": [
+              0.00329823704225564,
+              0.4122611312820398
+            ],
+            "original_BFZI_material_budget_gap_W": 3.5340049997500955e-08,
+            "surrogate_vs_refined_physics": {
+              "dynamic_Z_relative_L2": 1.0306418660051494e-05,
+              "sea_max_abs_K": 1.2071500748334074e-05,
+              "pkg_max_abs_K": 2.4854031266841048e-05,
+              "cu_max_abs_K": 2.5012468540808186e-08,
+              "q_port_gap_W": 3.3306690738754696e-16,
+              "material_budget_gap_W": 4.694022948115162e-13
+            }
+          },
+          {
+            "warm_spatial_time_s": 510.0,
+            "warm_spatial": {
+              "J_volume_relative_L2": 0.00010796487519987203,
+              "q_volume_relative_L2": 1.9593639973072505e-05,
+              "original_q_port_gap_W": 8.881784197001252e-16,
+              "proxy_q_port_gap_W": 8.881784197001252e-16
+            },
+            "case": 29,
+            "voltage_V": 115.0,
+            "time_step_s": 30.0,
+            "original_BFZI_direct_sec": 2.801638599999933,
+            "reduced_neural_inference_sec": 0.07209209999928134,
+            "physical_interface_change_max_K": {
+              "sea": 0.06744243012457218,
+              "package": 0.309170239176467,
+              "copper": 0.19442691179506255
+            },
+            "physical_interface_change_Z_relative_L2": 0.004500158490173322,
+            "direct_interface_flux_W_max": [
+              0.024884311063782822,
+              3.1941956100617306
+            ],
+            "original_BFZI_material_budget_gap_W": 1.3948076116321317e-07,
+            "surrogate_vs_refined_physics": {
+              "dynamic_Z_relative_L2": 1.2774180075776163e-05,
+              "sea_max_abs_K": 8.614656559302603e-05,
+              "pkg_max_abs_K": 0.0002631516991868921,
+              "cu_max_abs_K": 9.234469189323136e-08,
+              "q_port_gap_W": 8.881784197001252e-16,
+              "material_budget_gap_W": 7.44968531307677e-11
+            }
+          }
+        ]
+      }
+    },
+    "P07": {
+      "cold_interface": [
+        {
+          "package": 1,
+          "links": 42,
+          "wet_cells": 21,
+          "conductance_W_K": 0.5999999999999993,
+          "area_m2": 0.10281599999999999,
+          "effective_h_W_m2K": 5.835667600373476,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.09158540100560437,
+          "sea_center_surface_distance_max_m": 0.09325843488584483,
+          "reciprocity_gap_W_K": 0.0
+        },
+        {
+          "package": 2,
+          "links": 47,
+          "wet_cells": 25,
+          "conductance_W_K": 0.6000000000000001,
+          "area_m2": 0.12575999999999998,
+          "effective_h_W_m2K": 4.770992366412215,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.08047280003152865,
+          "sea_center_surface_distance_max_m": 0.11067896987651399,
+          "reciprocity_gap_W_K": 0.0
+        }
+      ],
+      "refined_interface": [
+        {
+          "package": 1,
+          "links": 297,
+          "wet_cells": 78,
+          "conductance_W_K": 0.3862120285379156,
+          "area_m2": 0.10281599999999999,
+          "effective_h_W_m2K": 3.756341703022055,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.09397088554307925,
+          "sea_center_surface_distance_max_m": 0.15260204388549287,
+          "reciprocity_gap_W_K": 8.673617379884035e-19
+        },
+        {
+          "package": 2,
+          "links": 287,
+          "wet_cells": 71,
+          "conductance_W_K": 0.4908774659270524,
+          "area_m2": 0.12575999999999998,
+          "effective_h_W_m2K": 3.9032877379695647,
+          "inside_box_links": 0,
+          "inside_box_conductance_W_K": 0.0,
+          "sea_center_surface_distance_median_m": 0.08828811011957839,
+          "sea_center_surface_distance_max_m": 0.155519082209885,
+          "reciprocity_gap_W_K": 1.734723475976807e-18
+        }
+      ],
+      "face_quadrature_total_G_W_K": {
+        "1": [
+          0.38552341606501606,
+          0.48747495798971385
+        ],
+        "2": [
+          0.3862120285379152,
+          0.4908774659270523
+        ],
+        "3": [
+          0.3864352296437956,
+          0.49155869564219457
+        ]
+      },
+      "directional_tangent": {
+        "explained_fraction": 0.9999777159152807,
+        "cold_response_singular_values": [
+          2.0127458197144934,
+          0.7194719662614096,
+          0.6278775551397076,
+          0.17161417892903513,
+          0.08319380034497609,
+          0.02236236768843716,
+          0.010492121038649384,
+          0.0011557766684409665
+        ],
+        "n_probes": 6,
+        "directional_sec": 0.14153049999913492
+      },
+      "new_tangent": "runs\\bfzi_pose_p07_interface_rank6.npz",
+      "programs": {
+        "bfzi_pose_p07_15s_holdout.npz": [
+          {
+            "warm_spatial_time_s": 600.0,
+            "warm_spatial": {
+              "J_volume_relative_L2": 0.00021511297261501196,
+              "q_volume_relative_L2": 4.740508066091469e-05,
+              "original_q_port_gap_W": 0.0,
+              "proxy_q_port_gap_W": 1.7763568394002505e-15
+            },
+            "case": 16,
+            "voltage_V": 150.0,
+            "time_step_s": 15.0,
+            "original_BFZI_direct_sec": 5.838824799999202,
+            "reduced_neural_inference_sec": 0.1548411000003398,
+            "physical_interface_change_max_K": {
+              "sea": 0.08930110183757733,
+              "package": 0.6487394980407544,
+              "copper": 0.417061060386402
+            },
+            "physical_interface_change_Z_relative_L2": 0.004340507892476693,
+            "direct_interface_flux_W_max": [
+              0.04625660994078187,
+              5.813008721556902
+            ],
+            "original_BFZI_material_budget_gap_W": 6.632842186604648e-07,
+            "surrogate_vs_refined_physics": {
+              "dynamic_Z_relative_L2": 3.958881445860361e-06,
+              "sea_max_abs_K": 0.0010402429445548478,
+              "pkg_max_abs_K": 0.00044467418501881184,
+              "cu_max_abs_K": 8.86165992142196e-07,
+              "q_port_gap_W": 5.329070518200751e-15,
+              "material_budget_gap_W": 1.262563387172122e-10
+            }
+          },
+          {
+            "warm_spatial_time_s": 600.0,
+            "warm_spatial": {
+              "J_volume_relative_L2": 0.0002646121513787955,
+              "q_volume_relative_L2": 5.82891554018833e-05,
+              "original_q_port_gap_W": 1.7763568394002505e-15,
+              "proxy_q_port_gap_W": 1.7763568394002505e-15
+            },
+            "case": 18,
+            "voltage_V": 150.0,
+            "time_step_s": 15.0,
+            "original_BFZI_direct_sec": 6.184276800000589,
+            "reduced_neural_inference_sec": 0.17827869999928225,
+            "physical_interface_change_max_K": {
+              "sea": 0.1249877961065522,
+              "package": 0.8861973454414169,
+              "copper": 0.6023565906418185
+            },
+            "physical_interface_change_Z_relative_L2": 0.005877166082362659,
+            "direct_interface_flux_W_max": [
+              0.05110436258533321,
+              6.620260126832809
+            ],
+            "original_BFZI_material_budget_gap_W": 6.589736827322668e-07,
+            "surrogate_vs_refined_physics": {
+              "dynamic_Z_relative_L2": 4.9541603310429735e-06,
+              "sea_max_abs_K": 0.0011449152199247692,
+              "pkg_max_abs_K": 0.0013131132293437986,
+              "cu_max_abs_K": 7.357204481195367e-07,
+              "q_port_gap_W": 5.329070518200751e-15,
+              "material_budget_gap_W": 1.262563387172122e-10
+            }
+          }
+        ]
+      }
+    }
+  }
+}
