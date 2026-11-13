@@ -11,10 +11,11 @@ from scipy.sparse import coo_matrix, diags
 from scipy.spatial import cKDTree
 
 from .v148_et import BFZIV148ET
+from .pose import axes,isinside
 
 
 class BFZIV148Pkg3D(BFZIV148ET):
-    """3-D package conduction on two fixed, independent AABBs."""
+    """3-D conduction in two independently sized coil-attached package boxes."""
 
     def __init__(self,model,*,pkg_shape=(4,2,4),pkg_k=.25,
                  sea_rhoc=4e6,sea_k=.6,pkg_rhoc=1.5e6,
@@ -37,6 +38,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
         self.cap[self.cu]=cap_cu
         self.pkg_xyz=[]
         self.pkg_vol=[]
+        self.pkg_axes=[axes(fam.coil) for fam in model.base["families"]]
         self.pkg_links=[]
         self.cu_links=[]
         rows,cols,vals=[],[],[]
@@ -51,9 +53,10 @@ class BFZIV148Pkg3D(BFZIV148ET):
         for p,(center,half) in enumerate(self.boxes):
             center=np.asarray(center,float)
             half=np.asarray(half,float)
+            rot=self.pkg_axes[p]
             size=2*half/np.asarray(dims)
             vol=float(np.prod(size))
-            cells=np.array([center-half+(np.asarray(t)+.5)*size
+            cells=np.array([center+rot@(-half+(np.asarray(t)+.5)*size)
                             for t in np.ndindex(*dims)])
             self.pkg_xyz.append(cells)
             self.pkg_vol.append(np.full(self.pkg_n,vol))
@@ -81,8 +84,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
                     for end,sign in ((0,-1),(dims[ax]-1,1)):
                         if t[ax]!=end:
                             continue
-                        loc=cells[a].copy()
-                        loc[ax]+=sign*.5*size[ax]
+                        loc=cells[a]+sign*.5*size[ax]*rot[:,ax]
                         sea=int(self.tree.query(loc)[1])
                         faces.append((sea,start+a,area))
             area_all=sum(item[2] for item in faces)
@@ -134,7 +136,8 @@ class BFZIV148Pkg3D(BFZIV148ET):
             raise ValueError("invalid thermal state")
         out=self.amb+temp[self.tree.query(pts)[1]]
         for p,(center,half) in enumerate(self.boxes):
-            inside=np.all(np.abs(pts-center)<=half,axis=1)
+            inside=isinside(pts,np.asarray(center,float),
+                            np.asarray(half,float),self.pkg_axes[p])
             if np.any(inside):
                 sub=cKDTree(self.pkg_xyz[p]).query(pts[inside])[1]
                 out[inside]=self.amb+temp[self.count+p*self.pkg_n+sub]
