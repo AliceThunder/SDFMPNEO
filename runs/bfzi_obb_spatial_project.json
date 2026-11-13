@@ -1,0 +1,78 @@
+{
+  "P03": [
+    {
+      "t_s": 0.0,
+      "V": 115.0,
+      "coldJ_error": 0.0,
+      "weightedFV_J_error": 0.0,
+      "coldq_error": 0.0,
+      "weightedFV_q_error": 2.5486919647649285e-16,
+      "max_temp_rise_K": 0.0
+    },
+    {
+      "t_s": 150.0,
+      "V": 0.0,
+      "coldJ_error": 0.0,
+      "weightedFV_J_error": 0.0,
+      "coldq_error": 0.0,
+      "weightedFV_q_error": 0.0,
+      "max_temp_rise_K": 35.89630022103182
+    },
+    {
+      "t_s": 300.0,
+      "V": 115.0,
+      "coldJ_error": 0.00037547599439230304,
+      "weightedFV_J_error": 7.248417781223108e-05,
+      "coldq_error": 2.685172414675162e-05,
+      "weightedFV_q_error": 0.00039713339045189714,
+      "max_temp_rise_K": 59.423751749338464
+    },
+    {
+      "t_s": 600.0,
+      "V": 0.0,
+      "coldJ_error": 0.0,
+      "weightedFV_J_error": 0.0,
+      "coldq_error": 0.0,
+      "weightedFV_q_error": 0.0,
+      "max_temp_rise_K": 26.31794988610403
+    }
+  ],
+  "P07": [
+    {
+      "t_s": 0.0,
+      "V": 150.0,
+      "coldJ_error": 0.0,
+      "weightedFV_J_error": 0.0,
+      "coldq_error": 0.0,
+      "weightedFV_q_error": 9.833246837886028e-18,
+      "max_temp_rise_K": 0.0
+    },
+    {
+      "t_s": 150.0,
+      "V": 150.0,
+      "coldJ_error": 0.0006009264777636609,
+      "weightedFV_J_error": 0.0001307732909401934,
+      "coldq_error": 5.07149241908948e-05,
+      "weightedFV_q_error": 0.0006212525255912268,
+      "max_temp_rise_K": 217.73716506549016
+    },
+    {
+      "t_s": 300.0,
+      "V": 150.0,
+      "coldJ_error": 0.0013216800552592078,
+      "weightedFV_J_error": 0.0002830055296014646,
+      "coldq_error": 0.0001060341329447909,
+      "weightedFV_q_error": 0.0013763368520429062,
+      "max_temp_rise_K": 275.88837082153657
+    },
+    {
+      "t_s": 600.0,
+      "V": 150.0,
+      "coldJ_error": 0.0025666982095696954,
+      "weightedFV_J_error": 0.0005260194996736463,
+      "coldq_error": 0.00020209740993147338,
+      "weightedFV_q_error": 0.0026976748724176374,
+      "max_temp_rise_K": 303.68012720048716
+    }
+  ]
+}

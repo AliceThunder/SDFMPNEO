@@ -1,0 +1,34 @@
+{
+  "P03": {
+    "selected_time_s": 510.0,
+    "spatial_fixed_true_temperature": {
+      "uncorrected_J_relative_L2": 0.0006487231716612574,
+      "corrected_J_relative_L2": 0.00012354881645214275
+    },
+    "autonomous_prediction": {
+      "uncorrected_J_relative_L2": 0.0006476564131574075,
+      "corrected_J_relative_L2": 0.0001230567510736161
+    },
+    "source_q_difference_W_m3": 0.0,
+    "dynamic_Z_difference": 0.0,
+    "old_inference_sec": 0.09805039999992005,
+    "new_inference_sec": 0.19803139999930863,
+    "FV_projection_edges": 1500
+  },
+  "P07": {
+    "selected_time_s": 600.0,
+    "spatial_fixed_true_temperature": {
+      "uncorrected_J_relative_L2": 0.0025666982095696954,
+      "corrected_J_relative_L2": 0.0005260194996736463
+    },
+    "autonomous_prediction": {
+      "uncorrected_J_relative_L2": 0.002555198592720505,
+      "corrected_J_relative_L2": 0.0005250201977962582
+    },
+    "source_q_difference_W_m3": 0.0,
+    "dynamic_Z_difference": 0.0,
+    "old_inference_sec": 0.23011229999974603,
+    "new_inference_sec": 0.49257780000152707,
+    "FV_projection_edges": 1500
+  }
+}
