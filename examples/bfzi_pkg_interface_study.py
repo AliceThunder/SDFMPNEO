@@ -43,6 +43,27 @@ def physical(et, t, v):
     return T,z,flux,float(np.max(np.abs(budget))) if budget else 0.
 
 
+
+
+def warm_field(em,head,T,voltage):
+    """Independent warm original BFZI J/q at a powered physical-time sample."""
+    state=em.solve(T[:head.ns],T[head.cu])
+    I=np.linalg.solve(state.total_z+head.ext,
+                      np.array([voltage,0.],complex))
+    truth_j=np.einsum("npc,p->nc",state.unit_j,I,optimize=True)
+    truth_q,_=em.heat(state,I)
+    _,q,j,psea,_=head.source(T-head.amb,I,state.sea_z)
+    def rel(a,b):
+        w=head.vol.reshape(-1,*([1]*(np.ndim(a)-1)))
+        return float(np.sqrt(np.sum(w*abs(a-b)**2)/
+                             max(np.sum(w*abs(b)**2),1e-30)))
+    return dict(
+        J_volume_relative_L2=rel(j,truth_j),
+        q_volume_relative_L2=rel(q,truth_q),
+        original_q_port_gap_W=float(abs(
+            truth_q@head.vol-.5*np.vdot(I,state.sea_z@I).real)),
+        proxy_q_port_gap_W=float(abs(q@head.vol-psea)))
+
 def metrics(pred,temp,z,head):
     d=pred["temp_K"]-temp
     return dict(
@@ -126,7 +147,12 @@ def main():
                 pred=rom.rollout(net,ck,v[i],t,tangent=tan,blend=1.)
                 pred_sec=time.perf_counter()-ts
                 delta=temp-T0[i]
+                powered=np.flatnonzero(v[i]>0)
+                last=int(powered[-1]) if len(powered) else 0
+                spatial=warm_field(em,head,temp[last],v[i,last])
                 rows.append(dict(
+                    warm_spatial_time_s=float(t[last]),
+                    warm_spatial=spatial,
                     case=int(cases[i]["id"]),voltage_V=float(cases[i]["voltage_v"]),
                     time_step_s=float(t[1]-t[0]),
                     original_BFZI_direct_sec=direct_sec,
