@@ -27,7 +27,8 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
            shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
            pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None,
            grid_xz=None,grid_y=None,grid_layers=0,grid_factor=.5,
-           grid_max_nodes=1400,mesh_only=False,physical_box_only=False):
+           grid_max_nodes=1400,mesh_only=False,physical_box_only=False,
+           sea_void="aabb"):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -113,6 +114,10 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
         # Original BFZI sea volume has a shared envelope setting;
         # each thermal package below uses its independent sample half-size.
         cfg["BSR_PACKAGE_PLANE_HALF_M"]=max(sizes)*.0005
+    if sea_void not in ("aabb","oriented"):
+        raise ValueError("original BFZI sea void must be aabb or oriented")
+    if sea_void=="oriented":
+        physical_box_only=True
     if physical_box_only:
         # Physically isolated sealed package control: no dry riser and no
         # additional world-axis wall extensions. The original BFZI OBB AABB
@@ -144,6 +149,14 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
     sigma=float(bf.SIGMA_SPM)
     points,vol,volume_meta,records=(
         fs._build_v33_rectangular_sea_volume_cells_integrated(coils,cfg))
+    if sea_void=="oriented":
+        from sdfmpneo_bfzi.sea_obb import build as obb_build
+        points,vol,volume_meta,records=obb_build(
+            fs,records,volume_meta,coils,sample,cfg,
+            max_nodes=grid_max_nodes)
+        # Original rectangular subbox self quadrature is incompatible
+        # with a rotated polyhedral cut; use original volume-sphere mode.
+        cfg=dict(cfg,ENV_G_SELF_MODE="equal_volume_sphere")
     if mesh_only:
         return dict(points=points,volumes=vol,records=records,
                     cfg=cfg,vol_meta=volume_meta),dict(
@@ -192,6 +205,8 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                  box2_mm=float(sample.get("coil2_outer_package_mm",
                          sample.get("outer_package_mm",204.))),
                  sea_cells=len(points),
+                 sea_void_model=sea_void,
+                 sea_volume_relative_error=volume_meta["relative_volume_error"],
                  bfzi_prep_sec=time.perf_counter()-t0)
     return data,details
 
@@ -233,6 +248,8 @@ def main():
     p.add_argument("--sea-grid-layers",type=int,default=0)
     p.add_argument("--sea-grid-factor",type=float,default=.5)
     p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
+    p.add_argument("--sea-void",choices=("aabb","oriented"),
+                   default="aabb",help="Native BFZI AABB or exact oriented sealed-package sea cut")
     p.add_argument("--physical-box-only",action="store_true",
                    help="Disable BFZI riser/extra walls for an isolated sealed-box control")
     p.add_argument("--sea-grid-mesh-only",action="store_true",
@@ -271,7 +288,8 @@ def main():
         grid_layers=a.sea_grid_layers,grid_factor=a.sea_grid_factor,
         grid_max_nodes=a.sea_grid_max_nodes,
         mesh_only=a.sea_grid_mesh_only,
-        physical_box_only=a.physical_box_only)
+        physical_box_only=a.physical_box_only,
+        sea_void=a.sea_void)
     if a.sea_grid_mesh_only:
         print(json.dumps(info,indent=2))
         return
@@ -320,6 +338,7 @@ def main():
         info["sea_tangent_directional_solves"]=tangent.nsolve
         info["sea_tangent_build_sec"]=time.perf_counter()-t_tan
     info.update(geometry=anchor.geom.tolist(),
+                sea_void_model=a.sea_void,
                 pkg_sea_model=a.pkg_sea_model,
                 pkg_sea_h_W_m2K=(a.pkg_sea_h if a.pkg_sea_model=="face-resistance" else None),
                 pkg_sea_quad=(a.pkg_sea_quad if a.pkg_sea_model=="face-resistance" else None),
