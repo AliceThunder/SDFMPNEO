@@ -16,7 +16,8 @@ import torch
 
 from sdfmpneo_bfzi.frac_memory import zmat
 from sdfmpneo_bfzi.geom_memory import (
-    GeomFrac,geom_feat,geom_port,heat_drive,thermal_summary,rollout)
+    GeomFrac,G_SCALE,geom_feat,geom_port,heat_drive,thermal_summary,rollout)
+from sdfmpneo_bfzi.pose import default_desc
 
 
 def data_file(path,probe=None):
@@ -47,6 +48,7 @@ def data_file(path,probe=None):
             raise ValueError("original BFZI sea volumes missing")
         sample=str(d["sample"]) if "sample" in d else (
             "M4" if probe else "unknown")
+        pose=np.asarray(d["pose"],float) if "pose" in d else default_desc(geom)
     if temp.shape[-1]!=ns+2*npkg+2 or temp.shape[:2]!=vin.shape:
         raise ValueError("BFZI sea/package/copper dimensions mismatch")
     if (np.any(np.diff(times)<=0) or times[0]!=0 or
@@ -78,7 +80,7 @@ def data_file(path,probe=None):
             src[i,k]=heat_drive(
                 float(vin[i,k]),zmat(z[i,k-1]),ext,port,
                 temp[i,k-1,-2:],geom[14:16])
-    return dict(sample=sample,geom=geom,z0=z0,ext=ext,
+    return dict(sample=sample,geom=geom,pose=pose,z0=z0,ext=ext,
                 times=times,v=vin,z=z,train=train,
                 src=src,temp=summ,sea_delta=sea_delta,
                 cu_slope=slope,cases=cases)
@@ -104,14 +106,15 @@ def data_all(files,probe):
     return fit,val,test
 
 
-def tensors(rows,src_scale,y_scale,port_sea=False):
+def tensors(rows,src_scale,y_scale,port_sea=False,with_pose=False):
     src=np.stack([d["src"][i] for d,i in rows])/src_scale
     y=np.stack([np.concatenate(
         (d["sea_delta"][i] if port_sea else
          d["z"][i]-d["z0"],d["temp"][i]),axis=-1)
         for d,i in rows])/y_scale
-    geom=np.stack([geom_feat(d["geom"],d["z0"])
-                   for d,i in rows])
+    geom=np.stack([geom_feat(
+        d["geom"],d["z0"],d["pose"] if with_pose else None)
+        for d,i in rows])
     slope=np.stack([d["cu_slope"][i] for d,i in rows])
     return (torch.tensor(src,dtype=torch.float32),
             torch.tensor(y,dtype=torch.float32),
@@ -123,7 +126,8 @@ def score(model,ck,rows):
     scores=[]
     for d,i in rows:
         p=rollout(model,ck,d["v"][i],d["times"],
-                  d["geom"],d["z0"],d["ext"])
+                  d["geom"],d["z0"],d["ext"],
+                  d["pose"] if model.ng>len(G_SCALE) else None)
         z=d["z"][i]
         err=p["z6"]-z
         ref=z-z[0]
@@ -172,6 +176,10 @@ def main():
     p.add_argument("--sea-loss",type=float,default=0.,
                    help="Additional seawater mean/hotspot temperature penalty")
     p.add_argument("--patience",type=int,default=280)
+    p.add_argument("--with-pose",action="store_true",
+                   help="Condition on BFZI relative 3D translation, rotation and both package sizes")
+    p.add_argument("--init-model",type=Path,default=None,
+                   help="Initialize first 22 features and full memory from trained BFZI V5")
     args=p.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(41)
@@ -189,8 +197,8 @@ def main():
         np.full(8,max(float(max(ystd[6:]))*.001,1e-3))])
     src_scale=np.maximum(np.max(
         np.stack([d["src"][i] for d,i in fit]),axis=(0,1)),1e-4)
-    u,y,g,cu=tensors(fit,src_scale,yscale,args.port_sea)
-    uv,yv,gv,cuv=tensors(val,src_scale,yscale,args.port_sea)
+    u,y,g,cu=tensors(fit,src_scale,yscale,args.port_sea,args.with_pose)
+    uv,yv,gv,cuv=tensors(val,src_scale,yscale,args.port_sea,args.with_pose)
     if args.phys_loss and not args.port_sea:
         p.error("--phys-loss requires --port-sea")
     ysc=torch.tensor(yscale,dtype=torch.float32)
@@ -212,7 +220,24 @@ def main():
         if args.sea_loss>0:
             loss=loss+args.sea_loss*(pred[:,:,6:8]-target[:,:,6:8]).square().mean()
         return loss
-    model=GeomFrac()
+    model=GeomFrac(ng=g.shape[-1])
+    if args.init_model:
+        init=torch.load(args.init_model,map_location="cpu",weights_only=True)
+        state=init["state"]
+        if model.ng==int(init["ng"]):
+            model.load_state_dict(state)
+        elif model.ng==int(init["ng"])+18:
+            # Zero new pose columns: identical inference to V5 at initialization.
+            extra=model.state_dict()
+            for key,value in state.items():
+                if key=="net.0.weight":
+                    extra[key][:,:value.shape[1]]=value
+                    extra[key][:,value.shape[1]:]=0.
+                else:
+                    extra[key]=value
+            model.load_state_dict(extra)
+        else:
+            raise ValueError("pretrained BFZI geometry dimension mismatch")
     opt=torch.optim.Adam(model.parameters(),lr=.003)
     best=1e30;state=None;best_epoch=0
     t0=time.perf_counter()
@@ -245,7 +270,8 @@ def main():
         state=model.state_dict(),
         src_scale=torch.tensor(src_scale,dtype=torch.float32),
         y_scale=torch.tensor(yscale,dtype=torch.float32),
-        ng=model.ng,port_sea=bool(args.port_sea),
+        ng=model.ng,with_pose=bool(args.with_pose),
+        port_sea=bool(args.port_sea),
         history="fractional SOE + exponential",
         trained_samples=[d["sample"] for d in
                          {id(d):d for d,i in fit}.values()])
@@ -255,6 +281,7 @@ def main():
         model=str(args.model),
         train_samples=sorted(set(d["sample"] for d,i in fit)),
         heldout_geometry=other["sample"],port_sea=bool(args.port_sea),
+        with_pose=bool(args.with_pose),
         physics_loss_weight=float(args.phys_loss),
         package_loss_weight=float(args.pkg_loss),
         sea_loss_weight=float(args.sea_loss),
