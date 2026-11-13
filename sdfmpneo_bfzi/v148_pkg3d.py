@@ -12,6 +12,7 @@ from scipy.spatial import cKDTree
 
 from .v148_et import BFZIV148ET
 from .pose import axes,isinside
+from .pkg_interface import face_links
 
 
 class BFZIV148Pkg3D(BFZIV148ET):
@@ -19,7 +20,9 @@ class BFZIV148Pkg3D(BFZIV148ET):
 
     def __init__(self,model,*,pkg_shape=(4,2,4),pkg_k=.25,
                  sea_rhoc=4e6,sea_k=.6,pkg_rhoc=1.5e6,
-                 pkg_sea_g=.6,cu_pkg_g=.8,outer_h=10.,**kwargs):
+                 pkg_sea_g=.6,cu_pkg_g=.8,outer_h=10.,
+                 pkg_sea_model="nearest",pkg_sea_h=20.,
+                 pkg_sea_quad=2,pkg_sea_near=4,**kwargs):
         super().__init__(
             model,sea_rhoc=sea_rhoc,sea_k=sea_k,pkg_rhoc=pkg_rhoc,
             pkg_sea_g=pkg_sea_g,cu_pkg_g=cu_pkg_g,outer_h=outer_h,
@@ -27,6 +30,10 @@ class BFZIV148Pkg3D(BFZIV148ET):
         dims=tuple(int(x) for x in pkg_shape)
         if len(dims)!=3 or min(dims)<1 or pkg_k<=0:
             raise ValueError("positive 3-D package grid and conductivity required")
+        if pkg_sea_model not in ("nearest","face-resistance"):
+            raise ValueError("BFZI package-sea interface mode invalid")
+        self.pkg_sea_model=pkg_sea_model
+        self.pkg_sea_h=float(pkg_sea_h)
         self.pkg_shape=dims
         self.pkg_n=int(np.prod(dims))
         cap_cu=self.cap[self.cu].copy()
@@ -74,25 +81,29 @@ class BFZIV148Pkg3D(BFZIV148ET):
                     b=np.ravel_multi_index(tuple(nb),dims)
                     area=vol/size[ax]
                     link(start+a,start+b,pkg_k*area/size[ax])
-            # Distribute the total box-to-sea conductance by physical
-            # exposed face area, then attach it to nearest wet FV cell.
-            faces=[]
-            for t in np.ndindex(*dims):
-                a=np.ravel_multi_index(t,dims)
-                for ax in range(3):
-                    area=vol/size[ax]
-                    for end,sign in ((0,-1),(dims[ax]-1,1)):
-                        if t[ax]!=end:
-                            continue
-                        loc=cells[a]+sign*.5*size[ax]*rot[:,ax]
-                        sea=int(self.tree.query(loc)[1])
-                        faces.append((sea,start+a,area))
-            area_all=sum(item[2] for item in faces)
-            links=[]
-            for sea,pk,area in faces:
-                cond=pkg_sea_g*area/area_all
+            if pkg_sea_model=="face-resistance":
+                links=face_links(
+                    model.points,cells,half,rot,dims,start,
+                    pkg_k,sea_k,pkg_sea_h,
+                    quad=pkg_sea_quad,near=pkg_sea_near)
+            else:
+                # Original BFZI V150 thermal baseline, unchanged.
+                faces=[]
+                for t in np.ndindex(*dims):
+                    a=np.ravel_multi_index(t,dims)
+                    for ax in range(3):
+                        area=vol/size[ax]
+                        for end,sign in ((0,-1),(dims[ax]-1,1)):
+                            if t[ax]!=end:
+                                continue
+                            loc=cells[a]+sign*.5*size[ax]*rot[:,ax]
+                            sea=int(self.tree.query(loc)[1])
+                            faces.append((sea,start+a,area))
+                area_all=sum(item[2] for item in faces)
+                links=[(sea,pk,pkg_sea_g*area/area_all)
+                       for sea,pk,area in faces]
+            for sea,pk,cond in links:
                 link(sea,pk,cond)
-                links.append((sea,pk,cond))
             self.pkg_links.append(links)
             # Put copper heat into boxes near the true BFZI winding,
             # weighted by each physical winding element's length.
