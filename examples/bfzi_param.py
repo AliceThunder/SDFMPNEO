@@ -274,6 +274,7 @@ def main():
             p.error("--teacher-step must divide 600 s")
         times=np.arange(0.,601.,a.teacher_step,dtype=float)
         temps=[];zs=[];vs=[];curr=[];split=[];cases=[]
+        teacher_start=time.perf_counter()
         for cid in a.indices:
             volt,win,tag=allcases[cid]
             func=lambda now: drive(volt,win,now)
@@ -300,6 +301,8 @@ def main():
             cases_json=json.dumps(cases))
         info["teacher_out"]=str(a.teacher_out)
         info["teacher_cases"]=len(a.indices)
+        info["teacher_time_step_s"]=int(a.teacher_step)
+        info["original_BFZI_dynamic_seconds"]=time.perf_counter()-teacher_start
     a.out.with_suffix(".json").write_text(
         json.dumps(info,indent=2),encoding="utf-8")
     print(json.dumps(info,indent=2),flush=True)
