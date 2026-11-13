@@ -192,6 +192,8 @@ def main():
     p.add_argument("--teacher-out",type=Path,default=None,
                    help="Original BFZI 600s programs for new pose-conditional neural training")
     p.add_argument("--indices",type=int,nargs="+",default=[0,1,4,8,9,20,29])
+    p.add_argument("--teacher-step",type=int,default=30,
+                   help="Original BFZI direct dynamic teacher grid in seconds")
     p.add_argument("--case-name",type=str,default="P01")
     p.add_argument("--sea-tangent-rank",type=int,default=0,
                    help="Precompute original BFZI sea-Z thermal Jacobian in physical 3D ROM modes")
@@ -268,7 +270,9 @@ def main():
         allcases=programs()
         if not a.indices or any(i<0 or i>=len(allcases) for i in a.indices):
             p.error("teacher program indices must be 0–29")
-        times=np.arange(0.,601.,30.)
+        if a.teacher_step<=0 or 600%a.teacher_step:
+            p.error("--teacher-step must divide 600 s")
+        times=np.arange(0.,601.,a.teacher_step,dtype=float)
         temps=[];zs=[];vs=[];curr=[];split=[];cases=[]
         for cid in a.indices:
             volt,win,tag=allcases[cid]
