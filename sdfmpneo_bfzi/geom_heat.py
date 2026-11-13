@@ -15,7 +15,7 @@ from scipy.sparse.linalg import factorized
 from scipy.spatial import cKDTree
 
 from .geom_memory import geom_feat,geom_port,heat_drive,G_SCALE
-from .pose import desc,isinside
+from .pose import desc,isinside,default_desc
 from .frac_memory import zmat
 
 
@@ -228,10 +228,12 @@ class GeomHeat:
             raise ValueError("voltage/time histories must align from zero")
         if not ck.get("port_sea",False):
             raise ValueError("BFZI sea-delta fractional checkpoint required")
-        g=torch.tensor(geom_feat(
-            self.geom,self.z0,
-            self.pose if net.ng>len(G_SCALE) else None)[None],
-            dtype=torch.float32)
+        if net.ng>len(G_SCALE):
+            pose=self.pose if self.pose is not None else default_desc(self.geom)
+        else:
+            pose=None
+        g=torch.tensor(geom_feat(self.geom,self.z0,pose)[None],
+                       dtype=torch.float32)
         h=net.init_state(1)
         sc=np.asarray(ck["src_scale"],float)
         ys=np.asarray(ck["y_scale"],float)
