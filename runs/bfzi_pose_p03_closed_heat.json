@@ -1,0 +1,53 @@
+{
+  "sample": "M3",
+  "teacher": "runs\\bfzi_pose_p03_holdout.npz",
+  "model": "runs\\bfzi_geom_closed.pt",
+  "anchor": "runs\\bfzi_pose_p03_anchor.npz",
+  "ensemble": null,
+  "ensemble_weights": null,
+  "anchor_build_seconds": 0.002907700021751225,
+  "cold_Z_relative_error": 0.0,
+  "sea_cells": 384,
+  "package_cells_per_box": 32,
+  "physical_source": "original BFZI cold unit J and port weak Joule",
+  "history": "learned causal fractional SOE sea delta",
+  "heat": "original 3-D BFZI FV conservative heat operator",
+  "no_dynamic_BFZI_EM_solve": true,
+  "reduced_heat_rank": 32,
+  "rom_setup_seconds": 0.0014062999980524182,
+  "rom_file": "runs\\bfzi_pose_p03_rom.npz",
+  "results": [
+    {
+      "sea_max_abs_K": 1.2034567362206872e-05,
+      "pkg_max_abs_K": 1.0072781321923685e-05,
+      "cu_max_abs_K": 2.5793399345275247e-06,
+      "sea_L2_relative": 0.0003377449238462509,
+      "pkg_L2_relative": 4.430816283708292e-06,
+      "case": 20,
+      "voltage_V": 40.0,
+      "neural_trajectory_sec": 0.0346518000587821,
+      "max_FV_energy_residual_W": 1.3940447776373694e-05,
+      "max_sea_source_gap_W": 3.3306690738754696e-16,
+      "dynamic_Z_relative_L2": 0.023536011425447204,
+      "rom_rank": 32,
+      "rom_setup_sec": 0.0014062999980524182,
+      "max_material_energy_gap_W": 4.685141163918161e-13
+    },
+    {
+      "sea_max_abs_K": 0.00023197763624693835,
+      "pkg_max_abs_K": 0.00011174310208161842,
+      "cu_max_abs_K": 0.00020728860533836269,
+      "sea_L2_relative": 0.0020343559236995134,
+      "pkg_L2_relative": 8.828393231057958e-06,
+      "case": 29,
+      "voltage_V": 115.0,
+      "neural_trajectory_sec": 0.034676300012506545,
+      "max_FV_energy_residual_W": 0.00011535315868518396,
+      "max_sea_source_gap_W": 1.7763568394002505e-15,
+      "dynamic_Z_relative_L2": 0.027065737592269424,
+      "rom_rank": 32,
+      "rom_setup_sec": 0.0014062999980524182,
+      "max_material_energy_gap_W": 7.44577732803009e-11
+    }
+  ]
+}

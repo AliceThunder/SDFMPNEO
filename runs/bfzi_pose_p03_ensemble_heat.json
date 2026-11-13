@@ -1,0 +1,59 @@
+{
+  "sample": "M3",
+  "teacher": "runs\\bfzi_pose_p03_holdout.npz",
+  "model": "runs\\bfzi_geom_frac_v5.pt",
+  "anchor": "runs\\bfzi_pose_p03_anchor.npz",
+  "ensemble": [
+    "runs\\bfzi_geom_pose.pt",
+    "runs\\bfzi_geom_closed.pt"
+  ],
+  "ensemble_weights": [
+    0.5,
+    0.5
+  ],
+  "anchor_build_seconds": 0.0029551999177783728,
+  "cold_Z_relative_error": 0.0,
+  "sea_cells": 384,
+  "package_cells_per_box": 32,
+  "physical_source": "original BFZI cold unit J and port weak Joule",
+  "history": "learned causal fractional SOE sea delta",
+  "heat": "original 3-D BFZI FV conservative heat operator",
+  "no_dynamic_BFZI_EM_solve": true,
+  "reduced_heat_rank": 32,
+  "rom_setup_seconds": 0.0014996000099927187,
+  "rom_file": "runs\\bfzi_pose_p03_rom.npz",
+  "results": [
+    {
+      "sea_max_abs_K": 1.2035581505642767e-05,
+      "pkg_max_abs_K": 9.890770343190525e-06,
+      "cu_max_abs_K": 1.8178471918872674e-06,
+      "sea_L2_relative": 0.000314669047277063,
+      "pkg_L2_relative": 4.404866119266889e-06,
+      "case": 20,
+      "voltage_V": 40.0,
+      "neural_trajectory_sec": 0.04414440004620701,
+      "max_FV_energy_residual_W": 1.3942097393905132e-05,
+      "max_sea_source_gap_W": 2.220446049250313e-16,
+      "dynamic_Z_relative_L2": 0.01962853665620949,
+      "rom_rank": 32,
+      "rom_setup_sec": 0.0014996000099927187,
+      "max_material_energy_gap_W": 4.676259379721159e-13
+    },
+    {
+      "sea_max_abs_K": 0.0001880600118511211,
+      "pkg_max_abs_K": 0.00010293559489582549,
+      "cu_max_abs_K": 0.00017946723687600752,
+      "sea_L2_relative": 0.0016881902243259244,
+      "pkg_L2_relative": 7.488908100114564e-06,
+      "case": 29,
+      "voltage_V": 115.0,
+      "neural_trajectory_sec": 0.04406019998714328,
+      "max_FV_energy_residual_W": 0.00011543457742874919,
+      "max_sea_source_gap_W": 1.7763568394002505e-15,
+      "dynamic_Z_relative_L2": 0.023896046123229316,
+      "rom_rank": 32,
+      "rom_setup_sec": 0.0014996000099927187,
+      "max_material_energy_gap_W": 7.44648787076585e-11
+    }
+  ]
+}
