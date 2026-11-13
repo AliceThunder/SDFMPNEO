@@ -1,3 +1,13 @@
+> **2026-11-13 最新：BFZI 显式 SE(3) + 双独立旋转封装 + 40维分数阶神经全三维代理。** 已直接从独立原 BFZI V150 CoilSpec 的 yaw/pitch/roll 构建两个**随线圈旋转的三维封装热网格**，分别支持独立外尺寸，封装—海水换热、铜线圈热接触及任意 XYZ 位置查询同步变换。分数阶几何条件从 **22→40维**，新增相对平移3维、旋转矩阵9维和双封装半尺寸6维，使用原 V5 热启动；原 BFZI P01/P02 新几何及旧 M1/M2/M4 共 **42 条训练、12 条验证**，20°倾角、210/232mm双封装的 P03 几何完全留出。P03 原 V5 vs 新40维模型的动态复阻抗变化误差 **8.484%→4.628%**，封装热点最大温差平均 **3.744→2.691 K**，铜 **2.088→0.925 K**。已进一步用 P03 **40/115 V、600 s 原 BFZI 真实直接法**检验新模型 + 32阶守恒热 ROM，动态复阻抗相对误差分别 **1.609%/2.097%**，海水最大空间温差 **1.20e−5/1.44e−4 K**、封装 **9.71e−6/9.41e−5 K**，五材料热预算差 ≤**7.45e−11 W**。另已跑通 **100 V、15 s×41步、旋转双封装任意XYZ温度/J/q 查询**，12 项相关测试通过。原 V5 22维模型继续可用；模型、三组真实 BFZI 教师、留出结果及空间场均已入库。[完整报告](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_explicit_pose_dual_package.md)。
+
+```powershell
+# 完全未见过的 P03：直接使用存档的原 BFZI 冷态锚、40维神经网络和32阶热ROM评估
+python -m examples.bfzi_geom_heat --anchor runs/bfzi_pose_p03_anchor.npz --teacher runs/bfzi_pose_p03_holdout.npz --model runs/bfzi_geom_pose.pt --rom-rank 32 --rom-file runs/bfzi_pose_p03_rom.npz --compare-full --out runs/bfzi_pose_p03_heat_metrics.json
+
+# 无原BFZI动态求解器的独立100 V/15s/600s三维温度、海水J/q及旋转盒空间查询
+python -m examples.bfzi_geom_heat --standalone --voltage 100 --heat 210 --cool 210 --step 15 --horizon 600 --anchor runs/bfzi_pose_p03_anchor.npz --model runs/bfzi_geom_pose.pt --rom-rank 32 --rom-file runs/bfzi_pose_p03_rom.npz --query runs/bfzi_pose_p03_query.npy --query-time 300 --out runs/bfzi_pose_p03_infer.json
+```
+
 > **2026-11-13 最新：原 BFZI 连续几何 + 异形双线圈 + 相对位姿已实算。** 新增原 BFZI V150 原生参数入口 `examples/bfzi_param.py`，分别控制两线圈圆形—圆角方形连续 `alpha/core`、相对 x/y/z 位移、yaw/pitch/roll 以及封装尺寸；电磁 Green、线圈路径、场源、铜/空气阻抗和三维传热均继续调用原 BFZI。未改几何时与原 M4 的坐标、体积、Green G0、源 C **逐项完全一致**。在两个真实新几何、75 V、600 s 通电/关断/重启动态时程上，原 M1/M2/M4 训练的分数阶网络**未经新几何重训**，动态复阻抗变化相对误差为 **4.079%/4.062%**；相对原 BFZI 直接法，海水空间最大温差 ≤**0.000236 K**、封装 ≤**0.0000441 K**、铜 ≤**0.0001795 K**。包含圆形发射端＋圆角方形接收端、位移(5,0,3)mm、原生旋转(1,1,2)°的**异形配对**，绕组实际法向夹角 **2.2203°**，32阶保守热 ROM 五材料能量收支差 **1.65e−11 W**。已入库原 BFZI 冷态锚、600s 直接法、两种 ROM 与全部实测结果。[完整报告与复现](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_parametric_geometry.md)。
 
 ```powershell
