@@ -25,7 +25,9 @@ def originals(root):
 def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
            alpha1=None,alpha2=None,core1_mm=None,core2_mm=None,
            shift_mm=(0.,0.,0.),tilt_deg=0.,yaw_deg=0.,
-           pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None):
+           pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None,
+           grid_xz=None,grid_y=None,grid_layers=0,grid_factor=.5,
+           grid_max_nodes=1400,mesh_only=False):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -111,6 +113,19 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
         # Original BFZI sea volume has a shared envelope setting;
         # each thermal package below uses its independent sample half-size.
         cfg["BSR_PACKAGE_PLANE_HALF_M"]=max(sizes)*.0005
+    if (grid_xz is None)!=(grid_y is None):
+        raise ValueError("both original BFZI physical grid sizes are required")
+    if grid_xz is not None:
+        if (min(grid_xz,grid_y,grid_factor)<=0 or grid_layers<0
+                or grid_max_nodes<1):
+            raise ValueError("positive original BFZI sea grid settings required")
+        cfg=dict(cfg,ENV_RESOLVENT_GRID_MODE="physical_cell_size",
+                 ENV_RESOLVENT_CELL_SIZE_XZ_M=float(grid_xz),
+                 ENV_RESOLVENT_CELL_SIZE_Y_M=float(grid_y),
+                 ENV_RESOLVENT_BOUNDARY_LAYER_ENABLE=True,
+                 ENV_RESOLVENT_BOUNDARY_LAYER_COUNT=int(grid_layers),
+                 ENV_RESOLVENT_BOUNDARY_LAYER_FACTOR=float(grid_factor),
+                 ENV_RESOLVENT_MAX_NODES=int(grid_max_nodes))
     # Each operator is called directly from original BFZI; no alternate
     # geometry generator, approximation to the source, or FEM mesh.
     t0=time.perf_counter()
@@ -122,6 +137,15 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
     sigma=float(bf.SIGMA_SPM)
     points,vol,volume_meta,records=(
         fs._build_v33_rectangular_sea_volume_cells_integrated(coils,cfg))
+    if mesh_only:
+        return dict(points=points,volumes=vol,records=records,
+                    cfg=cfg,vol_meta=volume_meta),dict(
+            sea_cells=len(points),sea_grid=volume_meta.get("grid",{}),
+            original_sea_cells=volume_meta.get("original_node_count"),
+            grid_downsampled=volume_meta.get("downsampled",False))
+    if volume_meta.get("downsampled",False):
+        raise ValueError("BFZI native sea grid exceeds node budget; "
+                         "increase grid cell size to preserve exact FV volumes")
     G0,gmeta=bf._build_G0_volume_matrix_near_integrated(
         points,vol,records or [],cfg=cfg,near_layers=1)
     C=[bf.base.source_to_volume_records_centerline_family_zlead(
@@ -195,6 +219,15 @@ def main():
     p.add_argument("--teacher-step",type=int,default=30,
                    help="Original BFZI direct dynamic teacher grid in seconds")
     p.add_argument("--case-name",type=str,default="P01")
+    p.add_argument("--sea-grid-xz",type=float,default=None,
+                   help="Original BFZI sea FV target x/z cell size, m")
+    p.add_argument("--sea-grid-y",type=float,default=None,
+                   help="Original BFZI sea FV target y cell size, m")
+    p.add_argument("--sea-grid-layers",type=int,default=0)
+    p.add_argument("--sea-grid-factor",type=float,default=.5)
+    p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
+    p.add_argument("--sea-grid-mesh-only",action="store_true",
+                   help="Inspect native BFZI seawater FV grid without EM")
     p.add_argument("--pkg-sea-model",choices=("nearest","face-resistance"),
                    default="nearest",help="Legacy total-G or oriented surface-resistance FV interface")
     p.add_argument("--pkg-sea-h",type=float,default=20.,
@@ -224,7 +257,14 @@ def main():
         core1_mm=a.core1_mm,core2_mm=a.core2_mm,
         shift_mm=a.shift_mm,tilt_deg=a.tilt_deg,
         yaw_deg=a.yaw_deg,pitch_deg=a.pitch_deg,
-        box_mm=a.box_mm,box1_mm=a.box1_mm,box2_mm=a.box2_mm)
+        box_mm=a.box_mm,box1_mm=a.box1_mm,box2_mm=a.box2_mm,
+        grid_xz=a.sea_grid_xz,grid_y=a.sea_grid_y,
+        grid_layers=a.sea_grid_layers,grid_factor=a.sea_grid_factor,
+        grid_max_nodes=a.sea_grid_max_nodes,
+        mesh_only=a.sea_grid_mesh_only)
+    if a.sea_grid_mesh_only:
+        print(json.dumps(info,indent=2))
+        return
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
     from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
     from sdfmpneo_bfzi.geom_heat import GeomHeat
