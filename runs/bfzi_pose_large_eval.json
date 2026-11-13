@@ -1,0 +1,49 @@
+{
+  "original_geometry_anchor": "runs\\bfzi_pose_large.npz",
+  "original_BFZI_direct_probe": "runs\\bfzi_pose_large_probe.npz",
+  "pretrained_fractional_model": "runs\\bfzi_geom_frac_v5.pt",
+  "original_cold_Z_relative_error": 0.0,
+  "original_direct_time_points": 11,
+  "drive_program_V": [
+    90.0,
+    90.0,
+    90.0,
+    90.0,
+    90.0,
+    0.0,
+    0.0,
+    0.0,
+    90.0,
+    90.0,
+    90.0
+  ],
+  "rom_setup_seconds": 0.031189800007268786,
+  "full_FV": {
+    "sea_max_K": 0.00011944050606871315,
+    "pkg_max_K": 2.99110447485873e-05,
+    "cu_max_K": 0.0001610719427276308,
+    "seconds": 0.026294599985703826,
+    "dynamic_Z_relative_L2": 0.058620436211273094,
+    "sea_source_power_gap_W": 8.881784197001252e-16,
+    "thermal_node_residual_W": 5.291234117521526e-11
+  },
+  "conservative_ROM": {
+    "sea_max_K": 0.00011933468175584494,
+    "pkg_max_K": 5.483682946305635e-05,
+    "cu_max_K": 0.00016107209319216054,
+    "seconds": 0.019930799957364798,
+    "dynamic_Z_relative_L2": 0.058620436210350846,
+    "sea_source_power_gap_W": 1.7763568394002505e-15,
+    "thermal_node_residual_W": 7.106088235526744e-05,
+    "material_budget_W": 5.289457760682126e-11,
+    "rom_rank": 32
+  },
+  "ROM_vs_full_FV": {
+    "sea_max_K": 3.475191169854952e-05,
+    "pkg_max_K": 3.1772480497238575e-05,
+    "cu_max_K": 1.5046452972455882e-10,
+    "speedup": 1.3192947619740414,
+    "Z_dynamic_additive_relative_L2": 5.469717979387392e-12,
+    "q_relative_L2": 1.316442226481273e-08
+  }
+}
