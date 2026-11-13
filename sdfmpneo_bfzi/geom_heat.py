@@ -284,7 +284,7 @@ class GeomHeat:
         return guess,z,I,q,J,ps,pc,bal
 
     @torch.no_grad()
-    def rollout(self,net,ck,voltage,times,*,tangent=None,blend=1.):
+    def rollout(self,net,ck,voltage,times,*,tangent=None,blend=1.,correct_J=False):
         """Causal neural impedance, optional BFZI sea tangent, conserved 3D heat."""
         if tangent is not None and not 0<=blend<=1:
             raise ValueError("BFZI neural/physical sea-tangent blend must be 0..1")
@@ -338,7 +338,7 @@ class GeomHeat:
             zout.append(pack(z))
             iout.append(I)
             qout.append(q)
-            if self.sea_proj is not None:
+            if correct_J and self.sea_proj is not None:
                 J=self.corrected_J(theta,I)
             jout.append(J)
             psea.append(ps)
