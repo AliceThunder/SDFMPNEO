@@ -189,6 +189,10 @@ def main():
     p.add_argument("--probe",action="store_true",
                    help="Full physical direct 30s thermal steps for comparison")
     p.add_argument("--voltage",type=float,default=75.)
+    p.add_argument("--teacher-out",type=Path,default=None,
+                   help="Original BFZI 600s programs for new pose-conditional neural training")
+    p.add_argument("--indices",type=int,nargs="+",default=[0,1,4,8,9,20,29])
+    p.add_argument("--case-name",type=str,default="P01")
     p.add_argument("--horizon",type=float,default=120.)
     p.add_argument("--step",type=float,default=30.)
     p.add_argument("--heat",type=float,default=None)
@@ -245,6 +249,39 @@ def main():
         np.savez_compressed(a.out.with_name(a.out.stem+"_probe.npz"),
                             time_s=t,voltage_v=v,
                             temp_K=state+et.amb,z6=z)
+    if a.teacher_out is not None:
+        from examples.bfzi_frac_data import programs,drive,pack_z
+        allcases=programs()
+        if not a.indices or any(i<0 or i>=len(allcases) for i in a.indices):
+            p.error("teacher program indices must be 0–29")
+        times=np.arange(0.,601.,30.)
+        temps=[];zs=[];vs=[];curr=[];split=[];cases=[]
+        for cid in a.indices:
+            volt,win,tag=allcases[cid]
+            func=lambda now: drive(volt,win,now)
+            trajectory=et.trajectory(times,func)
+            temps.append(np.stack([s.temp+et.amb for s in trajectory]))
+            zs.append(np.stack([pack_z(s.impedance) for s in trajectory]))
+            vs.append([func(now)[0].real for now in times])
+            curr.append(np.stack([s.currents for s in trajectory]))
+            split.append(tag=="train")
+            cases.append(dict(id=cid,sample=a.case_name,
+                              voltage_v=volt,windows_s=win,split=tag))
+        a.teacher_out.parent.mkdir(parents=True,exist_ok=True)
+        np.savez_compressed(
+            a.teacher_out,time_s=times,voltage_v=np.asarray(vs),
+            temp_K=np.asarray(temps),z6=np.asarray(zs),
+            currents_A=np.asarray(curr),
+            train=np.asarray(split,bool),nsea=et.count,
+            npkg=et.pkg_n,ambient_K=et.amb,external_z=ex,
+            sea_xyz_m=em.points,sea_vol_m3=em.vol,
+            pkg_xyz_m=np.asarray(et.pkg_xyz),
+            pkg_vol_m3=np.asarray(et.pkg_vol),
+            sample=np.asarray(a.case_name),
+            geometry=anchor.geom,pose=anchor.pose,
+            cases_json=json.dumps(cases))
+        info["teacher_out"]=str(a.teacher_out)
+        info["teacher_cases"]=len(a.indices)
     a.out.with_suffix(".json").write_text(
         json.dumps(info,indent=2),encoding="utf-8")
     print(json.dumps(info,indent=2),flush=True)
