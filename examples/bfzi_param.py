@@ -248,6 +248,8 @@ def main():
     p.add_argument("--sea-grid-layers",type=int,default=0)
     p.add_argument("--sea-grid-factor",type=float,default=.5)
     p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
+    p.add_argument("--sea-fv-faces",choices=("approx","exact"),
+                   default="approx",help="Original volume-fraction or exact OBB wetted FV shared faces")
     p.add_argument("--sea-void",choices=("aabb","oriented"),
                    default="aabb",help="Native BFZI AABB or exact oriented sealed-package sea cut")
     p.add_argument("--physical-box-only",action="store_true",
@@ -297,7 +299,7 @@ def main():
     from sdfmpneo_bfzi.v148_pkg3d import BFZIV148Pkg3D
     from sdfmpneo_bfzi.geom_heat import GeomHeat
     t0=time.perf_counter()
-    em=BFZIV148Adapter(data,bf,heat_mode="port-weak")
+    em=BFZIV148Adapter(data,bf,heat_mode="port-weak",fv_faces=a.sea_fv_faces)
     ex=np.diag([.5-1j*em.omega*em.air[0,0],
                 .5-1j*em.omega*em.air[1,1]])
     et=BFZIV148Pkg3D(
@@ -339,6 +341,7 @@ def main():
         info["sea_tangent_build_sec"]=time.perf_counter()-t_tan
     info.update(geometry=anchor.geom.tolist(),
                 sea_void_model=a.sea_void,
+                sea_fv_faces=a.sea_fv_faces,
                 pkg_sea_model=a.pkg_sea_model,
                 pkg_sea_h_W_m2K=(a.pkg_sea_h if a.pkg_sea_model=="face-resistance" else None),
                 pkg_sea_quad=(a.pkg_sea_quad if a.pkg_sea_model=="face-resistance" else None),
