@@ -1,0 +1,458 @@
+{
+  "method": "original BFZI thermal modes + aligned 40D neural tangent residual",
+  "train_geometries": [
+    "P01",
+    "P02",
+    "P04",
+    "P05",
+    "P06"
+  ],
+  "heldout_geometries": [
+    "P03",
+    "P07"
+  ],
+  "amplitude_K": 0.2,
+  "offline_sec": {
+    "P01": {
+      "setup_sec": 2.4868164999998044,
+      "central_sec": 0.8965773999998419,
+      "central_em_solves": 16
+    },
+    "P02": {
+      "setup_sec": 2.4077085999997507,
+      "central_sec": 0.9626072000000931,
+      "central_em_solves": 16
+    },
+    "P04": {
+      "setup_sec": 2.450579299999845,
+      "central_sec": 0.8272948999992877,
+      "central_em_solves": 16
+    },
+    "P05": {
+      "setup_sec": 2.316665600000306,
+      "central_sec": 0.9560134999992442,
+      "central_em_solves": 16
+    },
+    "P06": {
+      "setup_sec": 3.316950000000361,
+      "central_sec": 1.02975189999961,
+      "central_em_solves": 16
+    },
+    "P03": {
+      "setup_sec": 2.9110695999997915,
+      "central_sec": 1.0149830000000293,
+      "central_em_solves": 16,
+      "forward_sec": 0.47658140000021376,
+      "forward_em_solves": 8,
+      "direction_speedup": 2.1297159310027083
+    },
+    "P07": {
+      "setup_sec": 3.0102543000002697,
+      "central_sec": 0.9389952000001358,
+      "central_em_solves": 16,
+      "forward_sec": 0.45685109999976703,
+      "forward_em_solves": 8,
+      "direction_speedup": 2.0553637716985134
+    }
+  },
+  "training_sec": 3.1984488999996756,
+  "network_file": "runs\\bfzi_tangent_transfer.npz",
+  "training_LOO_tangent_errors": [
+    1.869209628364032,
+    1.93442273685424,
+    2.151939420699761,
+    2.8835937536415086
+  ],
+  "chosen_neural_residual_weight": 0.0,
+  "heldout": {
+    "P03": {
+      "bfzi_pose_p03_holdout.npz": {
+        "central16": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 1.8297641003269437e-05,
+              "tangent_sea_delta_relative_L2": 0.005426588355653685,
+              "thermal_mode_projection_relative_L2_max": 0.30208637909193087
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.2831286261567916e-05,
+              "tangent_sea_delta_relative_L2": 0.005752561984501448,
+              "thermal_mode_projection_relative_L2_max": 0.32987412244887104
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 1.8291549336520627e-05,
+              "sea_max_abs_K": 1.2037873773351748e-05,
+              "pkg_max_abs_K": 9.629079727346834e-06,
+              "cu_max_abs_K": 2.6316797629988287e-08,
+              "q_power_gap_W": 3.3306690738754696e-16,
+              "material_budget_gap_W": 4.685141163918161e-13,
+              "dynamic_infer_sec": 0.1612359999999171
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 2.280084373639175e-05,
+              "sea_max_abs_K": 8.476580859451133e-05,
+              "pkg_max_abs_K": 7.687794811772619e-05,
+              "cu_max_abs_K": 2.4769150286374497e-07,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 7.44613259939797e-11,
+              "dynamic_infer_sec": 0.17592379999950936
+            }
+          ]
+        },
+        "forward8": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 1.837701731755313e-05,
+              "tangent_sea_delta_relative_L2": 0.005450129251532046,
+              "thermal_mode_projection_relative_L2_max": 0.30208637909193087
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.2923955146973298e-05,
+              "tangent_sea_delta_relative_L2": 0.005775910802380678,
+              "thermal_mode_projection_relative_L2_max": 0.32987412244887104
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 1.837070333007707e-05,
+              "sea_max_abs_K": 1.2037873830195167e-05,
+              "pkg_max_abs_K": 9.62908245583094e-06,
+              "cu_max_abs_K": 2.6321629320591455e-08,
+              "q_power_gap_W": 2.220446049250313e-16,
+              "material_budget_gap_W": 4.667377595524158e-13,
+              "dynamic_infer_sec": 0.15947359999972832
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 2.2891930771383437e-05,
+              "sea_max_abs_K": 8.476581007244022e-05,
+              "pkg_max_abs_K": 7.687813479151373e-05,
+              "cu_max_abs_K": 2.482057652741787e-07,
+              "q_power_gap_W": 2.6645352591003757e-15,
+              "material_budget_gap_W": 7.44826422760525e-11,
+              "dynamic_infer_sec": 0.17376169999988633
+            }
+          ]
+        },
+        "neural0": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.003391786065742421,
+              "tangent_sea_delta_relative_L2": 1.0059125507958364,
+              "thermal_mode_projection_relative_L2_max": 0.3020863790919308
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.004011623840373501,
+              "tangent_sea_delta_relative_L2": 1.0107671793776531,
+              "thermal_mode_projection_relative_L2_max": 0.329874122448871
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 0.003391801049328972,
+              "sea_max_abs_K": 1.203834972329787e-05,
+              "pkg_max_abs_K": 9.508542746061721e-06,
+              "cu_max_abs_K": 6.433911607928167e-07,
+              "q_power_gap_W": 2.220446049250313e-16,
+              "material_budget_gap_W": 4.685141163918161e-13,
+              "dynamic_infer_sec": 0.15913559999989957
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 0.004012037749465182,
+              "sea_max_abs_K": 8.478781819576398e-05,
+              "pkg_max_abs_K": 7.032665388351234e-05,
+              "cu_max_abs_K": 3.587833106166727e-05,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 7.44542205666221e-11,
+              "dynamic_infer_sec": 0.17274339999949007
+            }
+          ]
+        }
+      }
+    },
+    "P07": {
+      "bfzi_pose_p07_holdout.npz": {
+        "central16": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.1797236484236983e-05,
+              "tangent_sea_delta_relative_L2": 0.012673049608311726,
+              "thermal_mode_projection_relative_L2_max": 0.38723380302154525
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.7250368715240477e-05,
+              "tangent_sea_delta_relative_L2": 0.013414021279199776,
+              "thermal_mode_projection_relative_L2_max": 0.4157166369351221
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 2.176573859888572e-05,
+              "sea_max_abs_K": 6.920265417420524e-05,
+              "pkg_max_abs_K": 7.726466719759628e-06,
+              "cu_max_abs_K": 3.259646064179833e-08,
+              "q_power_gap_W": 3.3306690738754696e-16,
+              "material_budget_gap_W": 3.4416913763379853e-13,
+              "dynamic_infer_sec": 0.171715999999833
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 2.7114152581144213e-05,
+              "sea_max_abs_K": 0.0004853933916137976,
+              "pkg_max_abs_K": 6.139287580708697e-05,
+              "cu_max_abs_K": 1.101978455153585e-07,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 4.948930154569098e-11,
+              "dynamic_infer_sec": 0.18760870000005525
+            }
+          ]
+        },
+        "forward8": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.2037180911108718e-05,
+              "tangent_sea_delta_relative_L2": 0.012812554788381692,
+              "thermal_mode_projection_relative_L2_max": 0.38723380302154525
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.7536864621074788e-05,
+              "tangent_sea_delta_relative_L2": 0.013555049175423687,
+              "thermal_mode_projection_relative_L2_max": 0.4157166369351221
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 2.2005669547488236e-05,
+              "sea_max_abs_K": 6.920265451526575e-05,
+              "pkg_max_abs_K": 7.726465412360994e-06,
+              "cu_max_abs_K": 3.2592481602478074e-08,
+              "q_power_gap_W": 2.220446049250313e-16,
+              "material_budget_gap_W": 3.459454944731988e-13,
+              "dynamic_infer_sec": 0.1562299000006533
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 2.7400263700149887e-05,
+              "sea_max_abs_K": 0.00048539340724573776,
+              "pkg_max_abs_K": 6.139283738093582e-05,
+              "cu_max_abs_K": 1.1173631264682626e-07,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 4.951061782776378e-11,
+              "dynamic_infer_sec": 0.180645800000093
+            }
+          ]
+        },
+        "neural0": {
+          "oracle_true_T": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.003029457204229732,
+              "tangent_sea_delta_relative_L2": 1.761345370399693,
+              "thermal_mode_projection_relative_L2_max": 0.38723380302154525
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.0035813664200184878,
+              "tangent_sea_delta_relative_L2": 1.7629312055221615,
+              "thermal_mode_projection_relative_L2_max": 0.41571663693512206
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 20,
+              "voltage_V": 40.0,
+              "dynamic_Z_relative_L2": 0.0030294232615693277,
+              "sea_max_abs_K": 6.920585570924231e-05,
+              "pkg_max_abs_K": 7.702702248479909e-06,
+              "cu_max_abs_K": 4.6867472747180727e-07,
+              "q_power_gap_W": 2.220446049250313e-16,
+              "material_budget_gap_W": 3.446132268436486e-13,
+              "dynamic_infer_sec": 0.1644066999997449
+            },
+            {
+              "case": 29,
+              "voltage_V": 115.0,
+              "dynamic_Z_relative_L2": 0.003581474370950333,
+              "sea_max_abs_K": 0.0004855419504679048,
+              "pkg_max_abs_K": 6.348206744632989e-05,
+              "cu_max_abs_K": 2.622901644144804e-05,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 4.948574883201218e-11,
+              "dynamic_infer_sec": 0.1758426000005784
+            }
+          ]
+        }
+      },
+      "bfzi_pose_p07_15s_holdout.npz": {
+        "central16": {
+          "oracle_true_T": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 1.9329999615301182e-05,
+              "tangent_sea_delta_relative_L2": 0.012351540132926442,
+              "thermal_mode_projection_relative_L2_max": 0.37048232302384015
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.5921931844557475e-05,
+              "tangent_sea_delta_relative_L2": 0.01354916651832267,
+              "thermal_mode_projection_relative_L2_max": 0.402607605111958
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 1.902222860717981e-05,
+              "sea_max_abs_K": 0.0010535476370137076,
+              "pkg_max_abs_K": 9.437303907589012e-05,
+              "cu_max_abs_K": 4.770561190525768e-07,
+              "q_power_gap_W": 3.552713678800501e-15,
+              "material_budget_gap_W": 1.262492332898546e-10,
+              "dynamic_infer_sec": 0.4068097999997917
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 2.5794873617208825e-05,
+              "sea_max_abs_K": 0.0011807125220570924,
+              "pkg_max_abs_K": 0.00020238523984517087,
+              "cu_max_abs_K": 6.787646498196409e-07,
+              "q_power_gap_W": 3.552713678800501e-15,
+              "material_budget_gap_W": 1.262492332898546e-10,
+              "dynamic_infer_sec": 0.3977638999995179
+            }
+          ]
+        },
+        "forward8": {
+          "oracle_true_T": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 1.9547064468626232e-05,
+              "tangent_sea_delta_relative_L2": 0.012490240870979214,
+              "thermal_mode_projection_relative_L2_max": 0.37048232302384015
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 2.619171995928279e-05,
+              "tangent_sea_delta_relative_L2": 0.013690182403588012,
+              "thermal_mode_projection_relative_L2_max": 0.402607605111958
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 1.9239058677920673e-05,
+              "sea_max_abs_K": 0.0010535477111943692,
+              "pkg_max_abs_K": 9.437300030867846e-05,
+              "cu_max_abs_K": 4.837116875933134e-07,
+              "q_power_gap_W": 3.552713678800501e-15,
+              "material_budget_gap_W": 1.262492332898546e-10,
+              "dynamic_infer_sec": 0.4858580999998594
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 2.606420944779705e-05,
+              "sea_max_abs_K": 0.0011807126189182782,
+              "pkg_max_abs_K": 0.0002023847890768593,
+              "cu_max_abs_K": 6.874338964735216e-07,
+              "q_power_gap_W": 5.329070518200751e-15,
+              "material_budget_gap_W": 1.262492332898546e-10,
+              "dynamic_infer_sec": 0.5543859999997949
+            }
+          ]
+        },
+        "neural0": {
+          "oracle_true_T": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.0027564557796806526,
+              "tangent_sea_delta_relative_L2": 1.7613282394096899,
+              "thermal_mode_projection_relative_L2_max": 0.3704823230238401
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "tangent_full_dynamic_Z_relative_L2": 0.003373837587152739,
+              "tangent_sea_delta_relative_L2": 1.763475328706617,
+              "thermal_mode_projection_relative_L2_max": 0.402607605111958
+            }
+          ],
+          "autonomous_3D": [
+            {
+              "case": 16,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 0.002756366759043053,
+              "sea_max_abs_K": 0.0010542456502093955,
+              "pkg_max_abs_K": 9.590688046046125e-05,
+              "cu_max_abs_K": 0.0001251609746759641,
+              "q_power_gap_W": 1.7763568394002505e-15,
+              "material_budget_gap_W": 1.262350224351394e-10,
+              "dynamic_infer_sec": 0.37484350000067934
+            },
+            {
+              "case": 18,
+              "voltage_V": 150.0,
+              "dynamic_Z_relative_L2": 0.0033744441989263505,
+              "sea_max_abs_K": 0.0011816203989383212,
+              "pkg_max_abs_K": 0.0002205375533321785,
+              "cu_max_abs_K": 0.0001593393815824129,
+              "q_power_gap_W": 5.329070518200751e-15,
+              "material_budget_gap_W": 1.262350224351394e-10,
+              "dynamic_infer_sec": 0.38204399999995076
+            }
+          ]
+        }
+      }
+    }
+  },
+  "total_wall_sec": 36.60568559999956
+}
