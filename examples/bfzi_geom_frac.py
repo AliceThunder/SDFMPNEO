@@ -197,6 +197,12 @@ def main():
         np.full(8,max(float(max(ystd[6:]))*.001,1e-3))])
     src_scale=np.maximum(np.max(
         np.stack([d["src"][i] for d,i in fit]),axis=(0,1)),1e-4)
+    init=(torch.load(args.init_model,map_location="cpu",weights_only=True)
+          if args.init_model else None)
+    if init is not None:
+        # Preserve the physical scale of the V5 warm start.
+        src_scale=np.asarray(init["src_scale"],float)
+        yscale=np.asarray(init["y_scale"],float)
     u,y,g,cu=tensors(fit,src_scale,yscale,args.port_sea,args.with_pose)
     uv,yv,gv,cuv=tensors(val,src_scale,yscale,args.port_sea,args.with_pose)
     if args.phys_loss and not args.port_sea:
@@ -221,8 +227,7 @@ def main():
             loss=loss+args.sea_loss*(pred[:,:,6:8]-target[:,:,6:8]).square().mean()
         return loss
     model=GeomFrac(ng=g.shape[-1])
-    if args.init_model:
-        init=torch.load(args.init_model,map_location="cpu",weights_only=True)
+    if init is not None:
         state=init["state"]
         if model.ng==int(init["ng"]):
             model.load_state_dict(state)
