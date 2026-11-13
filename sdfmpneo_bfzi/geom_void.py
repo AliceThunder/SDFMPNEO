@@ -31,6 +31,30 @@ def overlap(mid,half,rot):
     return True
 
 
+
+def disjoint_y_shift(mid,half,rot,margin=.005):
+    """Additional +world-y displacement for receiver to avoid OBB collision."""
+    mid=np.asarray(mid,float)
+    if not overlap(mid,half,rot):
+        return 0.
+    lo,hi=0.,.01
+    def collides(dy):
+        shifted=mid.copy()
+        shifted[1,1]+=dy
+        return overlap(shifted,half,rot)
+    while collides(hi):
+        hi*=2
+        if hi>10.:
+            raise ValueError("BFZI package geometry cannot be separated")
+    for _ in range(45):
+        m=.5*(lo+hi)
+        if collides(m):
+            lo=m
+        else:
+            hi=m
+    return float(hi+margin)
+
+
 def report(head, mesh):
     """Quantify removed original BFZI sea volume and physical box mismatch."""
     mid=np.asarray(head._pkg_mid,float)
@@ -70,5 +94,7 @@ def report(head, mesh):
         AABB_void_excess_lower_bound_m3=float(package_void-physical.sum()),
         BFZI_AABB_over_physical_sum=float(package_void/physical.sum()),
         physical_packages_overlap=overlap(mid,half,rot),
+        additional_receiver_y_shift_mm=float(1000*disjoint_y_shift(
+            mid,half,rot)),
         physical_box_AABB_m3=actual_aabb.tolist(),
         BFZI_AABB_to_physical_box_ratio=(volumes/physical).tolist())
