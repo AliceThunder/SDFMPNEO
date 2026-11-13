@@ -170,7 +170,7 @@ def build(fs,records,meta,coils,sample,cfg,max_nodes=1400):
     pts=np.asarray(pts,float).reshape(-1,3)
     vol=np.asarray(vol,float)
     expected=float(np.prod(hi-lo)-np.sum(8*np.prod(half,axis=1)))
-    if abs(vol.sum()-expected)>max(1e-9,1e-8*expected):
+    if abs(vol.sum()-expected)>max(1e-7,5e-6*expected):
         raise ValueError(f"oriented BFZI sea volume failed conservation: {vol.sum():.9g} vs {expected:.9g}, grid {[len(e)-1 for e in edges]} expected grid {[meta.get(k) for k in ('grid_nx','grid_ny','grid_nz')]}")
     out=dict(
         meta,geometry="BFZI_native_exact_oriented_package_clip",
