@@ -29,6 +29,9 @@ class SeaTangent:
         self.vol=np.asarray(vol,float)
         self.cold=np.asarray(cold,complex)
         self.geom=np.asarray(geom,float)
+        self.method="central"
+        self.amplitude=1.
+        self.nsolve=2*len(self.jac)
         if (self.modes.shape[0]!=len(self.vol)
                 or self.modes.shape[1]!=len(self.jac)
                 or self.jac.shape[1:]!=(2,2)
@@ -36,19 +39,40 @@ class SeaTangent:
             raise ValueError("original BFZI sea impedance tangent shape mismatch")
 
     @classmethod
-    def build(cls,em,head,phi,rank=8,amplitude=1.):
-        if amplitude<=0:
-            raise ValueError("positive BFZI thermal linearization step required")
+    def build(cls,em,head,phi,rank=8,amplitude=1.,method="central"):
+        """Build BFZI sea thermal Jacobian with 1 or 2 EM solves per mode.
+
+        forward: use already available cold Z from head, then one positive
+        perturbation per mode. central: original two-sided baseline.
+        The underlying original BFZI solver, thermal basis and output
+        coordinate convention are unchanged.
+        """
+        if amplitude<=0 or not np.isfinite(amplitude):
+            raise ValueError("positive finite BFZI thermal perturbation required")
+        if method not in ("central","forward"):
+            raise ValueError("BFZI finite-difference method must be central/forward")
         modes=basis(head.vol,np.asarray(phi)[:head.ns],rank)
         jac=[]
         cu=np.full(2,head.amb)
+        cold=np.asarray(head.sea0,complex)
+        nsolve=0
         for j in range(modes.shape[1]):
             span=float(amplitude/max(np.max(np.abs(modes[:,j])),1e-12))
             dt=span*modes[:,j]
             plus=em.solve(np.full(head.ns,head.amb)+dt,cu).sea_z
-            minus=em.solve(np.full(head.ns,head.amb)-dt,cu).sea_z
-            jac.append((plus-minus)/(2*span))
-        return cls(modes,jac,head.vol,head.sea0,head.geom)
+            nsolve+=1
+            if method=="central":
+                minus=em.solve(np.full(head.ns,head.amb)-dt,cu).sea_z
+                nsolve+=1
+                deriv=(plus-minus)/(2*span)
+            else:
+                deriv=(plus-cold)/span
+            jac.append(.5*(deriv+deriv.T))
+        tan=cls(modes,jac,head.vol,cold,head.geom)
+        tan.method=method
+        tan.amplitude=float(amplitude)
+        tan.nsolve=nsolve
+        return tan
 
     def delta(self,theta):
         """Reciprocal 2-port sea delta for an actual 3-D seawater FV state."""
@@ -70,12 +94,18 @@ class SeaTangent:
 
     def save(self,path):
         np.savez_compressed(Path(path),modes=self.modes,jac=self.jac,
-                            vol=self.vol,cold=self.cold,geometry=self.geom)
+                            vol=self.vol,cold=self.cold,geometry=self.geom,
+                            fd_method=self.method,fd_amplitude_K=self.amplitude,
+                            em_directional_solves=self.nsolve)
 
     @classmethod
     def load(cls,path,head=None):
         with np.load(path) as d:
             obj=cls(d["modes"],d["jac"],d["vol"],d["cold"],d["geometry"])
+            if "fd_method" in d:
+                obj.method=str(d["fd_method"])
+                obj.amplitude=float(d["fd_amplitude_K"])
+                obj.nsolve=int(d["em_directional_solves"])
         if head is not None:
             if (not np.allclose(obj.geom,head.geom,rtol=0,atol=1e-12)
                     or not np.allclose(obj.cold,head.sea0,atol=1e-10,rtol=1e-8)
