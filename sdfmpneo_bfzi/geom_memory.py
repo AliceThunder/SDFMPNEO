@@ -19,14 +19,20 @@ G_SCALE=np.array([
     1.,30.,1.,15.,1.,30.
 ],float)
 N_OUT=14
+P_SCALE=np.r_[np.full(3,.1),np.ones(9),np.full(6,.12)]
 
 
-def geom_feat(g,z0):
-    """16 original BFZI coil/air/thermal descriptors + cold complex port."""
+def geom_feat(g,z0,pose=None):
+    """Original BFZI coil/port plus optional relative SE(3) and dual box sizes."""
     a=np.r_[np.asarray(g,float),np.asarray(z0,float)]
     if a.shape!=(len(G_SCALE),):
         raise ValueError("expected BFZI physical geometry and original cold Z")
-    return a/G_SCALE
+    if pose is None:
+        return a/G_SCALE
+    pose=np.asarray(pose,float)
+    if pose.shape!=(18,) or not np.isfinite(pose).all():
+        raise ValueError("expected BFZI relative pose rotation and two box sizes")
+    return np.r_[a/G_SCALE,pose/P_SCALE]
 
 
 def geom_port(g):
@@ -129,7 +135,7 @@ class GeomFrac(nn.Module):
 
 
 @torch.no_grad()
-def rollout(net,ck,voltage,times,geometry,z0,external):
+def rollout(net,ck,voltage,times,geometry,z0,external,pose=None):
     """Neural port/circuit rollout for an unseen BFZI grid/geometry."""
     t=np.asarray(times,float)
     v=np.asarray(voltage,float)
@@ -138,7 +144,7 @@ def rollout(net,ck,voltage,times,geometry,z0,external):
     if (t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0)
             or ex.shape!=(2,2)):
         raise ValueError("invalid BFZI two-port time history")
-    geom=geom_feat(geometry,z0)
+    geom=geom_feat(geometry,z0,pose if net.ng>len(G_SCALE) else None)
     port=geom_port(geometry)
     g=torch.tensor(geom[None,:],dtype=torch.float32)
     h=net.init_state(1)
