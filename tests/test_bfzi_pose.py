@@ -49,3 +49,20 @@ def test_package_rotated_local_query_and_explicit_model_features():
     assert np.allclose(full[:22],old)
     net=GeomFrac(ng=len(full))
     assert net.ng==40
+
+
+def test_weak_joule_positive_with_original_port_power():
+    from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
+    solver=BFZIV148Adapter.__new__(BFZIV148Adapter)
+    solver.heat_mode="port-weak"
+    solver.vol=np.array([.01,.01])
+    state=SimpleNamespace(
+        weak_q=np.array([[[-1.,0.],[0.,0.]],
+                         [[5.,0.],[0.,0.]]]),
+        sea_z=np.array([[.08+0j,0j],[0j,.04+0j]]),
+        copper_z=np.array([.1+.01j,.1+.01j]))
+    I=np.array([2.+0j,0j])
+    q,cu=solver.heat(state,I)
+    assert np.all(q>=0)
+    assert np.isclose(q@solver.vol,.5*np.vdot(I,state.sea_z@I).real)
+    assert np.allclose(cu,[.2,0.])
