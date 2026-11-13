@@ -44,3 +44,31 @@ python -m examples.bfzi_tangent_study --bfzi-root D:/work/bfzi-et-v2.1/BFZI --ru
 本轮沙箱可进行局部 Python 合成测试，沙箱未获得独立 BFZI V150 环境及其存档二进制数据，因此尚未产生新一轮原始 BFZI 的 P03/P07 单侧/双侧精度或离线计时。原先已经实测的 P03/P07 双侧16次高精度结果继续作为物理基线，不以合成测试或理论方向求解次数替代真实结果。
 
 下一次原 BFZI 环境实算后，直接依据 `runs/bfzi_tangent_study.json` 判断：若单侧满足完整端口及独立海水热变化精度目标，则可以用8次替代16次；神经零方向方案若整几何外推和三维闭环满足同一精度标准，再评估将其用于新几何的高精度默认方案。
+
+
+## 补充：无需新的 BFZI 方向求解，直接利用既有真实时程
+
+新增 `sdfmpneo_bfzi/geom_tangent_data.py` 与 `examples/bfzi_tangent_data_study.py`。每个训练几何已有原 BFZI V150 三维温度、完整复2×2端口及多电压/启停真实时程，通过原冷态锚的铜趋肤函数直接隔离海水热增量：
+
+```text
+Delta Zsea(t) = Ztotal,BFZI(t) - Ztotal,cold
+               - diag[Zcu(Tcu(t))-Zcu(Tamb)]
+beta_j(t) = sum_i V_i B_j(x_i)[Tsea(x_i,t)-Tamb]
+Delta Zsea(t) ~ sum_j beta_j(t) J_j
+```
+
+对原训练几何 P01/P02/P04/P05/P06，以物理冷态ROM海水基投影为设计矩阵，采用分列归一化多输出岭回归，最后一条训练几何时程留出选择正则强度。记录8个模式的实际有效秩、训练海水复阻抗相对误差及内部留出历史误差。对于数据未激发的物理模态，算法将其方向导数正则化至零，并报告有效秩，避免把不可辨识方向称作真实 BFZI 电磁方向求解结果。
+
+之后用同一物理热基 Procrustes 对齐及40维小网络学习五几何间的切线残差。P03/P07 仍完全独立，模型推理时保持原冷态物理锚、原三维J/q、精确铜趋肤和32阶五材料能量守恒热ROM。每个新几何的切线预测无需再调用原 BFZI 温度扰动电磁求解器。
+
+此路径能直接使用仓库已经保存的 `.npz` 实验数据及神经权重；**不需要独立 BFZI V150 安装或 XEnergy**：
+
+```powershell
+python -m examples.bfzi_tangent_data_study --runs runs --out runs/bfzi_tangent_data_study.json
+```
+
+输出 `runs/bfzi_pose_p0{1,2,4,5,6}_data_tangent.npz`、`runs/bfzi_tangent_transfer_data.npz`、P03/P07物理切线预测及 `runs/bfzi_tangent_data_study.json`。JSON 同时给出P03/P07原已归档16次双侧切线与零方向物理历史教师/神经残差的**真实温度电磁评价**及**40维分数阶网络+32阶热ROM的自主三维闭环评价**，包括P07已有150V/15s时程、实际推理时间、完整动态Z/温度误差、q端口闭合和五材料能量收支。
+
+数值边界：历史回归的切线属于**已激发温度子空间上的物理时程拟合**；与直接对每个热模态独立扰动求解的原 BFZI 16次方向Jacobian，分别报告和比较，不预设两者精度相同。新增合成验证 `tests/test_bfzi_tangent_data.py` 覆盖精确线性海水阻抗恢复、铜温变扣除、原几何与时程一致性。沙箱模拟物理小样本测试与上轮模态对齐测试联合 **4 passed**（依赖轻量替身环境，非完整BFZI集成验证）。
+
+当前新方法的真实P03/P07精度与速度仍需上述完整历史数据运行，原双侧16次已实测的0.0019%～0.0027%为对照基线。
