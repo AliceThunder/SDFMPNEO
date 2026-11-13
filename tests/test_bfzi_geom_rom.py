@@ -1,5 +1,6 @@
 """Original BFZI material-conservative reduced heat step and SOE rollout."""
 import numpy as np
+import pytest
 import torch
 from scipy.sparse import diags
 
@@ -63,3 +64,14 @@ def test_rom_nonuniform_thermal_gradient_maintains_material_budget():
     assert np.isclose(q@rom.vol,ps,atol=1e-9)
     assert np.max(abs(rom.budgets[-1]))<1e-8
     assert np.max(abs(res))>=0
+
+
+def test_rom_rejects_different_package_seawater_interface(tmp_path):
+    full=case()
+    rom=GeomHeatROM.build(full,rank=10)
+    path=tmp_path/"heat_rom.npz"
+    rom.save(path)
+    assert np.allclose(GeomHeatROM.load(full,path).K,rom.K)
+    full.H=full.H+diags(np.full(len(full.cap),.5))
+    with pytest.raises(ValueError,match="heat operator"):
+        GeomHeatROM.load(full,path)
