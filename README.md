@@ -1,3 +1,14 @@
+> **2026-11-13 最新：BFZI 跨几何外推与高精度动态复阻抗已经真实验证。** 原 BFZI V150 连续圆形—圆角方形、原生6D位姿和双独立封装已扩展至 **8种训练几何、51训练/18验证历史**，完全留出的 **P03 约20°、P07 约27°**：纯40维分数阶神经动态ΔZ相对误差由 **4.628%→3.468%**、**5.968%→3.870%**。进一步增加**每新几何离线原BFZI冷态8个空间温度热模态、16次±方向阻抗求导**，动态时由分数阶神经预测、原三维热ROM新温度与物理海水复Z灵敏度双向闭合，铜仍采用原BFZI完整Bessel趋肤阻抗。P03/P07全三维40/115V留出完整复ΔZ误差 **0.00183%～0.00271%**；P07 115V 海水/封装/铜最大空间温差 **0.000485/0.0000614/0.000000110 K**，五材料热收支≤**4.95e−11 W**。新增P07真实 **150V、15s、600s、两条开/关/重启**动态物理直接法对照：最高海水/封装/铜升温 **0.261/22.86/62.76 K**，纯神经动态ΔZ误差 **2.552%/2.513%**，高精度模式 **0.001903%/0.002580%**；高精度代理两条时程合计 **0.283s** 对原BFZI直接法 **10.225s**，动态约 **36.2×** 加速。新几何离线预计算不计入上述时程。原30s训练跨越到15s时步及显著高铜热升温均已实算，带空间三维 T/J/q、海水端口功率与五材料能量守恒。[完整结果、原始权重与复现](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_extrapolation_precision.md)。
+
+```powershell
+# 已存 P07 冷态原BFZI阻抗灵敏度、分数阶40维代理、32阶保守三维热ROM：
+# 自定义150V启停、15s、600s，动态无需原BFZI软件
+python -m examples.bfzi_geom_heat --standalone --voltage 150 --heat 210 --cool 210 --step 15 --horizon 600 --anchor runs/bfzi_pose_p07_anchor.npz --model runs/bfzi_geom_diverse.pt --rom-rank 32 --rom-file runs/bfzi_pose_p07_rom.npz --sea-tangent runs/bfzi_pose_p07_tangent_anchor_sea_tangent.npz --tangent-weight 1 --out runs/bfzi_pose_p07_user.json
+
+# 对照原BFZI已存的150V、15s完整动态教师（从未纳入P07训练）
+python -m examples.bfzi_geom_heat --anchor runs/bfzi_pose_p07_anchor.npz --teacher runs/bfzi_pose_p07_15s_holdout.npz --model runs/bfzi_geom_diverse.pt --rom-rank 32 --rom-file runs/bfzi_pose_p07_rom.npz --sea-tangent runs/bfzi_pose_p07_tangent_anchor_sea_tangent.npz --tangent-weight 1 --out runs/bfzi_pose_p07_15s_tangent_heat.json
+```
+
 > **2026-11-13 最新：BFZI 显式 SE(3) + 双独立旋转封装 + 40维分数阶神经全三维代理。** 已直接从独立原 BFZI V150 CoilSpec 的 yaw/pitch/roll 构建两个**随线圈旋转的三维封装热网格**，分别支持独立外尺寸，封装—海水换热、铜线圈热接触及任意 XYZ 位置查询同步变换。分数阶几何条件从 **22→40维**，新增相对平移3维、旋转矩阵9维和双封装半尺寸6维，使用原 V5 热启动；原 BFZI P01/P02 新几何及旧 M1/M2/M4 共 **42 条训练、12 条验证**，20°倾角、210/232mm双封装的 P03 几何完全留出。P03 原 V5 vs 新40维模型的动态复阻抗变化误差 **8.484%→4.628%**，封装热点最大温差平均 **3.744→2.691 K**，铜 **2.088→0.925 K**。已进一步用 P03 **40/115 V、600 s 原 BFZI 真实直接法**检验新模型 + 32阶守恒热 ROM，动态复阻抗相对误差分别 **1.609%/2.097%**，海水最大空间温差 **1.20e−5/1.44e−4 K**、封装 **9.71e−6/9.41e−5 K**，五材料热预算差 ≤**7.45e−11 W**。另已跑通 **100 V、15 s×41步、旋转双封装任意XYZ温度/J/q 查询**，12 项相关测试通过。原 V5 22维模型继续可用；模型、三组真实 BFZI 教师、留出结果及空间场均已入库。[完整报告](docs/research/bfzi_uwpt_electrothermal/evidence/v2_1_explicit_pose_dual_package.md)。
 
 ```powershell
