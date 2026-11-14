@@ -194,7 +194,11 @@ class BFZIV148ET:
         for k,now in enumerate(times):
             v=np.asarray(voltage_at(float(now)),complex)
             if k:
-                theta=self.advance(theta,v,float(now-times[k-1]))
+                # Piecewise-constant drive on [t[k-1],t[k]).
+                # The value exactly at the right boundary is used only for
+                # the instantaneous EM output, never for the previous step.
+                prev_v=np.asarray(voltage_at(float(times[k-1])),complex)
+                theta=self.advance(theta,prev_v,float(now-times[k-1]))
             m,I,heat,q,cu=self.em(theta,v)
             j=np.einsum("npc,p->nc",m.unit_j,I,optimize=True)
             history.append(ETStep(
