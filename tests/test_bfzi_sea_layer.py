@@ -123,3 +123,32 @@ def test_native_wet_quadrature_maps_rotated_skin_and_bulk():
     samples=[(q,np.ones(4),np.zeros((4,2,2)))]
     m=_qmap(samples,[face],np.array([.001,.001]))
     assert np.array_equal(m[id(q)],np.array([11,12,0,0]))
+
+
+def test_wire_insulation_radial_heat_path():
+    m=demo()
+    et=BFZIV148Skin3D(m,skin_depth=.002,skin_layers=6,skin_quad=1)
+    length=sum(np.linalg.norm(x.line_elements,axis=1).sum()
+               for x in m.copper.lines)/2
+    expected=2*np.pi*.25*length/np.log1p(.0005/.001)
+    assert np.allclose(et.cu_pkg_total,expected)
+    assert np.allclose([sum(g for _,g in links)
+                        for links in et.cu_links],expected)
+    old=BFZIV148Skin3D(m,skin_depth=.002,skin_layers=6,
+                       skin_quad=1,cu_pkg_g=.8)
+    assert np.allclose(old.cu_pkg_total,.8)
+
+
+def test_single_phase_material_domain():
+    import pytest
+    et=BFZIV148Skin3D(demo(),skin_depth=.002,
+                      skin_layers=6,skin_quad=1)
+    et.check_domain(et.zeros())
+    theta=et.zeros()
+    theta[et.cu.start]=1357.77-et.amb
+    with pytest.raises(ValueError,match="solid copper"):
+        et.check_domain(theta)
+    theta=et.zeros()
+    theta[et.skin.start]=373.15-et.amb
+    with pytest.raises(ValueError,match="liquid seawater"):
+        et.check_domain(theta)
