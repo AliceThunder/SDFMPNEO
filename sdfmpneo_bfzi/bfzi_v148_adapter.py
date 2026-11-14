@@ -114,7 +114,7 @@ def _oriented_mask(pts,mn,mx,coil,hx,hy,zp,zn,line,rad):
     return footprint & face & (dist<=rad)
 
 
-def _mass(data, calc, order=3,mask="legacy"):
+def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
     """Original v148 local mass correction as fixed per-cell source moments."""
     rec = data["records"] or []
     pts = np.asarray(data["points"],float)
@@ -128,8 +128,8 @@ def _mass(data, calc, order=3,mask="legacy"):
     sizes = np.median(mx-mn,axis=0)
     rad = .5*np.hypot(sizes[0],sizes[2])
     y_extra = .5*sizes[1]
-    if mask not in ("legacy","oriented"):
-        raise ValueError("BFZI weak-source mask must be legacy or oriented")
+    if mask not in ("legacy","oriented","physical"):
+        raise ValueError("BFZI weak-source mask must be legacy, oriented or physical")
     masks = []
     for i,fam in enumerate(fams):
         lp,ldl = calc.base._source_line_for_family(fam,cfg)
@@ -144,9 +144,10 @@ def _mass(data, calc, order=3,mask="legacy"):
             hx = float(sample.get(prefix+"package_x_half_mm",102.))*1e-3
             zp = float(sample.get(prefix+"package_z_pos_half_mm",102.))*1e-3
             zn = float(sample.get(prefix+"package_z_neg_half_mm",102.))*1e-3
-        if mask=="oriented":
+        if mask in ("oriented","physical"):
+            local_rad=rad if mask=="oriented" else source_radius
             masks.append(_oriented_mask(
-                pts,mn,mx,fam.coil,hx,hy,zp,zn,lp,rad))
+                pts,mn,mx,fam.coil,hx,hy,zp,zn,lp,local_rad))
         else:
             face = ((mn[:,1]<=yc-hy+y_extra)&(mx[:,1]>=yc-hy-y_extra)
                     | (mn[:,1]<=yc+hy+y_extra)&(mx[:,1]>=yc+hy-y_extra))
@@ -186,15 +187,18 @@ class BFZIV148Adapter:
 
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
                  copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False,
-                 heat_mode="j2",fv_faces="approx",source_mask="legacy"):
+                 heat_mode="j2",fv_faces="approx",source_mask="legacy",
+                 source_radius=.06):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
         if heat_mode not in ("j2","port-weak"):
             raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
         if fv_faces not in ("approx","exact"):
             raise ValueError("BFZI FV face area mode must be approx or exact")
-        if source_mask not in ("legacy","oriented"):
+        if source_mask not in ("legacy","oriented","physical"):
             raise ValueError("BFZI weak-source mask must be legacy or oriented")
+        if source_radius<=0 or not np.isfinite(source_radius):
+            raise ValueError("BFZI physical source support radius must be positive")
         self.heat_mode=heat_mode
         self.source_mask=source_mask
         self.fv_faces=fv_faces
@@ -212,7 +216,8 @@ class BFZIV148Adapter:
         if fv_faces=="exact":
             from .obb_faces import apply
             self.proj=apply(self.proj,data["records"],data["vol_meta"])
-        self.mass = _mass(data,calc,mask=source_mask)
+        self.mass = _mass(data,calc,mask=source_mask,
+                          source_radius=source_radius)
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
             # Neumann/GMD air calculation is needed for the time history.
