@@ -20,8 +20,10 @@ def _rot(axis, angle):
 
 def axes(coil):
     """World axes of a native BFZI package, identity for nominal coils."""
-    R=(_rot('z',coil.yaw_deg)@_rot('y',coil.pitch_deg)@
-       _rot('x',coil.roll_deg)@_rot('z',coil.plane_angle_deg))
+    R=(_rot('z',getattr(coil,'yaw_deg',0.))@
+       _rot('y',getattr(coil,'pitch_deg',0.))@
+       _rot('x',getattr(coil,'roll_deg',90.))@
+       _rot('z',getattr(coil,'plane_angle_deg',90.)))
     base=_rot('x',90.)@_rot('z',90.)
     return R@base.T
 
