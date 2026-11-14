@@ -38,10 +38,12 @@ def main():
     p.add_argument("--bfzi-root", type=Path, required=True)
     p.add_argument("--runs", type=Path, default=Path("runs"))
     p.add_argument("--out", type=Path, default=Path("runs/bfzi_a2.json"))
-    p.add_argument("--cases", nargs="+", default=None)\n    a = p.parse_args()
+    p.add_argument("--cases", nargs="+", default=None)
+    a = p.parse_args()
     bf, v150 = originals(a.bfzi_root)
     old = json.loads((a.runs / "bfzi_obb_physical_study.json").read_text())
-    out = (json.loads(a.out.read_text()) if a.out.exists()\n           else dict(method="BFZI V150 A2 independent physics", cases={}, cross_grid={}))
+    out = (json.loads(a.out.read_text()) if a.out.exists()
+           else dict(method="BFZI V150 A2 independent physics", cases={}, cross_grid={}))
     saved = {}
     for name, pose, level, dy, gain, sig in CASES:
         if a.cases is not None and name not in a.cases:
