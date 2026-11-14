@@ -367,7 +367,17 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         t=self.amb+np.asarray(state,float)
         if t.shape!=(self.n,) or not np.all(np.isfinite(t)):
             raise ValueError("invalid/nonfinite electrothermal state")
-        sea=np.r_[self.amb+self.sea_temp(np.asarray(state,float)),t[self.skin]]
+        mean=self.amb+self.sea_temp(np.asarray(state,float))
+        sea=np.r_[mean,t[self.skin]]
+        if self.skin_heat=="source":
+            # Check the same FV-recentered quadrature temperatures used by
+            # sigma(T) and Joule deposition, not just FV/skin node values.
+            raw=t[self._src_node]
+            avg=np.bincount(self._src_cell,weights=self._src_w*raw,
+                            minlength=self.count)/self._src_vol
+            offset=mean-avg
+            sea=np.r_[sea,raw+offset[self._src_cell],
+                       t[self._shell_node]+offset[self._shell_cell]]
         if sea.min()<self.sea_range[0] or sea.max()>=self.sea_range[1]:
             raise ValueError(f"liquid seawater model exceeded: {sea.min():.2f}..{sea.max():.2f} K; range {self.sea_range}")
         if t[self.cu].max()>=self.cu_max_K:
