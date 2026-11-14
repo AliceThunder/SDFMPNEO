@@ -58,7 +58,9 @@ def march(et,spec,dt):
                 theta=et.advance(prev,v,dt)
             z,I,heat,q,cu=et.em(theta,v)
         except (ValueError,RuntimeError) as exc:
-            err=dict(time_s=float(now),reason=str(exc))
+            err=dict(time_s=float(now),reason=str(exc),
+                     kind=("material" if "model exceeded" in str(exc)
+                           else "solver"))
             break
         sea=float(q@et.model.vol)
         pext=float(.5*np.vdot(I,et.external@I).real)
@@ -79,7 +81,8 @@ def march(et,spec,dt):
     node=max(residual,default=0.)
     port_rel=max((abs(p[-1])/max(abs(p[0]),1e-12)
                   for p in power),default=0.)
-    status=("outside_material_domain" if err is not None else
+    status=("outside_material_domain" if err is not None and
+            err["kind"]=="material" else "solver_error" if err is not None else
             "numerical_error" if node>1e-4 or port_rel>1e-10 else
             "candidate")
     out=dict(status=status,
