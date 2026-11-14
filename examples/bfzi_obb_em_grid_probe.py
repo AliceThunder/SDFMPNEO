@@ -55,12 +55,18 @@ def calc(em,amb,head,integrate=False):
     if integrate:
         modes += [("integral_3mm",.003),("integral_10mm",.01),
                   ("integral_30mm",.03),("integral_80mm",.08)]
+        if em.source_mask=="subcell":
+            modes += [("subcell_3mm",.003),("subcell_10mm",.01),
+                      ("subcell_30mm",.03),("subcell_80mm",.08)]
     for name,scale in modes:
         if name.startswith("integral_"):
             theta=mean_pattern(em.base["records"],head,scale)*5.
         else:
             theta=pattern(em.points,head,scale)*5.
-        warm=em.solve(amb+theta,np.full(2,amb))
+        fn=(lambda xyz,ell=scale: amb+5*pattern(xyz,head,ell)
+            if ell is not None else np.full(len(xyz),amb+5))
+        warm=em.solve(amb+theta,np.full(2,amb),
+                      sea_temp=fn if name.startswith("subcell_") else None)
         ds=pack(warm.sea_z)-cs
         dz=pack(warm.total_z)-ct
         # Original BFZI sea_z = bulk Green response + additive near-
@@ -99,7 +105,7 @@ def main():
     p.add_argument("--integrate-temp",action="store_true",
                    help="Integrate analytic sigma(T) over true oriented wet FV quadrature")
     p.add_argument("--source-mask",choices=("legacy","oriented",
-                    "physical","all"),default="legacy")
+                    "physical","all","subcell"),default="legacy")
     p.add_argument("--poses",nargs="+",choices=("P03","P07"),
                    default=["P03","P07"])
     p.add_argument("--out",type=Path,
