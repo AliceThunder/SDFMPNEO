@@ -144,9 +144,11 @@ class BFZIV148Pkg3D(BFZIV148ET):
             # R = ln((r+t)/r)/(2*pi*k*L), independent of FV grid size.
             # An explicit cu_pkg_g retains historical lumped comparisons.
             radius=float(model.copper.scene.assemblies[p].wire_radius)
-            if cu_ins_t is None:
-                # Original BFZI V150 describes both the bare conductor
-                # and its insulated envelope. Use these same dimensions.
+            if cu_pkg_g is not None:
+                # Historical lumped-thermal tests have no wire envelope.
+                layer=0.
+            elif cu_ins_t is None:
+                # Original BFZI V150 describes both bare/insulated radii.
                 cfg=model.base["cfg"]
                 sample=model.base["sample"]
                 ins_r=cfg.get("BSR_INSULATED_WIRE_RADIUS_M")
@@ -157,7 +159,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
                 layer=float(ins_r)-radius
             else:
                 layer=float(cu_ins_t)
-            if not np.isfinite(layer) or layer<=0:
+            if cu_pkg_g is None and (not np.isfinite(layer) or layer<=0):
                 raise ValueError("BFZI wire insulation must exceed copper radius")
             self.cu_ins_layers.append(layer)
             if cu_pkg_g is None:
