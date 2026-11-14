@@ -145,7 +145,10 @@ def main():
         truth=measure(et,t,v)
         error=score(full,truth,len(legacy.vol))
         energy=metrics(full)
-        passed=(error["delta_Z_rel_L2"]<=.03 and
+        physics_ok=(truth["max_node_budget_W"]<=1e-4 and
+                    truth["max_total_budget_W"]<=1e-4)
+        passed=(physics_ok and
+                error["delta_Z_rel_L2"]<=.03 and
                 error["copper_max_abs_K"]<=2. and
                 error["pkg_max_abs_K"]<=2. and
                 truth["direct_sec"]/max(infer,1e-9)>=20. and
@@ -154,6 +157,8 @@ def main():
                 energy["max_rel_thermal_power"]<=1e-8)
         report["cases"][key]=dict(
             spec=item,skin_depth_m=skin,score=error,energy=energy,
+            physical_gate_passed=bool(physics_ok),
+            physical_node_budget_W=float(truth["max_node_budget_W"]),
             passed=bool(passed),
             timing=dict(offline_sec=offline,online_sec=infer,
                         physical_setup_sec=setup,
