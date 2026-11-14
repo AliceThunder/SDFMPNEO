@@ -1,0 +1,21 @@
+{
+  "target": "custom",
+  "donor": "g1",
+  "memory": "frac",
+  "original_BFZI_cold_solves": 2,
+  "original_BFZI_warm_probes": 1,
+  "original_BFZI_dynamic_solves": 0,
+  "build_sec": 4.4117219999898225,
+  "infer_sec": 0.023791500003426336,
+  "steps": 21,
+  "sea_cells": 1316,
+  "metrics": {
+    "q_power_max_abs_W": 1.7763568394002505e-14,
+    "port_power_max_abs_W": 1.2256862191861728e-13,
+    "thermal_budget_max_abs_W": 8.116989324603019e-10,
+    "max_rel_port_power": 4.096025849662584e-15,
+    "max_rel_q_power": 5.941903254324832e-16,
+    "max_rel_thermal_power": 2.711134364413182e-11,
+    "max_abs_shutdown_budget_W": 0.0
+  }
+}

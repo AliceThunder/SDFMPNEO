@@ -46,6 +46,8 @@ def main():
     p.add_argument("--target",choices=tuple(TARGET))
     p.add_argument("--donor",choices=("g1","g2"))
     p.add_argument("--memory",choices=("none","frac","exp"),default="frac")
+    p.add_argument("--profile-cal",action="store_true",
+        help="one geometry-specific BFZI V150 thermal-profile EM tangent probe")
     p.add_argument("--history",type=Path,help="time_s,voltage_v CSV, without header")
     p.add_argument("--voltage",type=float,default=75.)
     p.add_argument("--duration",type=float,default=600.)
@@ -101,8 +103,30 @@ def main():
         rated=max(abs(float(v[0])),1e-8)
         ratio=rated/ck["vref"]
         ck=dict(ck,vref=rated,scale=np.asarray(ck["scale"])*ratio**2)
-    pred=shared.rollout(cold_z,t,v,net=net,ck=ck,sea_xyz=em.points,
-                        alpha_scale=alpha_scale)
+    if a.profile_cal:
+        # The calibration direction is generated solely by the frozen
+        # surrogate; the independent physical trajectory is never consulted.
+        initial=model.rollout(shared.rom,t,v,net,ck)
+        u=shared.rom.encode(initial["temp_K"][-1])
+        mapped=shared.project(initial["temp_K"],em.points)
+        rise=mapped[-1]-293.15
+        amp=max(float(np.max(abs(rise))),1e-6)
+        profile=rise/amp
+        probe=BFZIV148Adapter(data,bf,heat_mode="port-weak",
+                              fv_faces="exact",source_mask="subcell")
+        probe.alpha=em.alpha
+        probe.sigma0=em.sigma0
+        cold_probe=pack(probe.solve(
+            np.full(len(probe.vol),293.15),np.full(2,293.15)).total_z)
+        warm_probe=pack(probe.solve(
+            293.15+profile[:len(probe.vol)],
+            293.15+profile[len(probe.vol)+64:len(probe.vol)+66]).total_z)
+        slope=(warm_probe-cold_probe)*amp
+        model.jac+=np.outer(slope-model.jac@u,u)/max(float(u@u),1e-30)
+        prep+=time.perf_counter()-t1
+        t1=time.perf_counter()
+    pred=model.rollout(shared.rom,t,v,net,ck)
+    pred["temp_K"]=shared.project(pred["temp_K"],em.points)
     if pts is None:
         # Four native points with strongest cold-Joule source, close to windings.
         cur=pred["current_A"]
@@ -114,7 +138,8 @@ def main():
     elapsed=time.perf_counter()-t1
     report=dict(target=a.target or "custom",donor=donor,
                 memory=a.memory,
-                original_BFZI_cold_solves=1,
+                original_BFZI_cold_solves=2 if a.profile_cal else 1,
+                original_BFZI_warm_probes=1 if a.profile_cal else 0,
                 original_BFZI_dynamic_solves=0,
                 build_sec=float(prep),infer_sec=float(elapsed),
                 steps=len(t),sea_cells=len(em.vol),
