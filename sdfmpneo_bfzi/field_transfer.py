@@ -20,7 +20,7 @@ def quadrature(rec):
     return np.concatenate(q), np.concatenate(w)
 
 
-def owner(rec, pts, *, batch=256):
+def owner(rec, pts, *, batch=256, allow_outside=False, allow_face=False):
     """Locate exact containing native wet FV box; no neighbor smoothing."""
     lo = np.array([r["cell_min"] for r in rec], float)
     hi = np.array([r["cell_max"] for r in rec], float)
@@ -33,9 +33,9 @@ def owner(rec, pts, *, batch=256):
         mask = np.all((x[:,None,:] >= lo[None,:,:]-1e-12) &
                       (x[:,None,:] < hi[None,:,:]+1e-12), axis=2)
         count = mask.sum(axis=1)
-        if np.any(count != 1):
+        if (not allow_face and np.any(count>1)) or (not allow_outside and np.any(count==0)):
             raise ValueError("shared quadrature is outside or ambiguous in BFZI wet cells")
-        ids[i:i+batch] = mask.argmax(axis=1)
+        ids[i:i+batch] = np.where(count>0,mask.argmax(axis=1),-1)
     return ids
 
 
@@ -45,8 +45,14 @@ def shared(rec_a, rec_b):
     b,wb = quadrature(rec_b)
     xyz = np.vstack((a,b))
     w = .5*np.r_[wa,wb]
-    ia,ib = owner(rec_a,xyz),owner(rec_b,xyz)
-    return xyz,w,ia,ib
+    # Exact face ties can arise at wet OBB quadrature nodes. Their
+    # continuous-volume measure is zero; take first containing FV.
+    ia=owner(rec_a,xyz,allow_outside=True,allow_face=True)
+    ib=owner(rec_b,xyz,allow_outside=True,allow_face=True)
+    good=(ia>=0)&(ib>=0)
+    if not np.any(good):
+        raise ValueError("BFZI grids have no common physical wet volume")
+    return xyz[good],w[good],ia[good],ib[good]
 
 
 def norm(x,w):
