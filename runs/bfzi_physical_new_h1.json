@@ -1,0 +1,129 @@
+{
+  "method": "BFZI V150 corrected copper geometry; fixed skin depth",
+  "settings": {
+    "spec_file": "runs\\bfzi_physical_cases.json",
+    "inner_step_s": 1,
+    "dt": [
+      15
+    ],
+    "grids": [
+      "ultra"
+    ],
+    "grid_sizes_m": {
+      "ultra": [
+        0.05,
+        0.04
+      ]
+    },
+    "grid_max_nodes": 4000,
+    "skin_m": 0.002,
+    "ins_k": 0.25,
+    "ins_t": null,
+    "sea_max_K": 373.15,
+    "cu_max_K": 1357.77,
+    "pkg_max_K": null
+  },
+  "cases": {
+    "F16P": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15,
+          "inner_step_s": 1,
+          "completed_s": 600,
+          "elapsed_s": 266.088849199994,
+          "copper_to_package_G_W_K": [
+            16.813318949441612,
+            16.81331894944162
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0044672524551429005,
+          "skin_water_capacity_error_J_K": 0,
+          "peak_thermal_residual_W": 0.000008376565119760926,
+          "peak_global_budget_W": 0.000004138435542699881,
+          "max_port_power_residual_W": 8.185452315956354e-12,
+          "max_rel_port_power": 1.9003369244013135e-15,
+          "max_rel_q_power": 2.0004368835179092e-16,
+          "heat_cap_J_K": {
+            "seawater": 379662.66354169784,
+            "package": 1626.5040000000001,
+            "copper": 54.34631972747759
+          },
+          "max_copper_K": 379.6889752150707,
+          "max_package_K": 350.3507934289446,
+          "max_water_K": 313.60529843581594,
+          "max_copper_loss_W": 676.3161806316095,
+          "max_lead_loss_W": 168.69909778496958,
+          "max_sea_loss_W": 588.0695739006222,
+          "max_source_power_W": 4337.290278180487,
+          "peak_ambient_loss_W": 0.17566644765044886,
+          "max_storage_rate_W": 1267.4886469814405
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    },
+    "F23P": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15,
+          "inner_step_s": 1,
+          "completed_s": 600,
+          "elapsed_s": 245.2009842999978,
+          "copper_to_package_G_W_K": [
+            16.63754435280393,
+            16.258593662998628
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0,
+          "skin_water_capacity_error_J_K": -5.820766091346741e-11,
+          "peak_thermal_residual_W": 0.000005272520070320752,
+          "peak_global_budget_W": 7.61168621465913e-7,
+          "max_port_power_residual_W": 4.547473508864641e-12,
+          "max_rel_port_power": 1.1194337939368538e-15,
+          "max_rel_q_power": 3.994665095019821e-16,
+          "heat_cap_J_K": {
+            "seawater": 379262.0822848005,
+            "package": 1776.7200000000003,
+            "copper": 53.165708679588505
+          },
+          "max_copper_K": 341.08765303155224,
+          "max_package_K": 325.06625149278506,
+          "max_water_K": 304.61951819354124,
+          "max_copper_loss_W": 543.2048432193005,
+          "max_lead_loss_W": 145.80530069236073,
+          "max_sea_loss_W": 861.9185312121347,
+          "max_source_power_W": 4062.29786298658,
+          "peak_ambient_loss_W": 0.5455595363338952,
+          "max_storage_rate_W": 1398.3777522210635
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    }
+  },
+  "provenance": {
+    "host": "XEnergy-Zhucy",
+    "date": "2026-11-14",
+    "native_wet_fvs": 2668,
+    "actual_heat_step_s": 1,
+    "temporal_comparison": "see evidence/independent_physics_cases.md"
+  }
+}
