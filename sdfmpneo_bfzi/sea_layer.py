@@ -14,6 +14,7 @@ from scipy.spatial import cKDTree
 from scipy.sparse import coo_matrix,diags,block_diag,csr_matrix
 
 from .v148_pkg3d import BFZIV148Pkg3D
+from .gap_bridge import bridge
 
 
 def _faces(et, quad, near):
@@ -82,11 +83,13 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
     """
     def __init__(self, model, *, skin_depth=.002, skin_layers=8,
                  skin_ratio=1.4, skin_quad=2, skin_near=4, skin_map=2,
+                 gap_bridge=False, gap_max=.012, gap_quad=4, gap_align=.5,
                  sea_rhoc=4e6, sea_k=.6, pkg_k=.25,
                  pkg_sea_h=20., **kwargs):
         if (skin_depth<=0 or skin_layers<2 or skin_ratio<1 or
                 skin_quad<1 or skin_near<1 or skin_map not in (1,2) or
-                min(sea_k,sea_rhoc,pkg_k,pkg_sea_h)<=0):
+                min(sea_k,sea_rhoc,pkg_k,pkg_sea_h)<=0 or
+                gap_max<=0 or gap_quad<1 or not 0<=gap_align<1):
             raise ValueError("positive seawater skin physical dimensions required")
         super().__init__(
             model,sea_rhoc=sea_rhoc,sea_k=sea_k,pkg_k=pkg_k,
@@ -121,6 +124,8 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                   [.5-.5/np.sqrt(3),.5+.5/np.sqrt(3)])
         vwt=1/len(frac_pts)**3
         self.pkg_links=[[],[]]
+        faces=[]
+        tails=[]
         def link(i,j,g):
             if g<=0 or not np.isfinite(g):
                 raise ValueError("passive skin thermal link requires positive G")
@@ -144,6 +149,11 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                     share_j.append(j)
                     share_v.append(area*width*vwt)
                 x+=width
+            faces.append(dict(
+                id=len(faces),pkg=0 if pk<self.count+self.pkg_n else 1,
+                center=center.copy(),normal=np.asarray(n,float).copy(),
+                v1=np.asarray(v1,float).copy(),v2=np.asarray(v2,float).copy(),
+                area=float(area),last=int(start+skin_layers-1)))
             first=start
             pkg_r=1/pkg_sea_h+.5*pitch/pkg_k+.5*dx[0]/sea_k
             g=area/pkg_r
@@ -158,8 +168,22 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
             # physical face to wet FV center remains the original dist.
             tail=max(dist-skin_depth+.5*dx[-1],.5*dx[-1])
             g=sea_k*area/tail
+            tails.append((start+skin_layers-1,inds.copy(),
+                          weights.copy(),g))
+        gap_edges,covered,gap_info=(bridge(
+            faces,depth=skin_depth,last=dx[-1],k=sea_k,
+            gap=gap_max,quad=gap_quad,align=gap_align)
+            if gap_bridge else
+            ([],np.zeros(len(faces)),dict(
+                bridges=0,area_m2=0.,G_W_K=0.,
+                min_gap_m=None,max_gap_m=None)))
+        for i,j,g in gap_edges:
+            link(i,j,g)
+        for f,(end,inds,weights,g) in enumerate(tails):
+            exposed=max(0.,1-covered[f]/faces[f]["area"])
             for j,w in zip(inds,weights):
-                link(start+skin_layers-1,int(j),g*float(w))
+                if exposed*g*float(w)>0:
+                    link(end,int(j),exposed*g*float(w))
         owner=np.asarray(owner,int)
         shell_vol=np.asarray(shell_vol,float)
         mix=coo_matrix(
@@ -195,6 +219,8 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
             layers=skin_layers,depth_m=skin_depth,ratio=skin_ratio,
             map_order=skin_map,
             faces=len(owner)//skin_layers,
+            gap_bridge=bool(gap_bridge),gap=gap_info,
+            gap_bulk_area_covered_m2=float(sum(covered)),
             redistributed_water_m3=float(shell_vol.sum()),
             max_wet_fraction=float(np.max(take/model.vol)),
             sea_cap_delta_J_K=float(np.sum(self.cap[:self.count])+
