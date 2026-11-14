@@ -372,3 +372,12 @@ def test_thermal_fixed_point_must_converge():
                   external=np.diag([.5,.5]))
     with pytest.raises(RuntimeError,match="did not converge"):
         et.advance(et.zeros(),[8.,0.],.1,iterations=1,tol=1e-14)
+
+
+def test_thermal_budget_controls_large_temperature_tolerance():
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.diag([.5,.5]))
+    with pytest.raises(RuntimeError,match="heat residual"):
+        et.advance(et.zeros(),[8.,0.],.1,iterations=1,
+                   tol=100.,budget_tol=1e-12)
