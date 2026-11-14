@@ -28,25 +28,25 @@
     "G2_medium": {
       "anchor": "P07",
       "extra_shift_y_mm": 25.0,
-      "voltage_scale": 1.0,
+      "voltage_scale": 0.5,
       "sea_alpha_scale": 1.0,
       "wet_cells": 574,
-      "setup_sec": 2.1821789000096032,
-      "direct_sec": 23.39478849999432,
-      "max_port_weak_rel": 5.816686862622748e-16,
-      "max_node_budget_W": 0.0001756787225986045,
+      "setup_sec": 2.2472756000061054,
+      "direct_sec": 18.003420599998208,
+      "max_port_weak_rel": 7.592989378390126e-16,
+      "max_node_budget_W": 1.1810073061724324e-06,
       "file": "runs\\bfzi_a2_g2_medium.npz"
     },
     "G2_extra": {
       "anchor": "P07",
       "extra_shift_y_mm": 25.0,
-      "voltage_scale": 1.0,
+      "voltage_scale": 0.5,
       "sea_alpha_scale": 1.0,
       "wet_cells": 1316,
-      "setup_sec": 3.9526780000014696,
-      "direct_sec": 59.344917099995655,
-      "max_port_weak_rel": 5.604694103782498e-16,
-      "max_node_budget_W": 0.00017286796702364882,
+      "setup_sec": 4.037082000009832,
+      "direct_sec": 45.742310200002976,
+      "max_port_weak_rel": 5.630249530532569e-16,
+      "max_node_budget_W": 1.2248046061813511e-06,
       "file": "runs\\bfzi_a2_g2_extra.npz"
     },
     "G1_drive_extra": {
@@ -64,13 +64,13 @@
     "G2_mat_extra": {
       "anchor": "P07",
       "extra_shift_y_mm": 25.0,
-      "voltage_scale": 1.0,
+      "voltage_scale": 0.5,
       "sea_alpha_scale": 0.8,
       "wet_cells": 1316,
-      "setup_sec": 4.1515202000009594,
-      "direct_sec": 59.968892799995956,
-      "max_port_weak_rel": 5.726966898146636e-16,
-      "max_node_budget_W": 0.00017291854265977236,
+      "setup_sec": 4.246769100005622,
+      "direct_sec": 46.1530647000036,
+      "max_port_weak_rel": 5.604694103782498e-16,
+      "max_node_budget_W": 1.2293753428593845e-06,
       "file": "runs\\bfzi_a2_g2_mat_extra.npz"
     }
   },
@@ -84,12 +84,12 @@
       "max_sea_mean_abs_K": 0.0014572939531376505
     },
     "G2": {
-      "dynamic_delta_Z_relative_L2": 0.015943234679716194,
-      "full_Z_relative_L2": 0.00021619629420739338,
-      "pkg_max_abs_K": 5.638675179634333,
-      "copper_max_abs_K": 7.714330293654257,
-      "pkg_final_max_abs_K": 5.638675179634333,
-      "max_sea_mean_abs_K": 0.018293729878507747
+      "dynamic_delta_Z_relative_L2": 0.014503550826898583,
+      "full_Z_relative_L2": 0.00015387785393581541,
+      "pkg_max_abs_K": 0.7684383099712022,
+      "copper_max_abs_K": 0.6288215834208586,
+      "pkg_final_max_abs_K": 0.7684383099712022,
+      "max_sea_mean_abs_K": 0.0029313929517229553
     }
   }
 }
