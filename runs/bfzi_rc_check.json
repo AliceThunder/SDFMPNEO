@@ -1,0 +1,37 @@
+{
+  "method": "two-node copper-package implicit thermal balance, not BFZI V150",
+  "input": {
+    "duration_s": 600,
+    "dt_s": 30,
+    "power_copper_W": 200,
+    "wire_length_m": 5.5,
+    "wire_radius_m": 0.001,
+    "insulation_t_m": 0.0005,
+    "insulation_k_W_mK": 0.25,
+    "package_dims_m": [
+      0.22,
+      0.011,
+      0.22
+    ],
+    "package_rhoc_J_m3K": 1500000,
+    "copper_rhoc_J_m3K": 3450000,
+    "package_to_environment_G_W_K": 2
+  },
+  "capacity_J_K": {
+    "copper": 59.61172060186632,
+    "package": 798.5999999999999
+  },
+  "baseline": {
+    "copper_to_package_G_W_K": 0.8,
+    "copper_rise_K": 312.11633153,
+    "package_rise_K": 68.73319937,
+    "max_energy_balance_W": 5.186961971048731e-13
+  },
+  "radial": {
+    "copper_to_package_G_W_K": 21.307332307043385,
+    "copper_rise_K": 83.15810889,
+    "package_rise_K": 73.94259582,
+    "max_energy_balance_W": 1.2292389328649733e-12
+  },
+  "scope": "Standalone RC formula check, not BFZI electromagnetic or F14 reference"
+}
