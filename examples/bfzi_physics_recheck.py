@@ -77,14 +77,21 @@ def march(et,spec,dt):
         curr.append(I.copy())
         power.append([pin,sea,float(cu.sum()),pext,pbal])
         prev=theta.copy()
-    out=dict(status="valid" if err is None else "outside_material_domain",
+    node=max(residual,default=0.)
+    port_rel=max((abs(p[-1])/max(abs(p[0]),1e-12)
+                  for p in power),default=0.)
+    status=("outside_material_domain" if err is not None else
+            "numerical_error" if node>1e-4 or port_rel>1e-10 else
+            "candidate")
+    out=dict(status=status,
              failed_at=err,dt_s=float(dt),
              completed_s=float(t[len(zs)-1]) if len(zs) else None,
              elapsed_s=float(time.perf_counter()-start),
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
              skin_depth_m=float(et.skin_depth),
-             peak_thermal_residual_W=max(residual,default=None),
-             max_port_power_residual_W=max((abs(p[-1]) for p in power),default=None))
+             peak_thermal_residual_W=node,
+             max_port_power_residual_W=max((abs(p[-1]) for p in power),default=0.),
+             max_rel_port_power=port_rel)
     if len(zs):
         temp=np.asarray(temps)
         out.update(max_copper_K=float(temp[:,et.cu].max()),
@@ -182,11 +189,11 @@ def main():
             c=history.get(f"{grid}_dt{a.dt[0]:g}")
             f=history.get(f"{grid}_dt{a.dt[1]:g}")
             if (c is not None and f is not None and
-                    rows[f"{grid}_dt{a.dt[0]:g}"]["status"]=="valid" and
-                    rows[f"{grid}_dt{a.dt[1]:g}"]["status"]=="valid"):
+                    rows[f"{grid}_dt{a.dt[0]:g}"]["status"]=="candidate" and
+                    rows[f"{grid}_dt{a.dt[1]:g}"]["status"]=="candidate"):
                 checks[grid]=compare(c,f)
-        if (rows.get("medium_dt30",{}).get("status")=="valid" and
-                rows.get("extra_dt30",{}).get("status")=="valid"):
+        if (rows.get("medium_dt30",{}).get("status")=="candidate" and
+                rows.get("extra_dt30",{}).get("status")=="candidate"):
             # Shared physical copper and package coordinates across grids.
             checks["space_dt30"]=compare(
                 history["medium_dt30"],history["extra_dt30"])
