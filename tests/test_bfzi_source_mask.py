@@ -20,12 +20,12 @@ def test_weak_mass_uses_rotated_coil_frame():
     lo=pts-.01
     hi=pts+.01
     line=pts[[0]]
-    keep=_oriented_mask(pts,lo,hi,c,.102,.0055,.102,line,.08)
+    keep=_oriented_mask(pts,lo,hi,c,.102,.0055,.102,.102,line,.08)
     assert keep.tolist()==[True,False,False]
     moved=coil([-.10,.25,.15],27.)
     shift=np.asarray(moved.center)-np.asarray(c.center)
     assert np.array_equal(keep,_oriented_mask(
-        pts+shift,lo+shift,hi+shift,moved,.102,.0055,.102,
+        pts+shift,lo+shift,hi+shift,moved,.102,.0055,.102,.102,
         line+shift,.08))
 
 
@@ -34,5 +34,5 @@ def test_nonrotated_mask_near_physical_package_face():
     pt=np.array([[0.,.011,0.],[0.,.15,0.]])
     half=.006
     mask=_oriented_mask(pt,pt-half,pt+half,c,
-                         .102,.0055,.102,pt[:1],.08)
+                         .102,.0055,.102,.102,pt[:1],.08)
     assert mask.tolist()==[True,False]
