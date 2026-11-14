@@ -7,9 +7,17 @@
     "pkg_max_abs_K": 1.7053025658242404e-13,
     "copper_max_abs_K": 5.684341886080802e-14,
     "sea_mean_max_abs_K": 1.898011853350658e-15,
-    "build_sec": 4.093328500006464,
+    "build_sec": 4.315515799986315,
     "model_file": "runs\\bfzi_heat_rom_p03.npz",
-    "reference_file": "runs\\bfzi_pose_p03_skin_source_subcell_extra.npz"
+    "reference_file": "runs\\bfzi_pose_p03_skin_source_subcell_extra.npz",
+    "heldout": {
+      "delta_Z_rel_L2": 9.475417267427805e-07,
+      "pkg_max_abs_K": 0.00023974048451691488,
+      "copper_max_abs_K": 3.1684807765941514e-05,
+      "sea_mean_max_abs_K": 1.2255403727322296e-08,
+      "direct_sec": 18.879778400005307,
+      "rom_sec": 18.823576799986768
+    }
   },
   "P07": {
     "rank": 32,
@@ -19,8 +27,16 @@
     "pkg_max_abs_K": 2.6147972675971687e-12,
     "copper_max_abs_K": 4.547473508864641e-13,
     "sea_mean_max_abs_K": 3.6530388689057956e-15,
-    "build_sec": 4.158598599999095,
+    "build_sec": 4.451705800005584,
     "model_file": "runs\\bfzi_heat_rom_p07.npz",
-    "reference_file": "runs\\bfzi_pose_p07_skin_source_subcell_extra.npz"
+    "reference_file": "runs\\bfzi_pose_p07_skin_source_subcell_extra.npz",
+    "heldout": {
+      "delta_Z_rel_L2": 2.7039192550559996e-06,
+      "pkg_max_abs_K": 0.002046710226409232,
+      "copper_max_abs_K": 0.0001767653329238783,
+      "sea_mean_max_abs_K": 2.014863069997885e-06,
+      "direct_sec": 46.736353000000236,
+      "rom_sec": 46.222227599995676
+    }
   }
 }
