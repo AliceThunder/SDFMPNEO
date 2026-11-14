@@ -97,3 +97,20 @@ python -m examples.bfzi_obb_exact_faces --bfzi-root D:/work/bfzi-et-v2.1/BFZI --
 python -m examples.bfzi_obb_exact_faces --bfzi-root D:/work/bfzi-et-v2.1/BFZI --runs runs --source-mask physical --source-radius .06 --out runs/bfzi_obb_fixed_source.json
 python -m examples.bfzi_obb_exact_faces --bfzi-root D:/work/bfzi-et-v2.1/BFZI --runs runs --pkg-sea-model face-normal --hybrid --out runs/bfzi_obb_face_normal.json
 ```
+
+
+## 6. 已实施的物理半阶扩散 SOE 基础
+
+新增 `sdfmpneo_bfzi/sea_skin.py:SeaSkin`：把亚厘米海水局部边界层看作半无限导热区，其**单位面积**热流到封装表面温升的拉普拉斯热阻为
+
+```text
+Z_skin(s) = 1 / sqrt(k * rho*c * s)
+T_skin(t) = sqrt(alpha)/(k*sqrt(pi)) *
+            integral_0^t q_surface(tau)/sqrt(t-tau) d tau
+```
+
+针对指定计算时间域采用32个正系数指数模态和两个被动端点项（高频瞬时热阻、低频积分热容），显式记忆状态的每步更新由指数闭式递推给出；适用于独立多封装面片上的任意分段通断热流，允许正向加热与逆向冷却。另提供 `contact(delta,dt,resistance)` 隐式求解给定封装—远端海水温差下的表面热流，并保留每面片积分能量状态。
+
+**已在沙箱完成测试** `tests/test_bfzi_sea_skin.py`：恒定热流、反向脉冲、三面片接触和正实热阻抗共3项。0.5～600秒恒定热流样本相对解析解的最大误差低于0.012%，600秒处约0.0051%；状态由32维正权重SOE驱动，避免在全域BFZI网格中增加数万近边界海水单元。
+
+当前模块是**独立的物理边界层算子**。接入完整闭环时必须以物理能量一致的形式处理边界层暂存热量与宏观湿FV间的换热，不能将同一热流同时注入半无限层和全部粗FV。下一步采用局部热层—主体海水FV的有限深度热传递与被动SOE降阶，随后重复本报告的铜/海水单位热源、原BFZI高功率动态阻抗及神经闭环比较。
