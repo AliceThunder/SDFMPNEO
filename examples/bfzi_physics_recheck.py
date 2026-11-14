@@ -87,13 +87,14 @@ def march(et,spec,dt):
         power.append([pin,sea,float(cu.sum()),pext,pbal])
         prev=theta.copy()
     node=max(residual,default=0.)
+    global_budget=max((abs(x[3]) for x in therm),default=0.)
     port_rel=max((abs(p[-1])/max(abs(p[0]),1e-12)
                   for p in power),default=0.)
     qmax=max(qrel,default=0.)
     status=("outside_material_domain" if err is not None and
             err["kind"]=="material" else "solver_error" if err is not None else
-            "numerical_error" if node>1e-4 or port_rel>1e-10 or
-                                  qmax>1e-10 else
+            "numerical_error" if node>1e-4 or global_budget>1e-4 or
+                                  port_rel>1e-10 or qmax>1e-10 else
             "candidate")
     out=dict(status=status,
              failed_at=err,dt_s=float(dt),
@@ -102,6 +103,7 @@ def march(et,spec,dt):
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
              skin_depth_m=float(et.skin_depth),
              peak_thermal_residual_W=node,
+             peak_global_budget_W=global_budget,
              max_port_power_residual_W=max((abs(p[-1]) for p in power),default=0.),
              max_rel_port_power=port_rel,max_rel_q_power=qmax,
              heat_cap_J_K=dict(
