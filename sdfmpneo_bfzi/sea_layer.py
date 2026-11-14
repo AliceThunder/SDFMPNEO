@@ -9,8 +9,9 @@ There is no new BFZI electromagnetic cell or direction solve.
 from __future__ import annotations
 
 import numpy as np
+from itertools import product
 from scipy.spatial import cKDTree
-from scipy.sparse import coo_matrix,diags,block_diag
+from scipy.sparse import coo_matrix,diags,block_diag,csr_matrix
 
 from .v148_pkg3d import BFZIV148Pkg3D
 
@@ -59,7 +60,10 @@ def _faces(et, quad, near):
                     inds=np.array(list(dst),int)
                     weights=np.array(list(dst.values()),float)
                     weights/=weights.sum()
-                    yield int(start+a),loc,n,area,float(size[ax]),inds,weights,dist
+                    yield (int(start+a),loc,n,area,float(size[ax]),
+                           inds,weights,dist,
+                           rot[:,cross[0]]*size[cross[0]],
+                           rot[:,cross[1]]*size[cross[1]])
 
 
 def _owner(pt, lo, hi):
@@ -77,11 +81,11 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
     weak-source power, seawater total heat capacity, and two-port dynamics.
     """
     def __init__(self, model, *, skin_depth=.002, skin_layers=8,
-                 skin_ratio=1.4, skin_quad=2, skin_near=4,
+                 skin_ratio=1.4, skin_quad=2, skin_near=4, skin_map=2,
                  sea_rhoc=4e6, sea_k=.6, pkg_k=.25,
                  pkg_sea_h=20., **kwargs):
         if (skin_depth<=0 or skin_layers<2 or skin_ratio<1 or
-                skin_quad<1 or skin_near<1 or
+                skin_quad<1 or skin_near<1 or skin_map not in (1,2) or
                 min(sea_k,sea_rhoc,pkg_k,pkg_sea_h)<=0):
             raise ValueError("positive seawater skin physical dimensions required")
         super().__init__(
@@ -110,23 +114,36 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         edges=[]
         owner=[]
         shell_vol=[]
+        share_i=[];share_j=[];share_v=[]
+        # Tensor Gauss sampling conservatively distributes every shell
+        # prism to its original wet FV, avoiding centroid ownership jumps.
+        frac_pts=([.5] if skin_map==1 else
+                  [.5-.5/np.sqrt(3),.5+.5/np.sqrt(3)])
+        vwt=1/len(frac_pts)**3
         self.pkg_links=[[],[]]
         def link(i,j,g):
             if g<=0 or not np.isfinite(g):
                 raise ValueError("passive skin thermal link requires positive G")
             edges.extend(((i,j,g),))
-        for pk,face,n,area,pitch,inds,weights,dist in _faces(
+        for pk,face,n,area,pitch,inds,weights,dist,v1,v2 in _faces(
                 self,skin_quad,skin_near):
             center=face.copy()
             start=orig_n+len(owner)
             x=0.
             for l,width in enumerate(dx):
-                x+=.5*width
-                pt=center+x*n
-                cell=_owner(pt,lo,hi)
+                mid=center+(x+.5*width)*n
+                cell=_owner(mid,lo,hi)
                 owner.append(cell)
                 shell_vol.append(area*width)
-                x+=.5*width
+                j=start+l-orig_n
+                for u,v,t in product(frac_pts,repeat=3):
+                    pt=(center+(u-.5)*v1+(v-.5)*v2+
+                        (x+t*width)*n)
+                    cell=_owner(pt,lo,hi)
+                    share_i.append(cell)
+                    share_j.append(j)
+                    share_v.append(area*width*vwt)
+                x+=width
             first=start
             pkg_r=1/pkg_sea_h+.5*pitch/pkg_k+.5*dx[0]/sea_k
             g=area/pkg_r
@@ -145,7 +162,10 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                 link(start+skin_layers-1,int(j),g*float(w))
         owner=np.asarray(owner,int)
         shell_vol=np.asarray(shell_vol,float)
-        take=np.bincount(owner,weights=shell_vol,minlength=self.count)
+        mix=coo_matrix(
+            (share_v,(share_i,share_j)),
+            shape=(self.count,len(owner))).tocsr()
+        take=np.asarray(mix.sum(axis=1)).ravel()
         bulk=model.vol-take
         if np.any(bulk<=0):
             ids=np.flatnonzero(bulk<=0)
@@ -154,6 +174,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         self.bulk_vol=bulk
         self.skin_owner=owner
         self.skin_vol=shell_vol
+        self.skin_mix=mix
         self.skin=slice(orig_n,orig_n+len(owner))
         self.n=self.skin.stop
         cap[:self.count]=sea_rhoc*bulk
@@ -172,6 +193,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         self._factor={}
         self.skin_info=dict(
             layers=skin_layers,depth_m=skin_depth,ratio=skin_ratio,
+            map_order=skin_map,
             faces=len(owner)//skin_layers,
             redistributed_water_m3=float(shell_vol.sum()),
             max_wet_fraction=float(np.max(take/model.vol)),
@@ -183,9 +205,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         """Original BFZI sea-cell conductivity sees exact volume-mean T."""
         t=np.asarray(theta,float)
         n=self.count
-        acc=(self.bulk_vol*t[:n]+np.bincount(
-            self.skin_owner,weights=self.skin_vol*t[self.skin],
-            minlength=n))
+        acc=self.bulk_vol*t[:n]+self.skin_mix@t[self.skin]
         return acc/self.model.vol
 
     def heat_vec(self,q,cu):
@@ -193,7 +213,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         q=np.asarray(q,float)
         heat=np.zeros(self.n)
         heat[:self.count]=q*self.bulk_vol
-        heat[self.skin]=q[self.skin_owner]*self.skin_vol
+        heat[self.skin]=self.skin_mix.T@q
         heat[self.cu]=cu
         return heat
 
