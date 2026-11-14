@@ -15,6 +15,7 @@ from scipy.sparse import coo_matrix,diags,block_diag,csr_matrix
 
 from .v148_pkg3d import BFZIV148Pkg3D
 from .gap_bridge import bridge
+from .near_source import local_j_var,split_heat
 
 
 def _faces(et, quad, near):
@@ -116,7 +117,12 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                  skin_ratio=1.4, skin_quad=2, skin_near=4, skin_map=2,
                  gap_bridge=False, gap_max=.012, gap_quad=4, gap_align=.5,
                  sea_rhoc=4e6, sea_k=.6, pkg_k=.25,
-                 pkg_sea_h=20., **kwargs):
+                 pkg_sea_h=20., skin_heat="volume", **kwargs):
+        if skin_heat not in ("volume","source"):
+            raise ValueError("skin heat must be volume or source")
+        if skin_heat=="source" and getattr(model,"subcells",None) is None:
+            raise ValueError("source-resolved skin heating needs BFZI subcell source")
+        self.skin_heat=skin_heat
         if (skin_depth<=0 or skin_layers<2 or skin_ratio<1 or
                 skin_quad<1 or skin_near<1 or skin_map not in (1,2) or
                 min(sea_k,sea_rhoc,pkg_k,pkg_sea_h)<=0 or
@@ -148,7 +154,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         edges=[]
         owner=[]
         shell_vol=[]
-        share_i=[];share_j=[];share_v=[]
+        share_i=[];share_j=[];share_v=[];share_pt=[]
         # Tensor Gauss sampling conservatively distributes every shell
         # prism to its original wet FV, avoiding centroid ownership jumps.
         frac_pts=([.5] if skin_map==1 else
@@ -179,6 +185,8 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                     share_i.append(cell)
                     share_j.append(j)
                     share_v.append(area*width*vwt)
+                    if skin_heat=="source":
+                        share_pt.append(pt)
                 x+=width
             faces.append(dict(
                 id=len(faces),pkg=0 if pk<self.count+self.pkg_n else 1,
@@ -231,6 +239,19 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         self.skin_vol=shell_vol
         self.skin_mix=mix
         self._qmap=_qmap(getattr(model,"subcells",None),faces,dx)
+        if skin_heat=="source":
+            (self._src_pts,self._src_w,self._src_cell,
+             self._src_C)=model.source_native()
+            self._src_node=np.concatenate([
+                self._qmap[id(item[0])] for item in model.subcells])
+            self._shell_cell=np.asarray(share_i,int)
+            self._shell_node=orig_n+np.asarray(share_j,int)
+            self._shell_w=np.asarray(share_v,float)
+            self._shell_C=model.source_at(np.asarray(share_pt,float))
+            self._src_vol=np.bincount(
+                self._src_cell,weights=self._src_w,minlength=self.count)
+            if not np.allclose(self._src_vol,model.vol,rtol=1e-8,atol=1e-12):
+                raise ValueError("native BFZI source quadrature volume mismatch")
         self.skin=slice(orig_n,orig_n+len(owner))
         self.n=self.skin.stop
         cap[:self.count]=sea_rhoc*bulk
@@ -249,7 +270,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         self._factor={}
         self.skin_info=dict(
             layers=skin_layers,depth_m=skin_depth,ratio=skin_ratio,
-            map_order=skin_map,
+            map_order=skin_map,heat_mode=skin_heat,
             faces=len(owner)//skin_layers,
             gap_bridge=bool(gap_bridge),gap=gap_info,
             gap_bulk_area_covered_m2=float(sum(covered)),
@@ -275,6 +296,56 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         heat[self.cu]=cu
         return heat
 
+
+    def source_heat(self,theta,unit_j,currents,q,cu):
+        """Conserve wet-FV weak power while resolving 8-layer local sigma/J."""
+        if self.skin_heat=="volume":
+            return self.heat_vec(q,cu)
+        theta=np.asarray(theta,float)
+        q=np.asarray(q,float)
+        I=np.asarray(currents,complex)
+        unit_j=np.asarray(unit_j,complex)
+        sea=self.amb+self.sea_temp(theta)
+        raw=self.amb+theta[self._src_node]
+        native_avg=np.bincount(
+            self._src_cell,weights=self._src_w*raw,
+            minlength=self.count)/self._src_vol
+        offset=sea-native_avg
+        temp=raw+offset[self._src_cell]
+        sig=self.model.sigma0*(1+self.model.alpha*
+                               (temp-self.model.ambient))
+        skin_temp=self.amb+theta[self._shell_node]+offset[self._shell_cell]
+        sig_skin=self.model.sigma0*(1+self.model.alpha*
+                                    (skin_temp-self.model.ambient))
+        if np.any(sig<=0) or np.any(sig_skin<=0):
+            raise ValueError("nonpositive local BFZI seawater conductivity")
+        ref=np.empty((self.count,2,3))
+        for p in range(2):
+            for ax in range(3):
+                ref[:,p,ax]=np.bincount(
+                    self._src_cell,weights=self._src_w*sig*
+                    self._src_C[:,p,ax],minlength=self.count)/self._src_vol
+        jbar=np.einsum("npc,p->nc",unit_j,I,optimize=True)
+        omega_mu=self.model.omega*self.model.mu
+        j=local_j_var(jbar,sig,I,self._src_C,ref,
+                      self._src_cell,omega_mu)
+        j_skin=local_j_var(jbar,sig_skin,I,self._shell_C,ref,
+                           self._shell_cell,omega_mu)
+        raw_q=.5*np.sum(abs(j)**2,axis=1)/sig
+        raw_skin=.5*np.sum(abs(j_skin)**2,axis=1)/sig_skin
+        base=np.bincount(
+            self._src_cell,weights=self._src_w*raw_q,
+            minlength=self.count)/self._src_vol
+        bulk,skin=split_heat(
+            q,self.model.vol,self.bulk_vol,base,
+            self._shell_cell,self._shell_node-self.skin.start,
+            self._shell_w,raw_skin,self.skin.stop-self.skin.start)
+        heat=np.zeros(self.n)
+        heat[:self.count]=bulk
+        heat[self.skin]=skin
+        heat[self.cu]=cu
+        return heat
+
     def em(self,state,drive):
         theta=np.asarray(state,float)
         v=np.asarray(drive,complex)
@@ -293,4 +364,4 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
             warm=self.model.solve(sea,copper)
         I=np.linalg.solve(warm.total_z+self.external,v)
         q,cu=self.model.heat(warm,I)
-        return warm,I,self.heat_vec(q,cu),q,cu
+        return warm,I,self.source_heat(theta,warm.unit_j,I,q,cu),q,cu
