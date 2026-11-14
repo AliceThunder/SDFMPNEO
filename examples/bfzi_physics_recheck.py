@@ -253,14 +253,16 @@ def main():
                     # Keep material-sensitivity trajectories separate from
                     # the fixed-parameter convergence reference histories.
                     suffix=(f"_h{a.inner_step:g}" if a.inner_step else "")
-                    if a.ins_k!=.25 or a.ins_t is not None:
-                        suffix+=f"_ik{a.ins_k:g}"
-                        if a.ins_t is not None:
-                            suffix+=f"_it{a.ins_t:g}"
-                    if a.pkg_k!=.25:
-                        suffix+=f"_pk{a.pkg_k:g}"
-                    if a.pkg_sea_h!=20.:
-                        suffix+=f"_ph{a.pkg_sea_h:g}"
+                    if opts["ins_k"]!=.25 or opts["ins_t"] is not None:
+                        suffix+=f'_ik{opts["ins_k"]:g}'
+                        if opts["ins_t"] is not None:
+                            suffix+=f'_it{opts["ins_t"]:g}'
+                    if opts["pkg_k"]!=.25:
+                        suffix+=f'_pk{opts["pkg_k"]:g}'
+                    if opts["pkg_sea_h"]!=20.:
+                        suffix+=f'_ph{opts["pkg_sea_h"]:g}'
+                    if opts["skin"]!=.002:
+                        suffix+=f'_sk{opts["skin"]:g}'
                     np.savez_compressed(
                         a.runs/f"bfzi_phys_{key}_{tag}{suffix}.npz",**raw)
                 print("PHYS",key,tag,rec["status"],
