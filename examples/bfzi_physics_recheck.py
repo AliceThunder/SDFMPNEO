@@ -56,7 +56,9 @@ def march(et,spec,dt):
         v=drive(spec,now)
         try:
             if k:
-                theta=et.advance(prev,v,dt)
+                # Preserve the actual on/off duration at a switching time.
+                # Integrate the previous interval under its left-end drive.
+                theta=et.advance(prev,drive(spec,t[k-1]),dt)
             z,I,heat,q,cu=et.em(theta,v)
         except (ValueError,RuntimeError) as exc:
             err=dict(time_s=float(now),reason=str(exc),
