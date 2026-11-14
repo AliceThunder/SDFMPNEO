@@ -128,7 +128,7 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
     sizes = np.median(mx-mn,axis=0)
     rad = .5*np.hypot(sizes[0],sizes[2])
     y_extra = .5*sizes[1]
-    if mask not in ("legacy","oriented","physical","all"):
+    if mask not in ("legacy","oriented","physical","all","subcell"):
         raise ValueError("BFZI weak-source mask invalid")
     masks = []
     for i,fam in enumerate(fams):
@@ -157,9 +157,10 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
     # Exact original BFZI local source mass correction over every wet
     # FV, without abrupt whole-cell support selection. Same formula,
     # just complete spatial integration rather than heuristic masking.
-    if mask=="all":
+    if mask in ("all","subcell"):
         masks=[np.ones(n,dtype=bool) for _ in fams]
     out = np.zeros((n,len(fams),len(fams)),float)
+    extra = [None]*n if mask=="subcell" else None
     union = np.any(masks,axis=0)
     lead = []
     for fam in fams:
@@ -178,13 +179,18 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
                     q,np.asarray(geom.pos,float),np.asarray(geom.dl,float),
                     chunk_points=512,chunk_line=1024)
             src.append(Cq)
+        if extra is not None:
+            fields=np.stack(src,axis=1)
+            moments=np.einsum("qic,qjc->qij",fields,fields,optimize=True)
+            extra[p]=(np.asarray(q,float),np.asarray(w,float),
+                      np.asarray(moments,float))
         for i in range(len(fams)):
             for j in range(i,len(fams)):
                 if masks[i][p] and masks[j][p]:
                     exact = np.sum(w*np.einsum("pk,pk->p",src[i],src[j]))
                     lump = vols[p]*np.dot(data["C"][i][p],data["C"][j][p])
                     out[p,i,j] = out[p,j,i] = exact-lump
-    return out
+    return (out,extra) if extra is not None else out
 
 
 class BFZIV148Adapter:
@@ -200,7 +206,7 @@ class BFZIV148Adapter:
             raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
         if fv_faces not in ("approx","exact"):
             raise ValueError("BFZI FV face area mode must be approx or exact")
-        if source_mask not in ("legacy","oriented","physical","all"):
+        if source_mask not in ("legacy","oriented","physical","all","subcell"):
             raise ValueError("BFZI weak-source mask must be legacy or oriented")
         if source_radius<=0 or not np.isfinite(source_radius):
             raise ValueError("BFZI physical source support radius must be positive")
@@ -221,8 +227,10 @@ class BFZIV148Adapter:
         if fv_faces=="exact":
             from .obb_faces import apply
             self.proj=apply(self.proj,data["records"],data["vol_meta"])
-        self.mass = _mass(data,calc,mask=source_mask,
-                          source_radius=source_radius)
+        result = _mass(data,calc,mask=source_mask,
+                       source_radius=source_radius)
+        self.mass,self.subcells=(result if source_mask=="subcell"
+                                 else (result,None))
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
             # Neumann/GMD air calculation is needed for the time history.
@@ -248,11 +256,35 @@ class BFZIV148Adapter:
             self.air,
         )
 
-    def solve(self, sea_t, cu_t):
+    def subcell_temp(self, fn):
+        """Original wet-FV quadrature of temperature and local source covariance.
+
+        The Green response uses each cell's volume-mean conductivity;
+        the original near-source mass term also integrates its covariance
+        with the local source projection at the same quadrature points.
+        """
+        if self.subcells is None:
+            raise ValueError("BFZI subcell source moments were not built")
+        t=np.empty(len(self.vol))
+        cov=np.zeros((len(self.vol),2,2))
+        for p,item in enumerate(self.subcells):
+            q,w,m=item
+            tq=np.asarray(fn(q),float)
+            if tq.shape!=(len(w),) or not np.isfinite(tq).all():
+                raise ValueError("physical temperature must match wet FV quadrature")
+            t[p]=float(w@tq/w.sum())
+            delta=self.sigma0*self.alpha*(tq-t[p])
+            cov[p]=np.einsum("q,q,qij->ij",w,delta,m,optimize=True)
+        return t,cov
+
+    def solve(self, sea_t, cu_t, *, sea_temp=None):
         temp = np.asarray(sea_t,float)
         tc = np.asarray(cu_t,float)
         if temp.shape != self.vol.shape or tc.shape != (2,):
             raise ValueError("sea and copper temperature dimensions differ")
+        cov=None
+        if sea_temp is not None:
+            temp,cov=self.subcell_temp(sea_temp)
         sig = self.sigma0*(1+self.alpha*(temp-self.ambient))
         if np.min(sig)<=0 or not np.all(np.isfinite(sig)):
             raise ValueError("seawater sigma(T) must be finite and positive")
@@ -274,6 +306,8 @@ class BFZIV148Adapter:
         z -= core.Z_rect(G,GX,vw,self.mu,self.omega)
         dz = -1j*self.omega*self.mu*np.einsum(
             "p,pij->ij",gamma,self.mass,optimize=True)
+        if cov is not None:
+            dz+=(self.omega*self.mu)**2*np.sum(cov,axis=0)
         z = core.sym_complex(z+dz)
         zcu = (np.zeros(2,complex) if self.copper is None
                else self.copper.conductor_internal_impedance(tc))
@@ -281,6 +315,8 @@ class BFZIV148Adapter:
         unit_j = np.stack([-gamma[:,None]*px for px in P],axis=1)
         weak=(_weak_q(C,X,G,GX,sig,self.mass,self.vol,self.omega,self.mu)
               if self.heat_mode=="port-weak" else None)
+        if weak is not None and cov is not None:
+            weak+=(self.omega*self.mu)**2*cov/self.vol[:,None,None]
         return V148State(z,total,zcu,unit_j,sig,res,weak)
 
     def heat(self, state, currents):
