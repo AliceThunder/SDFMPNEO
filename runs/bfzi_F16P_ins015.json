@@ -1,0 +1,80 @@
+{
+  "method": "BFZI V150 corrected copper geometry; fixed skin depth",
+  "settings": {
+    "spec_file": "runs\\bfzi_physical_cases.json",
+    "inner_step_s": 2,
+    "dt": [
+      15
+    ],
+    "grids": [
+      "ultra"
+    ],
+    "grid_sizes_m": {
+      "ultra": [
+        0.05,
+        0.04
+      ]
+    },
+    "grid_max_nodes": 4000,
+    "skin_m": 0.002,
+    "ins_k": 0.15,
+    "ins_t": null,
+    "sea_max_K": 373.15,
+    "cu_max_K": 1357.77,
+    "pkg_max_K": null
+  },
+  "cases": {
+    "F16P": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15,
+          "inner_step_s": 2,
+          "completed_s": 600,
+          "elapsed_s": 169.86072599999898,
+          "copper_to_package_G_W_K": [
+            10.087991369664968,
+            10.087991369664971
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0044672524551429005,
+          "skin_water_capacity_error_J_K": 0,
+          "peak_thermal_residual_W": 0.000008641040153634094,
+          "peak_global_budget_W": 0.0000027184767077415017,
+          "max_port_power_residual_W": 5.4569682106375694e-12,
+          "max_rel_port_power": 1.2581514864453094e-15,
+          "max_rel_q_power": 3.9707746872215814e-16,
+          "heat_cap_J_K": {
+            "seawater": 379662.66354169784,
+            "package": 1626.5040000000001,
+            "copper": 54.34631972747759
+          },
+          "max_copper_K": 405.9414761080898,
+          "max_package_K": 353.3900242132036,
+          "max_water_K": 314.91803759034724,
+          "max_copper_loss_W": 696.1409981211679,
+          "max_lead_loss_W": 168.69909778496958,
+          "max_sea_loss_W": 588.0656577381421,
+          "max_source_power_W": 4337.290278180487,
+          "peak_ambient_loss_W": 0.17463155450350837,
+          "max_storage_rate_W": 1284.7877173178067
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    }
+  },
+  "provenance": {
+    "host": "XEnergy-Zhucy",
+    "date": "2026-11-14",
+    "purpose": "insulation-conductivity sensitivity; material calibration pending"
+  }
+}
