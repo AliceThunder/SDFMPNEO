@@ -41,6 +41,10 @@ python -m examples.bfzi_physics_recheck --bfzi-root /path/to/BFZI --keys F12 F14
 
 新诊断默认分别输出 `runs/bfzi_physics_audit.json`、`runs/bfzi_physics_recheck.json`，有效时程另存 `runs/bfzi_phys_<case>_<grid>_dt<step>.npz`。冻结的 `runs/bfzi_final_*.npz` 不受影响。
 
+### 新增数值求解一致性修复
+
+原热步在最大固定点迭代次数后直接返回上次猜测，可能将尚未满足 `C ΔT/dt+H T=Q(T)` 的结果作为物理时程。现要求每步固定点残差温度 <1e-5 K，最多16次迭代，未收敛时报告求解失败。用于新验收的热网络不得使用旧未收敛结果。几何传热长度现在仅取封装内绕组 `fam.active.dl`，避免将外部引线错误计入封装导热面积。
+
 ## 3. 闭合准则与当前状态
 
 | 任务 | 判定准则 | 当前结果 |
@@ -52,6 +56,6 @@ python -m examples.bfzi_physics_recheck --bfzi-root /path/to/BFZI --keys F12 F14
 
 ## 4. 本轮运行边界
 
-仓库可通过 GitHub 插件读写及提交。沙箱尝试 `git ls-remote` 时 GitHub DNS 无法解析；独立 BFZI V150 源码和冻结 2 MB 级 NPZ 未能传入沙箱，因此**未在本轮执行原 BFZI F12/F14/F16 完整动态复算，也未生成新的物理验收数值**。只进行了守恒 RC 简化模型的沙箱计算：5.5 m 导线、1 mm 半径、0.5 mm 绝缘厚度、k=0.25 W/(m K) 时 `G=21.307 W/K`；相同 200 W 热输入/600 s 的简化双节点模型旧/新铜温升分别 348.28/109.13 K，热收支误差约 1.7e-13 W。**这只验证热导公式及其对热路的作用，不作为 BFZI F14 的新物理结果。**
+仓库可通过 GitHub 插件读写及提交。沙箱尝试 `git ls-remote` 时 GitHub DNS 无法解析；独立 BFZI V150 源码和冻结 2 MB 级 NPZ 未能传入沙箱，因此**未在本轮执行原 BFZI F12/F14/F16 完整动态复算，也未生成新的物理验收数值**。只进行了守恒 RC 简化模型的沙箱计算：5.5 m 导线、1 mm 半径、0.5 mm 绝缘厚度、k=0.25 W/(m K) 时 `G=21.307 W/K`；相同 200 W 热输入/600 s 的简化双节点模型旧/新铜温升分别 312.12/83.16 K（封装温升 68.73/73.94 K），最大离散热收支误差约 1.23e-12 W。**这只验证热导公式及其对热路的作用，不作为 BFZI F14 的新物理结果。**
 
 下一次主线只做冻结 NPZ 的逐通道审计和 F12/F14/F16 固定 2 mm 热层、两档 dt 与两档网格复算。得到合格参考后重新开始神经代理评价。
