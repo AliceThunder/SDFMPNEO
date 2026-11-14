@@ -192,6 +192,7 @@ def main():
                 if a.skin_heat=="source":
                     with np.load(a.runs/f"{stem}_subcell_subcell_{label}.npz") as base:
                         bT=base["temp_K"];bZ=base["z6"]
+                        bsea=base["sea_T_K"]
                     bp,bc=view(bT,et)
                     g["levels"][label]["vs_volume_heat"]=dict(
                         dynamic_delta_Z_relative_L2=float(np.linalg.norm(
@@ -201,7 +202,7 @@ def main():
                         copper_max_abs_K=float(np.max(abs(cu-bc))),
                         sea_mean_max_abs_K=float(np.max(abs(
                             (item["sea_T_K"]@em.vol)/em.vol.sum()-
-                            (base["sea_T_K"]@em.vol)/em.vol.sum()))))
+                            (bsea@em.vol)/em.vol.sum()))))
                 print(name,mask,label,"wet",et.count,
                       "qskin",item["q_skin_samples"],"energy",
                       round(item["max_node_budget_W"],8),
