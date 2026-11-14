@@ -57,3 +57,17 @@ def test_rotation_equivariance_and_cold_geometry_validation():
                for k in x)
     with pytest.raises(ValueError,match="positive"):
         face_links(wet,cells,half,np.eye(3),dims,10,.25,.6,0.)
+
+
+def test_normal_sea_gap_is_positive_and_conservative():
+    wet,cells,half,dims=sample()
+    a=face_links(wet,cells,half,np.eye(3),dims,100,.25,.6,20.)
+    b=face_links(wet,cells,half,np.eye(3),dims,100,.25,.6,20.,
+                 distance="normal")
+    assert len(a)==len(b)
+    assert all(i==j and k==m and y>=x
+               for (i,k,x),(j,m,y) in zip(a,b))
+    assert sum(x[2] for x in b)>=sum(x[2] for x in a)
+    with pytest.raises(ValueError,match="distance"):
+        face_links(wet,cells,half,np.eye(3),dims,100,.25,.6,20.,
+                   distance="invalid")
