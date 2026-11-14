@@ -65,8 +65,9 @@ def march(et,spec,dt):
             break
         sea=float(q@et.model.vol)
         pext=float(.5*np.vdot(I,et.external@I).real)
+        pleads=float(.5*np.dot(z.lead_z.real,abs(I)**2))
         pin=float(.5*np.vdot(v,I).real)
-        pbal=pin-(sea+float(cu.sum())+pext)
+        pbal=pin-(sea+float(cu.sum())+pleads+pext)
         port_sea=float(.5*np.vdot(I,z.sea_z@I).real)
         qrel.append(abs(port_sea-sea)/max(abs(port_sea),1e-12))
         if k:
@@ -84,7 +85,7 @@ def march(et,spec,dt):
         ps.append(sea)
         cs.append(cu.copy())
         curr.append(I.copy())
-        power.append([pin,sea,float(cu.sum()),pext,pbal])
+        power.append([pin,sea,float(cu.sum()),pleads,pext,pbal])
         prev=theta.copy()
     node=max(residual,default=0.)
     global_budget=max((abs(x[3]) for x in therm),default=0.)
@@ -118,6 +119,7 @@ def march(et,spec,dt):
                    max_water_K=float(max(temp[:,:et.count].max(),
                                          temp[:,et.skin].max())),
                    max_copper_loss_W=float(np.max(np.sum(cs,axis=1))),
+                   max_lead_loss_W=float(np.max(np.asarray(power)[:,3])),
                    max_sea_loss_W=float(np.max(ps)),
                    max_source_power_W=float(np.max(np.asarray(power)[:,0])),
                    peak_ambient_loss_W=float(np.max(np.asarray(therm)[:,1])),
