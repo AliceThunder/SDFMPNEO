@@ -147,7 +147,7 @@ class BFZIV148ET:
         power[self.cu]=cu
         return m,I,power,q,cu
 
-    def advance(self,state,drive,dt,*,iterations=8,tol=1e-5):
+    def advance(self,state,drive,dt,*,iterations=16,tol=1e-5):
         if not np.isfinite(dt) or dt<=0:
             raise ValueError("positive thermal time step required")
         old=np.asarray(state,float)
@@ -161,10 +161,14 @@ class BFZIV148ET:
         for _ in range(iterations):
             _,_,heat,_,_=self.em(theta,drive)
             nxt=solve(self.cap*old+dt*heat)
-            if np.max(abs(nxt-theta)) < tol:
-                break
+            err=float(np.max(abs(nxt-theta)))
+            if not np.isfinite(err):
+                raise RuntimeError('BFZI thermal fixed point became nonfinite')
+            if err < tol:
+                return nxt
             theta=nxt
-        return nxt
+        raise RuntimeError(f'BFZI thermal fixed point did not converge: '
+                           f'{err:.4g} K after {iterations} iterations')
 
     def trajectory(self,times,voltage_at,*,state=None):
         times=np.asarray(times,float)
