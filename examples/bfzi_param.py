@@ -248,7 +248,9 @@ def main():
     p.add_argument("--sea-grid-layers",type=int,default=0)
     p.add_argument("--sea-grid-factor",type=float,default=.5)
     p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
-    p.add_argument("--sea-source-mask",choices=("legacy","oriented"),
+    p.add_argument("--sea-source-radius",type=float,default=.06,
+                   help="Fixed physical source moment radius, m")
+    p.add_argument("--sea-source-mask",choices=("legacy","oriented","physical"),
                    default="legacy",help="Original global or coil-local weak Joule source support")
     p.add_argument("--sea-fv-faces",choices=("approx","exact"),
                    default="approx",help="Original volume-fraction or exact OBB wetted FV shared faces")
@@ -302,7 +304,8 @@ def main():
     from sdfmpneo_bfzi.geom_heat import GeomHeat
     t0=time.perf_counter()
     em=BFZIV148Adapter(data,bf,heat_mode="port-weak",fv_faces=a.sea_fv_faces,
-                       source_mask=a.sea_source_mask)
+                       source_mask=a.sea_source_mask,
+                       source_radius=a.sea_source_radius)
     ex=np.diag([.5-1j*em.omega*em.air[0,0],
                 .5-1j*em.omega*em.air[1,1]])
     et=BFZIV148Pkg3D(
@@ -346,6 +349,7 @@ def main():
                 sea_void_model=a.sea_void,
                 sea_fv_faces=a.sea_fv_faces,
                 sea_source_mask=a.sea_source_mask,
+                sea_source_radius_m=a.sea_source_radius,
                 pkg_sea_model=a.pkg_sea_model,
                 pkg_sea_h_W_m2K=(a.pkg_sea_h if a.pkg_sea_model=="face-resistance" else None),
                 pkg_sea_quad=(a.pkg_sea_quad if a.pkg_sea_model=="face-resistance" else None),
