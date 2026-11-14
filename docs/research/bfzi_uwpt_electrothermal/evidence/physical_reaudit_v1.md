@@ -9,6 +9,8 @@
 3. **旧高功率验收缺少必要的逐通道证据。** `bfzi_final_Fij.npz` 已保存物理 `Pcu_truth`、`Psea_truth`、`temp_truth`，但旧 JSON 只报告热收支残差，不报告铜/海水损耗峰值、累计焦耳能量及第一次超出物性范围的时间。
 4. **旧几何之间改变了水热边界层的物理厚度。** `bfzi_final_accept.py` 在 2 mm 壳与湿 FV 容量不适配时，回退到 0.8/0.2/0.05 mm。这改变了热算子的物理问题，也妨碍同一基准的空间收敛比较。
 
+5. **旧验收将代理的守恒指标误当成物理可信度依据。** `examples/bfzi_final_accept.py` 中 `energy=metrics(full)` 验算的是代理预测；物理真值 `truth["max_total_budget_W"]` 仅存入 `physical_budget_W`，未进入 `passed` 判据。冻结 JSON 的 F14 `physical_budget_W=0.0092383 W`，F16 为 `0.0112513 W`；原报告 F14 的 `max_rel_thermal_power=4.06e-9` 属于代理侧，**不可用于断言直接物理法热收支正确**。新复核分别验收物理端口—海水功率以及物理热节点方程残差。
+
 热网格方程为
 
 `C (theta_{n+1}-theta_n)/dt + H theta_{n+1} = Q(T_{n+1},I_{n+1})`。
