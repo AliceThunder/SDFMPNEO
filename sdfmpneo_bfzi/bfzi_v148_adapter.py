@@ -82,6 +82,8 @@ class V148State:
     sigma: np.ndarray
     residual: object
     weak_q: np.ndarray | None = None  # port-compatible W/m3 per unit-current pair
+    winding_z: np.ndarray | None = None  # enclosed winding impedance only
+    lead_z: np.ndarray | None = None     # external terminal copper impedance
 
 
 def _weak_q(C, X, G, GX, sigma, mass, vol, omega, mu):
@@ -240,25 +242,32 @@ class BFZIV148Adapter:
             # Neumann/GMD air calculation is needed for the time history.
             self.air = np.zeros((2,2),float)
             self.copper = None
+            self.lead_copper = None
             return
         self.air_uH,_ = calc.compute_air_matrix_direct_zlead(data)
         self.air = np.asarray(self.air_uH,float)*1e-6
-        lines = []
-        assemblies = []
+        wind=[]
+        leads=[]
+        assemblies=[]
         for fam in data["families"]:
-            geom,_ = calc._line_for_family_with_zlead(fam,data["cfg"])
-            lines.append(SimpleNamespace(line_elements=np.asarray(geom.dl,float)))
+            # The original port includes its +Z terminal lead. That remote
+            # conductor contributes to circuit impedance, but its heat and
+            # heat capacity do not belong to the enclosed winding node.
+            zgeom,_=calc.zlead_line_geom_for_coil(fam.coil,data["cfg"])
+            wind.append(SimpleNamespace(
+                line_elements=np.asarray(fam.active.dl,float)))
+            leads.append(SimpleNamespace(
+                line_elements=np.asarray(zgeom.dl,float)))
             assemblies.append(SimpleNamespace(
                 wire_radius=float(fam.coil.wire_radius_m),
                 material=ConductorMaterial(
                     copper_sigma,
                     resistance_temperature_coefficient=copper_alpha)))
-        self.copper = BFZISources(
-            SimpleNamespace(assemblies=assemblies),
-            self.omega/(2*np.pi),
-            tuple(lines),
-            self.air,
-        )
+        scene=SimpleNamespace(assemblies=assemblies)
+        self.copper=BFZISources(
+            scene,self.omega/(2*np.pi),tuple(wind),self.air)
+        self.lead_copper=BFZISources(
+            scene,self.omega/(2*np.pi),tuple(leads),self.air)
 
     def source_at(self, points):
         """Original BFZI two-port centerline plus z-lead at physical points."""
@@ -362,15 +371,19 @@ class BFZIV148Adapter:
         if cov is not None:
             dz+=(self.omega*self.mu)**2*np.sum(cov,axis=0)
         z = core.sym_complex(z+dz)
-        zcu = (np.zeros(2,complex) if self.copper is None
-               else self.copper.conductor_internal_impedance(tc))
+        z_w=(np.zeros(2,complex) if self.copper is None
+             else self.copper.conductor_internal_impedance(tc))
+        z_l=(np.zeros(2,complex) if self.lead_copper is None
+             else self.lead_copper.conductor_internal_impedance(
+                 np.full(2,self.ambient)))
+        zcu=z_w+z_l
         total = z+1j*self.omega*self.air+np.diag(zcu)
         unit_j = np.stack([-gamma[:,None]*px for px in P],axis=1)
         weak=(_weak_q(C,X,G,GX,sig,self.mass,self.vol,self.omega,self.mu)
               if self.heat_mode=="port-weak" else None)
         if weak is not None and cov is not None:
             weak+=(self.omega*self.mu)**2*cov/self.vol[:,None,None]
-        return V148State(z,total,zcu,unit_j,sig,res,weak)
+        return V148State(z,total,zcu,unit_j,sig,res,weak,z_w,z_l)
 
     def heat(self, state, currents):
         I = np.asarray(currents,complex)
@@ -400,5 +413,7 @@ class BFZIV148Adapter:
             variance=np.real(np.einsum(
                 "i,pij,j->p",I.conj(),self.mass,I,optimize=True))
             q+=.5*(self.omega*self.mu)**2*state.sigma*variance/self.vol
-        cu=.5*state.copper_z.real*abs(I)**2
+        zheat=(state.copper_z if state.winding_z is None
+               else state.winding_z)
+        cu=.5*zheat.real*abs(I)**2
         return q,cu
