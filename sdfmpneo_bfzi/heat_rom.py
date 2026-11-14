@@ -80,6 +80,44 @@ class HeatROM:
         fac = cho_factor(self.m + dt * self.k, check_finite=False)
         return cho_solve(fac, rhs, check_finite=False)
 
+
+    def rollout(self, et, times, voltage, *, iterations=8, tol=1e-5):
+        """Coupled reduced heat and original BFZI electromagnetic solve.
+
+        This is the physical-EM reference coupling for B; neural replacement
+        of the EM solve is handled by the subsequent surrogate stage.
+        """
+        t = np.asarray(times, float)
+        v = np.asarray(voltage, complex)
+        if (t.ndim != 1 or len(t) < 2 or t[0] != 0 or
+                np.any(np.diff(t) <= 0) or v.shape != (len(t), 2)):
+            raise ValueError("invalid thermal ROM time/voltage history")
+        if len(et.cap) != len(self.cap) or not np.allclose(et.cap, self.cap):
+            raise ValueError("ROM and BFZI thermal operators mismatch")
+        state = np.zeros(self.rank)
+        temps, z6, powers = [], [], []
+        from .geom_heat import pack
+        for j, now in enumerate(t):
+            if j:
+                dt = float(now - t[j-1])
+                old = state.copy()
+                guess = old.copy()
+                for _ in range(iterations):
+                    _, _, heat, _, _ = et.em(self.basis @ guess, v[j])
+                    nxt = self.step(old, heat, dt)
+                    if np.max(np.abs(self.basis @ (nxt - guess))) < tol:
+                        guess = nxt
+                        break
+                    guess = nxt
+                state = guess
+            theta = self.basis @ state
+            em, cur, heat, q, cu = et.em(theta, v[j])
+            temps.append(self.amb + theta)
+            z6.append(pack(em.total_z))
+            powers.append([float(np.dot(q, et.model.vol)), *np.asarray(cu, float)])
+        return dict(time_s=t, temp_K=np.asarray(temps),
+                    z6=np.asarray(z6), power_W=np.asarray(powers))
+
     def save(self, path):
         np.savez_compressed(Path(path), cap=self.cap, ambient=self.amb,
                             basis=self.basis, m=self.m, k=self.k,
