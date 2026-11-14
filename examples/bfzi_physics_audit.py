@@ -90,6 +90,7 @@ def main():
               "Pcu",round(x["peak_copper_W"],2),
               "Psea",round(x["peak_seawater_W"],2))
     out=dict(source="frozen BFZI V150 final 24-run reference NPZ",
+             historical_copper_power="Pcu_truth includes in-package winding and exterior terminal leads, all previously deposited into package copper heat state",
              material_scope="single-phase liquid seawater, solid copper",
              cases=result,
              summary=dict(checked=len(result),
