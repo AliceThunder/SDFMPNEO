@@ -2,9 +2,9 @@
   "method": "BFZI V150 corrected copper geometry; fixed skin depth",
   "settings": {
     "spec_file": "runs\\bfzi_physical_unseen12_corrected.json",
-    "inner_step_s": 2,
+    "inner_step_s": 2.0,
     "dt": [
-      15
+      15.0
     ],
     "grids": [
       "ultra"
@@ -20,7 +20,7 @@
     "ins_k": 0.25,
     "ins_t": null,
     "pkg_k": 0.25,
-    "pkg_sea_h": 20,
+    "pkg_sea_h": 20.0,
     "sea_max_K": 373.15,
     "cu_max_K": 1357.77,
     "pkg_max_K": null
@@ -31,9 +31,9 @@
         "ultra_dt15": {
           "status": "candidate",
           "failed_at": null,
-          "dt_s": 15,
+          "dt_s": 15.0,
           "inner_step_s": 1.875,
-          "completed_s": 600,
+          "completed_s": 600.0,
           "elapsed_s": 132.12261749999016,
           "copper_to_package_G_W_K": [
             27.205745075059408,
@@ -44,10 +44,10 @@
             0.00035943058495790513
           ],
           "skin_depth_m": 0.002,
-          "skin_clip_fraction": 0,
+          "skin_clip_fraction": 0.0,
           "skin_water_capacity_error_J_K": 5.820766091346741e-11,
-          "peak_thermal_residual_W": 0.0000018213959833701665,
-          "peak_global_budget_W": 3.9009353258734336e-7,
+          "peak_thermal_residual_W": 1.8213959833701665e-06,
+          "peak_global_budget_W": 3.9009353258734336e-07,
           "max_port_power_residual_W": 1.5916157281026244e-12,
           "max_rel_port_power": 1.051026953120338e-15,
           "max_rel_q_power": 3.479982691583116e-16,
@@ -73,11 +73,5 @@
       "space_convergence_pass": false,
       "accepted": false
     }
-  },
-  "provenance": {
-    "case": "U09 corrected",
-    "original": "runs/bfzi_physical_unseen12.json",
-    "corrected": "runs/bfzi_physical_unseen12_corrected.json",
-    "original_invalid_geometry": true
   }
 }
