@@ -21,11 +21,12 @@ class BFZIV148Pkg3D(BFZIV148ET):
     def __init__(self,model,*,pkg_shape=(4,2,4),pkg_k=.25,
                  sea_rhoc=4e6,sea_k=.6,pkg_rhoc=1.5e6,
                  pkg_sea_g=.6,cu_pkg_g=None,outer_h=10.,
-                  cu_ins_k=.25,cu_ins_t=.0005,
+                  cu_ins_k=.25,cu_ins_t=None,
                  pkg_sea_model="nearest",pkg_sea_h=20.,
                  pkg_sea_quad=2,pkg_sea_near=4,**kwargs):
-        if (not np.isfinite([cu_ins_k,cu_ins_t]).all() or
-                min(cu_ins_k,cu_ins_t)<=0 or
+        if (not np.isfinite(cu_ins_k) or cu_ins_k<=0 or
+                (cu_ins_t is not None and
+                 (not np.isfinite(cu_ins_t) or cu_ins_t<=0)) or
                 (cu_pkg_g is not None and
                  (not np.isfinite(cu_pkg_g) or cu_pkg_g<=0))):
             raise ValueError("positive finite winding insulation parameters required")
@@ -56,6 +57,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
         self.pkg_links=[]
         self.cu_links=[]
         self.cu_pkg_total=[]
+        self.cu_ins_layers=[]
         rows,cols,vals=[],[],[]
         def link(i,j,g):
             if g<=0:
@@ -141,14 +143,29 @@ class BFZIV148Pkg3D(BFZIV148ET):
             # Radial conduction across the real wire insulation/potting:
             # R = ln((r+t)/r)/(2*pi*k*L), independent of FV grid size.
             # An explicit cu_pkg_g retains historical lumped comparisons.
+            radius=float(model.copper.scene.assemblies[p].wire_radius)
+            if cu_ins_t is None:
+                # Original BFZI V150 describes both the bare conductor
+                # and its insulated envelope. Use these same dimensions.
+                cfg=model.base["cfg"]
+                sample=model.base["sample"]
+                ins_r=cfg.get("BSR_INSULATED_WIRE_RADIUS_M")
+                if ins_r is None and "insulated_wire_d_mm" in sample:
+                    ins_r=.0005*float(sample["insulated_wire_d_mm"])
+                if ins_r is None:
+                    raise ValueError("BFZI insulated wire radius is missing")
+                layer=float(ins_r)-radius
+            else:
+                layer=float(cu_ins_t)
+            if not np.isfinite(layer) or layer<=0:
+                raise ValueError("BFZI wire insulation must exceed copper radius")
+            self.cu_ins_layers.append(layer)
             if cu_pkg_g is None:
-                radius=float(model.copper.scene.assemblies[p].wire_radius)
-                # Only winding length inside the sealed package conducts
-                # radially to this package. Remote leads are not attached.
+                # Only enclosed winding length conducts into this package.
                 length=float(np.sum(np.linalg.norm(dl,axis=1)))
                 if radius<=0 or length<=0:
                     raise ValueError("invalid physical copper wire length/radius")
-                total_g=2*np.pi*cu_ins_k*length/np.log1p(cu_ins_t/radius)
+                total_g=2*np.pi*cu_ins_k*length/np.log1p(layer/radius)
             else:
                 total_g=float(cu_pkg_g)
             self.cu_pkg_total.append(total_g)
