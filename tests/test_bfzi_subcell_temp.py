@@ -66,3 +66,22 @@ def test_subcell_conservative_target_mean_keeps_local_covariance():
     assert np.allclose(old,local,rtol=1e-12,atol=1e-12)
     with pytest.raises(ValueError,match="mean"):
         em.subcell_temp(field,mean=np.zeros(2))
+
+
+def test_cached_native_source_reconstruction_recovers_original_mean():
+    from sdfmpneo_bfzi.near_source import local_j,local_q
+    em,_=adapter()
+    xyz,w,_=em.subcells[0]
+    src=np.array([[[1.,0,0],[0,2,0]],[[3.,0,0],[0,4,0]]])
+    em.subcells=[(xyz,w,np.einsum("qic,qjc->qij",src,src),src)]
+    em.source_mean=np.einsum("q,qpc->pc",w,src)[None]/w.sum()
+    em.omega=2.
+    em.mu=.25
+    coords,weights,owner,fields=em.source_native()
+    sig=np.array([3.])
+    bar=np.array([[1.+2j,2,0]])
+    cur=np.array([2j,1.+0j])
+    j=em.sample_j(bar,sig,cur,coords,owner,source=fields)
+    assert np.allclose(np.sum(weights[:,None]*j,axis=0)/weights.sum(),bar[0])
+    heat,scale=local_q(j,sig,np.array([2.]),em.vol,owner,weights)
+    assert np.isclose(weights@heat,2.*em.vol[0])

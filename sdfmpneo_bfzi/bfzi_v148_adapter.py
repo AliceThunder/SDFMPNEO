@@ -183,7 +183,7 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
             fields=np.stack(src,axis=1)
             moments=np.einsum("qic,qjc->qij",fields,fields,optimize=True)
             extra[p]=(np.asarray(q,float),np.asarray(w,float),
-                      np.asarray(moments,float))
+                      np.asarray(moments,float),np.asarray(fields,float))
         for i in range(len(fams)):
             for j in range(i,len(fams)):
                 if masks[i][p] and masks[j][p]:
@@ -231,6 +231,10 @@ class BFZIV148Adapter:
                        source_radius=source_radius)
         self.mass,self.subcells=(result if source_mask=="subcell"
                                  else (result,None))
+        self.source_mean=(np.stack([
+            np.einsum("q,qpc->pc",rec[1],rec[3])/rec[1].sum()
+            for rec in self.subcells])
+            if self.subcells is not None else None)
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
             # Neumann/GMD air calculation is needed for the time history.
@@ -256,6 +260,46 @@ class BFZIV148Adapter:
             self.air,
         )
 
+    def source_at(self, points):
+        """Original BFZI two-port centerline plus z-lead at physical points."""
+        if self.subcells is None:
+            raise ValueError("near-source spatial query requires subcell")
+        q=np.asarray(points,float)
+        if q.ndim!=2 or q.shape[1]!=3:
+            raise ValueError("physical source query requires (n,3) points")
+        fields=[]
+        cfg=self.base["cfg"]
+        for fam in self.base["families"]:
+            geom,_=self.calc.zlead_line_geom_for_coil(fam.coil,cfg)
+            source=self.calc.fs.air_projection_to_points_centerline_family_quadratic(
+                q,fam,point_chunk=512)
+            if len(geom.pos):
+                source+=self.calc.base._air_projection_to_points(
+                    q,np.asarray(geom.pos,float),np.asarray(geom.dl,float),
+                    chunk_points=512,chunk_line=1024)
+            fields.append(source)
+        return np.stack(fields,axis=1)
+
+    def source_native(self):
+        """Exact source moments at the original FV integration points."""
+        if self.subcells is None:
+            raise ValueError("near-source spatial query requires subcell")
+        pts=np.concatenate([r[0] for r in self.subcells])
+        weights=np.concatenate([r[1] for r in self.subcells])
+        fields=np.concatenate([r[3] for r in self.subcells])
+        cells=np.repeat(np.arange(len(self.vol)),
+                        [len(r[1]) for r in self.subcells])
+        return pts,weights,cells,fields
+
+    def sample_j(self, jbar, sigma, current, points, cell, *, source=None):
+        """Recover the original near-source field without a new GMRES solve."""
+        from .near_source import local_j
+        if self.source_mean is None:
+            raise ValueError("near-source spatial query requires subcell")
+        C=self.source_at(points) if source is None else np.asarray(source,float)
+        return local_j(jbar,sigma,current,C,self.source_mean,cell,
+                       self.omega*self.mu)
+
     def subcell_temp(self, fn, mean=None):
         """Original wet-FV quadrature of temperature and local source covariance.
 
@@ -272,7 +316,7 @@ class BFZIV148Adapter:
             raise ValueError("conservative wet FV temperature mean invalid")
         cov=np.zeros((len(self.vol),2,2))
         for p,item in enumerate(self.subcells):
-            q,w,m=item
+            q,w,m=item[:3]
             tq=np.asarray(fn(q),float)
             if tq.shape!=(len(w),) or not np.isfinite(tq).all():
                 raise ValueError("physical temperature must match wet FV quadrature")
