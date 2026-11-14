@@ -92,6 +92,10 @@ def main():
     p.add_argument("--layers",type=int,default=8)
     p.add_argument("--ratio",type=float,default=1.4)
     p.add_argument("--skin-map",type=int,choices=(1,2),default=2)
+    p.add_argument("--gap-bridge",action="store_true")
+    p.add_argument("--gap-max",type=float,default=.012)
+    p.add_argument("--gap-quad",type=int,default=4)
+    p.add_argument("--gap-align",type=float,default=.5)
     p.add_argument("--thermal-only",action="store_true")
     p.add_argument("--out",type=Path,default=Path(
         "runs/bfzi_obb_layer.json"))
@@ -101,6 +105,8 @@ def main():
     out=dict(method="original BFZI V150 passive conservative finite sea skin",
              skin_depth_m=a.depth,skin_layers=a.layers,skin_ratio=a.ratio,
              skin_map_order=a.skin_map,
+             gap_bridge=a.gap_bridge,gap_max_m=a.gap_max,
+             gap_quad=a.gap_quad,gap_align=a.gap_align,
              skin_q_remapped=True,sea_volume_conserved=True,
              geometries={})
     for name in a.poses:
@@ -125,8 +131,9 @@ def main():
                 em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
                 skin_depth=a.depth,skin_layers=a.layers,
                 skin_ratio=a.ratio,skin_quad=2,skin_near=4,
-                skin_map=a.skin_map,
-                pkg_sea_h=20.)
+                skin_map=a.skin_map,gap_bridge=a.gap_bridge,
+                gap_max=a.gap_max,gap_quad=a.gap_quad,
+                gap_align=a.gap_align,pkg_sea_h=20.)
             setup=time.perf_counter()-tic
             cu,sea=cold_force(et)
             unit={}
@@ -145,7 +152,8 @@ def main():
                      unit_power=unit)
             if not a.thermal_only:
                 pred=run(et,prog["time_s"],prog["voltage_v"])
-                f=a.runs/f"bfzi_pose_{name.lower()}_layer_{label}.npz"
+                tag="bridge" if a.gap_bridge else "layer"
+                f=a.runs/f"bfzi_pose_{name.lower()}_{tag}_{label}.npz"
                 np.savez_compressed(
                     f,time_s=prog["time_s"],voltage_v=prog["voltage_v"],
                     temp_K=pred["temp_K"],z6=pred["z6"],
@@ -179,6 +187,8 @@ def main():
                   round(et.skin_info["max_wet_fraction"],5),
                   "unitCuPkg",round(unit["copper"]["pkg_final_K"],6),
                   "unitSeaPkg",round(unit["seawater"]["pkg_final_K"],6),
+                  "bridge",et.skin_info["gap"]["bridges"],
+                  "bridge_G",round(et.skin_info["gap"]["G_W_K"],6),
                   "time",round(setup,2),flush=True)
         if all(key in g["levels"] for key in GRIDS):
             m,f="medium","extra"
