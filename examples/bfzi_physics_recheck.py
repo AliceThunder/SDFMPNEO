@@ -104,6 +104,8 @@ def march(et,spec,dt):
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
              insulation_layer_m=list(map(float,et.cu_ins_layers)),
              skin_depth_m=float(et.skin_depth),
+             skin_clip_fraction=float(et.skin_info["clipped_shell_fraction"]),
+             skin_water_capacity_error_J_K=float(et.skin_info["sea_cap_delta_J_K"]),
              peak_thermal_residual_W=node,
              peak_global_budget_W=global_budget,
              max_port_power_residual_W=max((abs(p[-1]) for p in power),default=0.),
@@ -223,10 +225,34 @@ def main():
                 # Compare only valid shared history before any phase-limit
                 # crossing; this does not turn the full case into a pass.
                 checks[grid]=compare(c,f)
-        if ("medium_dt30" in history and "extra_dt30" in history):
-            checks["space_dt30"]=compare(
-                history["medium_dt30"],history["extra_dt30"])
-        results[key]=dict(runs=rows,comparisons=checks)
+        for dt in a.dt:
+            med=f"medium_dt{dt:g}"
+            ex=f"extra_dt{dt:g}"
+            if med in history and ex in history:
+                checks[f"space_dt{dt:g}"]=compare(history[med],history[ex])
+        # A physically valid prefix remains diagnostic until the full drive
+        # and all requested resolution checks meet the locked gate.
+        full=all(r.get("status")=="candidate" for r in rows.values())
+        def gate(v,kind):
+            if v is None:
+                return False
+            zlim,clim,plim=((.01,.5,.5) if kind=="time"
+                            else (.02,1.,1.5))
+            return (v["delta_Z_relative_L2"]<=zlim and
+                    v["copper_abs_K"]<=clim and
+                    v["package_abs_K"]<=plim and
+                    not v["prefix_only"])
+        time_ok=(len(a.dt)>=2 and
+                 all(gate(checks.get(g),"time") for g in a.grids))
+        space_ok=(len(a.grids)>=2 and
+                  all(gate(checks.get(f"space_dt{dt:g}"),"space")
+                      for dt in a.dt))
+        accepted=bool(full and time_ok and space_ok)
+        results[key]=dict(runs=rows,comparisons=checks,
+                          physical_full_horizon=bool(full),
+                          time_convergence_pass=bool(time_ok),
+                          space_convergence_pass=bool(space_ok),
+                          accepted=accepted)
         dest=a.out or a.runs/"bfzi_physics_recheck.json"
         dest.parent.mkdir(parents=True,exist_ok=True)
         dest.write_text(json.dumps(dict(
