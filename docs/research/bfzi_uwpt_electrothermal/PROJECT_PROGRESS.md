@@ -670,3 +670,7 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 ### 2026-11-14 — 最终独立验收 12 样本已冻结并启动
 
 已将 U01–U12 共 12 个从未用于模型调试的几何/位姿/电压/热物性组合一次性冻结在 [`runs/bfzi_physical_unseen12.json`](../../../runs/bfzi_physical_unseen12.json)，种子 20261114，覆盖圆形与连续过渡形状、65/80/95/110 V、绝缘导热 0.15/0.25/0.40 W/(m·K)、封装导热 0.15/0.25/0.40 W/(m·K)、封装—海水换热 10/20/40 W/(m²·K)，两种通断电波形及完整 600 s。每工况 `thermal` 输入已接入物理直接法，22 项相关测试通过。XEnergy 已启动原生 ultra 网格、实际热步 1.875 s 的全部样本首轮计算；最终四组合时空验收 **OPEN**。执行方案见 [`PHYSICAL_DIRECT_FINAL_ACCEPTANCE_V1.md`](PHYSICAL_DIRECT_FINAL_ACCEPTANCE_V1.md)。
+
+### 2026-11-15 — 独立 U01–U12 首轮中间验收
+
+原冻结 12 组首轮 BFZI V150 物理直接法，U01–U08 均完整运行 600 s，记录状态 `candidate`，铜峰值分别为 **345.152、368.219、334.784、435.976、330.835、309.113、403.561、408.656 K**；海水峰值 298.865–322.981 K，原始数值记录 [`runs/bfzi_physical_unseen12_probe.json`](../../../runs/bfzi_physical_unseen12_probe.json)。U09 的 `alpha2=0.9851324744, core2_mm=25` 被 BFZI `_validate_coil` 判定几何内圆角无效，**原始 U09 输入失败已保留**。在 [`runs/bfzi_physical_unseen12_corrected.json`](../../../runs/bfzi_physical_unseen12_corrected.json) 仅将 U09 改为 `alpha2=0.86, core2_mm=20`，已通过 BFZI 原生几何构建预检（2672 湿 FV）；U09 修订样本与 U10–U12 已分别启动。验收执行器已支持对几何无效样本记录失败并继续处理后续工况。**目前仅首轮 8/12 组完成，四组合时空验收 OPEN，不得宣布 12/12 PASS。**
