@@ -180,9 +180,9 @@ def main():
                 e=run[mask,"extra"]
                 g["cross_grid"]=dict(
                     **compare(m,e),**field_diff(m,e),
-                    max_sea_mean_abs_K=float(
-                        np.max(abs(m["sea_T_K"].mean(axis=1)-
-                                   e["sea_T_K"].mean(axis=1)))))
+                    max_sea_mean_abs_K=float(np.max(abs(
+                        (m["sea_T_K"]@m["sea_vol"])/m["sea_vol"].sum()-
+                        (e["sea_T_K"]@e["sea_vol"])/e["sea_vol"].sum()))))
             group["modes"][mask]=g
             out["geometries"][name]=group
             a.out.parent.mkdir(parents=True,exist_ok=True)
