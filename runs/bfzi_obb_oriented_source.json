@@ -1,0 +1,158 @@
+{
+  "method": "original BFZI V150 true OBB wet FV face polygon",
+  "original_Green_solver": true,
+  "geometries": {
+    "P03": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "setup_sec": 1.4225394000095548,
+          "direct_sec": 4.018553200003225,
+          "material_budget_W": 5.212464486703539e-07,
+          "FV_edges": 1500,
+          "exact_face_corrected_edges": 172,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.23574282046548767,
+            20.00476635541092,
+            0.078907135788996,
+            4.29188632018614,
+            0.24548033160799138,
+            17.752452724356978
+          ],
+          "weak_mass_cells": 17,
+          "weak_mass_l2": 0.0009912589480673905,
+          "thermal_file": "runs\\bfzi_pose_p03_source_medium.npz",
+          "interface_G_W_K": [
+            0.6819704687017497,
+            0.8307100270242536
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 0.0010038264213466093,
+            "thermal_delta_Z_relative_L2": 0.006353820873752392,
+            "absolute_Z_difference_over_thermal_delta": 1.7906721875391658,
+            "sea_interpolated_max_abs_K": 0.055533323352563,
+            "package_max_abs_K": 0.04998882075619804,
+            "copper_max_abs_K": 0.1597523349313974
+          },
+          "vs_exact_extra": {
+            "cold_Z_relative_L2": 0.0008311271432198001,
+            "thermal_delta_Z_relative_L2": 0.010469337285466571,
+            "absolute_Z_difference_over_thermal_delta": 1.48388443286555,
+            "sea_interpolated_max_abs_K": 1.0221188318499799,
+            "package_max_abs_K": 1.23161399942785,
+            "copper_max_abs_K": 0.4877931177716164
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "setup_sec": 2.6387171000096714,
+          "direct_sec": 11.40930370001297,
+          "material_budget_W": 5.144964347891801e-07,
+          "FV_edges": 3562,
+          "exact_face_corrected_edges": 219,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.2556940893376318,
+            20.00437167576216,
+            0.08898760685127079,
+            4.291619966754886,
+            0.2481189214811999,
+            17.752174468544055
+          ],
+          "weak_mass_cells": 50,
+          "weak_mass_l2": 0.0003150378701974187,
+          "thermal_file": "runs\\bfzi_pose_p03_source_extra.npz",
+          "interface_G_W_K": [
+            0.8296092678892847,
+            0.9173634580028985
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 0.00035333998573926386,
+            "thermal_delta_Z_relative_L2": 0.002463690230694785,
+            "absolute_Z_difference_over_thermal_delta": 0.6290324785972833,
+            "sea_interpolated_max_abs_K": 0.10158927294583009,
+            "package_max_abs_K": 0.019504423803653026,
+            "copper_max_abs_K": 0.0707263002825016
+          }
+        }
+      }
+    },
+    "P07": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "setup_sec": 1.5502275000035297,
+          "direct_sec": 10.230621800001245,
+          "material_budget_W": 1.8729558064478624e-06,
+          "FV_edges": 1500,
+          "exact_face_corrected_edges": 186,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.23551433895092,
+            20.004774456509665,
+            0.07059699546034107,
+            3.2519595992973853,
+            0.24822799482406413,
+            18.123651362049262
+          ],
+          "weak_mass_cells": 18,
+          "weak_mass_l2": 0.0011031905095601655,
+          "thermal_file": "runs\\bfzi_pose_p07_source_medium.npz",
+          "interface_G_W_K": [
+            0.7147485153698501,
+            0.8425454179841427
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 0.0009681596610979521,
+            "thermal_delta_Z_relative_L2": 0.0058341764715718,
+            "absolute_Z_difference_over_thermal_delta": 0.40126885732500617,
+            "sea_interpolated_max_abs_K": 0.2655028697248554,
+            "package_max_abs_K": 0.5401883941600545,
+            "copper_max_abs_K": 1.6399013262919198
+          },
+          "vs_exact_extra": {
+            "cold_Z_relative_L2": 0.0008531551478956751,
+            "thermal_delta_Z_relative_L2": 0.009384974337251282,
+            "absolute_Z_difference_over_thermal_delta": 0.3556563262429847,
+            "sea_interpolated_max_abs_K": 3.038879856275855,
+            "package_max_abs_K": 5.477805687483681,
+            "copper_max_abs_K": 4.3718980092589845
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "setup_sec": 2.4011031999980332,
+          "direct_sec": 29.324105899999267,
+          "material_budget_W": 2.0526564696865535e-06,
+          "FV_edges": 3562,
+          "exact_face_corrected_edges": 271,
+          "exact_face_removed_edges": 0,
+          "cold_z6": [
+            0.25624319950786445,
+            20.004359574773275,
+            0.07938805119912004,
+            3.2517292660283226,
+            0.25378270496215893,
+            18.123338663201498
+          ],
+          "weak_mass_cells": 54,
+          "weak_mass_l2": 0.00033614364516785947,
+          "thermal_file": "runs\\bfzi_pose_p07_source_extra.npz",
+          "interface_G_W_K": [
+            0.866695611328883,
+            0.9491073806893169
+          ],
+          "same_mesh_vs_volume_fraction": {
+            "cold_Z_relative_L2": 0.00033245492498000696,
+            "thermal_delta_Z_relative_L2": 0.002082809917689519,
+            "absolute_Z_difference_over_thermal_delta": 0.1372410619245769,
+            "sea_interpolated_max_abs_K": 0.29851939877590894,
+            "package_max_abs_K": 0.19918502354499878,
+            "copper_max_abs_K": 0.5857775224806119
+          }
+        }
+      }
+    }
+  }
+}

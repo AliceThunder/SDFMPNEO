@@ -1,0 +1,155 @@
+{
+  "experiment": "Original BFZI constant unit-power thermal forcing",
+  "source_mask": "legacy",
+  "source_radius_m": 0.06,
+  "pkg_sea_model": "face-normal",
+  "material_sea_k_W_mK": 0.6,
+  "material_sea_rhoc_J_m3K": 4000000.0,
+  "diffusion_length_600s_m": 0.009486832980505138,
+  "geometries": {
+    "P03": {
+      "levels": {
+        "medium": {
+          "sea_cells": 572,
+          "pkg_G_W_K": [
+            0.9798371904354151,
+            1.1710059760071503
+          ],
+          "sea_power_near_20mm": 0.4107334637804602,
+          "sea_power_mean_xyz_m": [
+            0.005114772994908324,
+            0.036200235965920174,
+            0.00417182485513013
+          ],
+          "sea_power_total_W": 29.567525688760412,
+          "copper": {
+            "package_final_K": 0.6912574545311232,
+            "package_peak_K": 0.6912574545311232,
+            "copper_final_K": 1.819518540772257,
+            "copper_peak_K": 1.819518540772257,
+            "sea_peak_K": 0.10710046948940408
+          },
+          "seawater": {
+            "package_final_K": 0.00497735063733904,
+            "package_peak_K": 0.00497735063733904,
+            "copper_final_K": 0.0032522675320448033,
+            "copper_peak_K": 0.0032522675320448033,
+            "sea_peak_K": 0.02583453746302341
+          }
+        },
+        "extra": {
+          "sea_cells": 1312,
+          "pkg_G_W_K": [
+            1.1275525746764918,
+            1.2265621099860275
+          ],
+          "sea_power_near_20mm": 0.3982517380142635,
+          "sea_power_mean_xyz_m": [
+            0.004835703781615567,
+            0.03514687446236171,
+            0.004882557006402856
+          ],
+          "sea_power_total_W": 30.650112765569087,
+          "copper": {
+            "package_final_K": 0.6932578933561202,
+            "package_peak_K": 0.6932578933561202,
+            "copper_final_K": 1.7999133266277205,
+            "copper_peak_K": 1.7999133266277205,
+            "sea_peak_K": 0.1050690234722555
+          },
+          "seawater": {
+            "package_final_K": 0.00761539648803337,
+            "package_peak_K": 0.00761539648803337,
+            "copper_final_K": 0.00432467584279326,
+            "copper_peak_K": 0.00432467584279326,
+            "sea_peak_K": 0.03861428103430688
+          }
+        }
+      },
+      "medium_vs_extra": {
+        "copper": {
+          "package_max_K": 0.043423135361367216,
+          "copper_max_K": 0.01960521414453642,
+          "package_final_K": 0.043423135361367216
+        },
+        "seawater": {
+          "package_max_K": 0.003644096448611755,
+          "copper_max_K": 0.0010724083107484564,
+          "package_final_K": 0.003644096448611755
+        }
+      }
+    },
+    "P07": {
+      "levels": {
+        "medium": {
+          "sea_cells": 572,
+          "pkg_G_W_K": [
+            1.03811531780891,
+            1.1721786886540884
+          ],
+          "sea_power_near_20mm": 0.3339049399623845,
+          "sea_power_mean_xyz_m": [
+            0.009858656425111688,
+            0.04378207484507167,
+            0.0073997540837483795
+          ],
+          "sea_power_total_W": 50.79013974132027,
+          "copper": {
+            "package_final_K": 0.7003681283318816,
+            "package_peak_K": 0.7003681283318816,
+            "copper_final_K": 1.8073808700180747,
+            "copper_peak_K": 1.8073808700180747,
+            "sea_peak_K": 0.08991133951910914
+          },
+          "seawater": {
+            "package_final_K": 0.004192760664606921,
+            "package_peak_K": 0.004192760664606921,
+            "copper_final_K": 0.0026878822543958017,
+            "copper_peak_K": 0.0026878822543958017,
+            "sea_peak_K": 0.021211360412962083
+          }
+        },
+        "extra": {
+          "sea_cells": 1312,
+          "pkg_G_W_K": [
+            1.1794628384465518,
+            1.2767173486660568
+          ],
+          "sea_power_near_20mm": 0.36863850478009746,
+          "sea_power_mean_xyz_m": [
+            0.008450923784684266,
+            0.0436691895901548,
+            0.00932960095079964
+          ],
+          "sea_power_total_W": 52.73014178656875,
+          "copper": {
+            "package_final_K": 0.6862180375217662,
+            "package_peak_K": 0.6862180375217662,
+            "copper_final_K": 1.7900828705150225,
+            "copper_peak_K": 1.7900828705150225,
+            "sea_peak_K": 0.10193623467448663
+          },
+          "seawater": {
+            "package_final_K": 0.0071266985089958115,
+            "package_peak_K": 0.0071266985089958115,
+            "copper_final_K": 0.004131641042040315,
+            "copper_peak_K": 0.004131641042040315,
+            "sea_peak_K": 0.03524678719427184
+          }
+        }
+      },
+      "medium_vs_extra": {
+        "copper": {
+          "package_max_K": 0.03947435158832935,
+          "copper_max_K": 0.01729799950305222,
+          "package_final_K": 0.03947435158832935
+        },
+        "seawater": {
+          "package_max_K": 0.0036300160331100683,
+          "copper_max_K": 0.0014437587876445133,
+          "package_final_K": 0.0036300160331100683
+        }
+      }
+    }
+  }
+}
