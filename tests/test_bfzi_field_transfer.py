@@ -41,3 +41,9 @@ def test_field_compare_removes_drive_amp_and_phase():
     assert res['raw'][1]>0.5
     assert np.isclose(res['shape'][1],0,atol=1e-12)
     assert res['thermal'][1] is None
+
+
+def test_original_wet_fv_face_tie_uses_deterministic_owner():
+    r=cells([([0,0,0],[.5,1,1]),([.5,0,0],[1,1,1])])
+    q=np.array([[.5,.2,.3],[1.5,.2,.3]])
+    assert owner(r,q,allow_face=True,allow_outside=True).tolist()==[0,-1]
