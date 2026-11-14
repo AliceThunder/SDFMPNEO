@@ -1,0 +1,201 @@
+"""Recheck BFZI V150 direct physics with one fixed material/skin model.
+
+No surrogate is imported or evaluated.  Untrusted high-temperature runs are
+recorded as out-of-domain, never silently used as reference truth.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+
+import numpy as np
+
+from examples.bfzi_final_accept import cases
+from examples.bfzi_param import originals,create
+from examples.bfzi_obb_layer_study import GRIDS
+from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
+from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
+from sdfmpneo_bfzi.sea_layer import BFZIV148Skin3D
+
+
+def build(data,bf,ext,opts):
+    em=BFZIV148Adapter(data,bf,heat_mode="port-weak",
+                      fv_faces="exact",source_mask="subcell")
+    em.alpha=opts["alpha"]
+    et=BFZIV148Skin3D(
+        em,external=ext,pkg_shape=(4,2,4),pkg_k=.25,
+        skin_depth=opts["skin"],skin_layers=8,skin_ratio=1.4,
+        skin_quad=2,skin_near=4,skin_map=2,pkg_sea_h=20.,
+        skin_heat="source",cu_ins_k=opts["ins_k"],cu_ins_t=opts["ins_t"],
+        sea_max_K=opts["sea_max"],cu_max_K=opts["cu_max"],
+        pkg_max_K=opts["pkg_max"])
+    return et
+
+
+def drive(spec,now):
+    voltage=float(spec["voltage"])
+    for t0,t1 in spec["off"]:
+        if t0<=now<t1:
+            voltage=0.
+            break
+    return np.array([voltage,0.],complex)
+
+
+def march(et,spec,dt):
+    t=np.arange(0.,float(spec["duration"])+dt*.5,dt)
+    if abs(t[-1]-spec["duration"])>1e-8:
+        raise ValueError("time step must exactly divide experiment duration")
+    theta=et.zeros()
+    prev=theta.copy()
+    zs=[];temps=[];ps=[];cs=[];power=[];curr=[];residual=[]
+    err=None
+    start=time.perf_counter()
+    for k,now in enumerate(t):
+        v=drive(spec,now)
+        try:
+            if k:
+                theta=et.advance(prev,v,dt)
+            z,I,heat,q,cu=et.em(theta,v)
+        except (ValueError,RuntimeError) as exc:
+            err=dict(time_s=float(now),reason=str(exc))
+            break
+        sea=float(q@et.model.vol)
+        pext=float(.5*np.vdot(I,et.external@I).real)
+        pin=float(.5*np.vdot(v,I).real)
+        pbal=pin-(sea+float(cu.sum())+pext)
+        if k:
+            bal=et.cap*(theta-prev)/dt+et.H@theta-heat
+            residual.append(float(np.max(abs(bal))))
+        else:
+            residual.append(0.)
+        zs.append(pack(z.total_z))
+        temps.append(et.amb+theta.copy())
+        ps.append(sea)
+        cs.append(cu.copy())
+        curr.append(I.copy())
+        power.append([pin,sea,float(cu.sum()),pext,pbal])
+        prev=theta.copy()
+    out=dict(status="valid" if err is None else "outside_material_domain",
+             failed_at=err,dt_s=float(dt),
+             completed_s=float(t[len(zs)-1]) if len(zs) else None,
+             elapsed_s=float(time.perf_counter()-start),
+             copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
+             skin_depth_m=float(et.skin_depth),
+             peak_thermal_residual_W=max(residual,default=None),
+             max_port_power_residual_W=max((abs(p[-1]) for p in power),default=None))
+    if len(zs):
+        temp=np.asarray(temps)
+        out.update(max_copper_K=float(temp[:,et.cu].max()),
+                   max_package_K=float(temp[:,et.pkg].max()),
+                   max_water_K=float(max(temp[:,:et.count].max(),
+                                         temp[:,et.skin].max())),
+                   max_copper_loss_W=float(np.max(np.sum(cs,axis=1))),
+                   max_sea_loss_W=float(np.max(ps)),
+                   max_source_power_W=float(np.max(np.asarray(power)[:,0])))
+    return out,dict(time_s=t[:len(zs)],temp_K=np.asarray(temps),
+                    z6=np.asarray(zs),Psea_W=np.asarray(ps),
+                    Pcu_W=np.asarray(cs),power_W=np.asarray(power),
+                    currents_A=np.asarray(curr))
+
+
+def compare(coarse,fine):
+    if not len(coarse["time_s"]) or not len(fine["time_s"]):
+        return None
+    a=np.asarray(coarse["time_s"])
+    b=np.asarray(fine["time_s"])
+    ids=np.searchsorted(b,a)
+    if np.any(ids>=len(b)) or not np.allclose(a,b[ids],atol=1e-8):
+        return None
+    z0=coarse["z6"]-coarse["z6"][0]
+    z1=fine["z6"][ids]-fine["z6"][0]
+    return dict(delta_Z_relative_L2=float(
+                    np.linalg.norm(z0-z1)/max(np.linalg.norm(z1),1e-30)),
+                copper_abs_K=float(np.max(abs(
+                    coarse["temp_K"][:,-2-1024:-1024]-
+                    fine["temp_K"][ids,-2-1024:-1024]))))
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--bfzi-root",type=Path,required=True)
+    p.add_argument("--runs",type=Path,default=Path("runs"))
+    p.add_argument("--keys",nargs="+",default=["F12","F14","F16"])
+    p.add_argument("--dt",type=float,nargs="+",default=[30.,15.])
+    p.add_argument("--grids",nargs="+",choices=("medium","extra"),
+                   default=["medium","extra"])
+    p.add_argument("--sea-max-K",type=float,default=373.15)
+    p.add_argument("--cu-max-K",type=float,default=1357.77)
+    p.add_argument("--pkg-max-K",type=float,default=None)
+    p.add_argument("--ins-k",type=float,default=.25)
+    p.add_argument("--ins-t",type=float,default=.0005)
+    p.add_argument("--skin",type=float,default=.002)
+    p.add_argument("--out",type=Path,default=None)
+    a=p.parse_args()
+    if min(a.ins_k,a.ins_t,a.skin,*a.dt)<=0:
+        p.error("insulation and time-step parameters must be positive")
+    bf,v150=originals(a.bfzi_root)
+    selected={x["id"]:x for x in cases(a.runs)}
+    results={}
+    for key in a.keys:
+        if key not in selected:
+            p.error(f"unknown case: {key}")
+        spec=selected[key]
+        parent="p03" if spec["donor"]=="g1" else "p07"
+        ext=GeomHeat.load(a.runs/f"bfzi_pose_{parent}_disjoint_anchor.npz").ext
+        rows={}
+        history={}
+        for grid in a.grids:
+            xz,y=GRIDS[grid]
+            data,_=create(bf,v150,"M4",**spec["geometry"],
+                          sea_void="oriented",physical_box_only=True,
+                          grid_xz=xz,grid_y=y)
+            opts=dict(alpha=spec["alpha_per_K"],skin=a.skin,
+                      ins_k=a.ins_k,ins_t=a.ins_t,
+                      sea_max=a.sea_max_K,cu_max=a.cu_max_K,
+                      pkg_max=a.pkg_max_K)
+            try:
+                et=build(data,bf,ext,opts)
+            except ValueError as exc:
+                rows[grid]=dict(status="invalid_spatial_grid",reason=str(exc))
+                continue
+            for dt in a.dt:
+                tag=f"{grid}_dt{dt:g}"
+                rec,raw=march(et,spec,dt)
+                rows[tag]=rec
+                history[tag]=raw
+                if len(raw["time_s"]):
+                    np.savez_compressed(
+                        a.runs/f"bfzi_phys_{key}_{tag}.npz",**raw)
+                print("PHYS",key,tag,rec["status"],
+                      rec["completed_s"],rec.get("max_copper_K"),
+                      flush=True)
+        checks={}
+        for grid in a.grids:
+            if len(a.dt)<2:
+                continue
+            c=history.get(f"{grid}_dt{a.dt[0]:g}")
+            f=history.get(f"{grid}_dt{a.dt[1]:g}")
+            if c is not None and f is not None:
+                checks[grid]=compare(c,f)
+        if "medium_dt30" in history and "extra_dt30" in history:
+            # Common copper nodes occupy the final two pre-skin positions;
+            # package and spatial sea cells have different sizes.
+            checks["space_dt30"]=compare(
+                history["medium_dt30"],history["extra_dt30"])
+        results[key]=dict(runs=rows,comparisons=checks)
+        dest=a.out or a.runs/"bfzi_physics_recheck.json"
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        dest.write_text(json.dumps(dict(
+            method="BFZI V150 corrected copper geometry; fixed skin depth",
+            settings=dict(dt=a.dt,grids=a.grids,skin_m=a.skin,
+                          ins_k=a.ins_k,ins_t=a.ins_t,
+                          sea_max_K=a.sea_max_K,cu_max_K=a.cu_max_K,
+                          pkg_max_K=a.pkg_max_K),
+            cases=results),indent=2)+"\n")
+    print("FINISHED",len(results))
+
+
+if __name__=="__main__":
+    main()
