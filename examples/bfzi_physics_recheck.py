@@ -13,7 +13,10 @@ from pathlib import Path
 import numpy as np
 
 from examples.bfzi_param import originals,create
-from examples.bfzi_obb_layer_study import GRIDS
+from examples.bfzi_obb_layer_study import GRIDS as OLD_GRIDS
+
+# F12 tilted/offset geometry needs finer seawater FVs for spatial closure.
+GRIDS={**OLD_GRIDS,"fine":(.06,.05),"ultra":(.05,.04)}
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
 from sdfmpneo_bfzi.geom_heat import GeomHeat,pack
 from sdfmpneo_bfzi.sea_layer import BFZIV148Skin3D
@@ -171,8 +174,9 @@ def main():
     p.add_argument("--runs",type=Path,default=Path("runs"))
     p.add_argument("--keys",nargs="+",default=["F12","F14","F16"])
     p.add_argument("--dt",type=float,nargs="+",default=[30.,15.])
-    p.add_argument("--grids",nargs="+",choices=("medium","extra"),
+    p.add_argument("--grids",nargs="+",choices=tuple(GRIDS),
                    default=["medium","extra"])
+    p.add_argument("--grid-max-nodes",type=int,default=4000)
     p.add_argument("--sea-max-K",type=float,default=373.15)
     p.add_argument("--cu-max-K",type=float,default=1357.77)
     p.add_argument("--pkg-max-K",type=float,default=None)
@@ -182,7 +186,7 @@ def main():
     p.add_argument("--skin",type=float,default=.002)
     p.add_argument("--out",type=Path,default=None)
     a=p.parse_args()
-    if (min(a.ins_k,a.skin,*a.dt)<=0 or
+    if (min(a.ins_k,a.skin,*a.dt)<=0 or a.grid_max_nodes<1 or
             (a.ins_t is not None and a.ins_t<=0)):
         p.error("insulation and time-step parameters must be positive")
     bf,v150=originals(a.bfzi_root)
@@ -201,7 +205,8 @@ def main():
             xz,y=GRIDS[grid]
             data,_=create(bf,v150,"M4",**spec["geometry"],
                           sea_void="oriented",physical_box_only=True,
-                          grid_xz=xz,grid_y=y)
+                          grid_xz=xz,grid_y=y,
+                          grid_max_nodes=a.grid_max_nodes)
             opts=dict(alpha=spec["alpha_per_K"],skin=a.skin,
                       ins_k=a.ins_k,ins_t=a.ins_t,
                       sea_max=a.sea_max_K,cu_max=a.cu_max_K,
@@ -232,11 +237,14 @@ def main():
                 # Compare only valid shared history before any phase-limit
                 # crossing; this does not turn the full case into a pass.
                 checks[grid]=compare(c,f)
-        for dt in a.dt:
-            med=f"medium_dt{dt:g}"
-            ex=f"extra_dt{dt:g}"
-            if med in history and ex in history:
-                checks[f"space_dt{dt:g}"]=compare(history[med],history[ex])
+        if len(a.grids)==2:
+            g0,g1=a.grids
+            for dt in a.dt:
+                med=f"{g0}_dt{dt:g}"
+                ex=f"{g1}_dt{dt:g}"
+                if med in history and ex in history:
+                    checks[f"space_dt{dt:g}"]=compare(
+                        history[med],history[ex])
         # A physically valid prefix remains diagnostic until the full drive
         # and all requested resolution checks meet the locked gate.
         full=all(r.get("status")=="candidate" for r in rows.values())
@@ -264,7 +272,9 @@ def main():
         dest.parent.mkdir(parents=True,exist_ok=True)
         dest.write_text(json.dumps(dict(
             method="BFZI V150 corrected copper geometry; fixed skin depth",
-            settings=dict(dt=a.dt,grids=a.grids,skin_m=a.skin,
+            settings=dict(dt=a.dt,grids=a.grids,
+                          grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
+                          grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,
                           ins_k=a.ins_k,ins_t=a.ins_t,
                           sea_max_K=a.sea_max_K,cu_max_K=a.cu_max_K,
                           pkg_max_K=a.pkg_max_K),
