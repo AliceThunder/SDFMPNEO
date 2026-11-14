@@ -30,7 +30,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
         dims=tuple(int(x) for x in pkg_shape)
         if len(dims)!=3 or min(dims)<1 or pkg_k<=0:
             raise ValueError("positive 3-D package grid and conductivity required")
-        if pkg_sea_model not in ("nearest","face-resistance","face-adjacent"):
+        if pkg_sea_model not in ("nearest","face-resistance","face-adjacent","face-normal"):
             raise ValueError("BFZI package-sea interface mode invalid")
         self.pkg_sea_model=pkg_sea_model
         self.pkg_sea_h=float(pkg_sea_h)
@@ -85,11 +85,13 @@ class BFZIV148Pkg3D(BFZIV148ET):
                 links=adjacent_links(
                     model.points,model.base["records"],cells,half,rot,
                     dims,start,pkg_k,sea_k,pkg_sea_h,quad=pkg_sea_quad)
-            elif pkg_sea_model=="face-resistance":
+            elif pkg_sea_model in ("face-resistance","face-normal"):
                 links=face_links(
                     model.points,cells,half,rot,dims,start,
                     pkg_k,sea_k,pkg_sea_h,
-                    quad=pkg_sea_quad,near=pkg_sea_near)
+                    quad=pkg_sea_quad,near=pkg_sea_near,
+                    distance=("normal" if pkg_sea_model=="face-normal"
+                              else "euclidean"))
             else:
                 # Original BFZI V150 thermal baseline, unchanged.
                 faces=[]
