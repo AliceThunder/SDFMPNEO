@@ -39,6 +39,8 @@ def main():
     p.add_argument("--levels",nargs="+",choices=("medium","extra"),
                    default=["medium","extra"])
     p.add_argument("--hybrid",action="store_true")
+    p.add_argument("--source-mask",choices=("legacy","oriented"),
+                   default="legacy")
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_obb_exact_faces.json"))
     a=p.parse_args()
@@ -64,6 +66,7 @@ def main():
             study["geometries"][name]["new_shift_mm"],float)
         program=load(a.runs/f"bfzi_pose_{name.lower()}_disjoint_oriented_medium.npz")
         g=out["geometries"].setdefault(name,dict(levels={}))
+        prefix=("exact" if a.source_mask=="legacy" else "source")
         for key in a.levels:
             xz,y=GRIDS[key]
             t0=time.perf_counter()
@@ -71,7 +74,8 @@ def main():
                           sea_void="oriented",physical_box_only=True,
                           grid_xz=xz,grid_y=y)
             em=BFZIV148Adapter(
-                data,bf,heat_mode="port-weak",fv_faces="exact")
+                data,bf,heat_mode="port-weak",fv_faces="exact",
+                source_mask=a.source_mask)
             et=BFZIV148Pkg3D(
                 em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
                 pkg_sea_model="face-resistance",pkg_sea_h=20.,
@@ -79,10 +83,13 @@ def main():
             head=GeomHeat.from_original(em,et,prev.ext)
             setup=time.perf_counter()-t0
             phy=direct(et,program["time_s"],program["voltage_v"])
-            path=a.runs/f"bfzi_pose_{name.lower()}_exact_{key}.npz"
+            path=a.runs/f"bfzi_pose_{name.lower()}_{prefix}_{key}.npz"
             pack_save(path,phy)
             old="oriented_medium" if key=="medium" else key
-            ref=load(a.runs/f"bfzi_pose_{name.lower()}_disjoint_{old}.npz")
+            refpath=(a.runs/f"bfzi_pose_{name.lower()}_exact_{key}.npz"
+                     if a.source_mask=="oriented" else
+                     a.runs/f"bfzi_pose_{name.lower()}_disjoint_{old}.npz")
+            ref=load(refpath)
             row=dict(
                 nsea=head.ns,setup_sec=setup,direct_sec=phy["elapsed_sec"],
                 material_budget_W=phy["max_budget_W"],
@@ -92,6 +99,9 @@ def main():
                 exact_face_removed_edges=int(
                     em.proj.meta["face_area_removed_edges"]),
                 cold_z6=head.z0.tolist(),
+                weak_mass_cells=int(np.count_nonzero(
+                    np.any(abs(em.mass)>1e-18,axis=(1,2)))),
+                weak_mass_l2=float(np.linalg.norm(em.mass)),
                 thermal_file=str(path),
                 interface_G_W_K=[
                     float(sum(x[2] for x in li)) for li in et.pkg_links],
@@ -108,9 +118,9 @@ def main():
                     inference_sec=time.perf_counter()-t0,
                     directional_EM_solves=tan.nsolve,
                     directional_EM_sec=stat["directional_sec"])
-                head.save(a.runs/f"bfzi_pose_{name.lower()}_exact_anchor.npz")
-                rom.save(a.runs/f"bfzi_pose_{name.lower()}_exact_rom.npz")
-                tan.save(a.runs/f"bfzi_pose_{name.lower()}_exact_k6.npz")
+                head.save(a.runs/f"bfzi_pose_{name.lower()}_{prefix}_anchor.npz")
+                rom.save(a.runs/f"bfzi_pose_{name.lower()}_{prefix}_rom.npz")
+                tan.save(a.runs/f"bfzi_pose_{name.lower()}_{prefix}_k6.npz")
             g["levels"][key]=row
             print(name,key,"n",head.ns,"modified_faces",
                   row["exact_face_corrected_edges"],
@@ -121,8 +131,8 @@ def main():
             a.out.parent.mkdir(parents=True,exist_ok=True)
             a.out.write_text(json.dumps(out,indent=2))
         if all(k in g["levels"] for k in ("medium","extra")):
-            coarse=load(a.runs/f"bfzi_pose_{name.lower()}_exact_medium.npz")
-            fine=load(a.runs/f"bfzi_pose_{name.lower()}_exact_extra.npz")
+            coarse=load(a.runs/f"bfzi_pose_{name.lower()}_{prefix}_medium.npz")
+            fine=load(a.runs/f"bfzi_pose_{name.lower()}_{prefix}_extra.npz")
             g["levels"]["medium"]["vs_exact_extra"]=compare(coarse,fine)
             print("CONVERGENCE",name,"dZ_pct",round(
                 g["levels"]["medium"]["vs_exact_extra"][
