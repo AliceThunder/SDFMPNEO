@@ -91,6 +91,7 @@ def main():
     p.add_argument("--depth",type=float,default=.002)
     p.add_argument("--layers",type=int,default=8)
     p.add_argument("--ratio",type=float,default=1.4)
+    p.add_argument("--skin-map",type=int,choices=(1,2),default=2)
     p.add_argument("--thermal-only",action="store_true")
     p.add_argument("--out",type=Path,default=Path(
         "runs/bfzi_obb_layer.json"))
@@ -99,6 +100,7 @@ def main():
     study=json.loads((a.runs/"bfzi_obb_physical_study.json").read_text())
     out=dict(method="original BFZI V150 passive conservative finite sea skin",
              skin_depth_m=a.depth,skin_layers=a.layers,skin_ratio=a.ratio,
+             skin_map_order=a.skin_map,
              skin_q_remapped=True,sea_volume_conserved=True,
              geometries={})
     for name in a.poses:
@@ -123,6 +125,7 @@ def main():
                 em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
                 skin_depth=a.depth,skin_layers=a.layers,
                 skin_ratio=a.ratio,skin_quad=2,skin_near=4,
+                skin_map=a.skin_map,
                 pkg_sea_h=20.)
             setup=time.perf_counter()-tic
             cu,sea=cold_force(et)
