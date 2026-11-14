@@ -1,5 +1,5 @@
 {
-  "description": "F14 unseen geometry, 110 V peak, three 30-s energization pulses over a 600-s record; single-phase-water valid-range reference",
+  "description": "Independent 600s physics pulse cases: F14P 110V round; F16P 95V round at different pose and alpha; F23P 110V blended geometry and second donor.",
   "protocol": "Voltage on during [0,30), [180,210), [360,390) seconds; zero elsewhere within [0,600].",
   "cases": {
     "F14P": {
@@ -39,6 +39,84 @@
         ]
       ],
       "dt": 30,
+      "duration": 600
+    },
+    "F16P": {
+      "id": "F16P",
+      "family": "round",
+      "geometry": {
+        "alpha1": 1,
+        "alpha2": 1,
+        "core1_mm": 0,
+        "core2_mm": 0,
+        "shift_mm": [
+          -7,
+          84,
+          -13
+        ],
+        "tilt_deg": 16.9,
+        "yaw_deg": -18,
+        "pitch_deg": -13,
+        "box1_mm": 220,
+        "box2_mm": 224
+      },
+      "donor": "g1",
+      "voltage": 95,
+      "alpha_per_K": 0.028,
+      "off": [
+        [
+          30,
+          180
+        ],
+        [
+          210,
+          360
+        ],
+        [
+          390,
+          630
+        ]
+      ],
+      "dt": 15,
+      "duration": 600
+    },
+    "F23P": {
+      "id": "F23P",
+      "family": "blend",
+      "geometry": {
+        "alpha1": 0.95,
+        "alpha2": 0.86,
+        "core1_mm": 7,
+        "core2_mm": 20,
+        "shift_mm": [
+          6,
+          88,
+          -9
+        ],
+        "tilt_deg": 7.8,
+        "yaw_deg": 17,
+        "pitch_deg": 16,
+        "box1_mm": 228,
+        "box2_mm": 236
+      },
+      "donor": "g2",
+      "voltage": 110,
+      "alpha_per_K": 0.012,
+      "off": [
+        [
+          30,
+          180
+        ],
+        [
+          210,
+          360
+        ],
+        [
+          390,
+          630
+        ]
+      ],
+      "dt": 15,
       "duration": 600
     }
   }
