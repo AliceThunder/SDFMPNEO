@@ -51,8 +51,8 @@ def main(argv=None):
                    help="Package effective volumetric thermal capacity, J/(m3 K)")
     p.add_argument("--pkg-sea-g",type=float,default=.6,
                    help="Thermal conductance per package to seawater, W/K")
-    p.add_argument("--cu-pkg-g",type=float,default=.8,
-                   help="Thermal conductance per copper coil to its package, W/K")
+    p.add_argument("--cu-pkg-g",type=float,default=None,
+                   help="Override Cu-package G (3-D default derives from BFZI geometry)")
     p.add_argument("--rom-train",type=Path,nargs="+",default=None,
                    help="Original BFZI unit-J and thermal snapshots for projected ROM")
     p.add_argument("--rom-rank",type=int,default=8)
@@ -67,8 +67,9 @@ def main(argv=None):
         p.error("bfzi-root must be an existing BFZI repository checkout")
     if (a.source_r <= 0 or a.load_r <= 0):
         p.error("source and load resistances must be positive")
-    if min(a.voltage,a.step,a.heat,a.cool,a.restart,
-           a.pkg_rhoc,a.pkg_sea_g,a.cu_pkg_g,a.pkg_k) <= 0:
+    if (min(a.voltage,a.step,a.heat,a.cool,a.restart,
+            a.pkg_rhoc,a.pkg_sea_g,a.pkg_k) <= 0 or
+            (a.cu_pkg_g is not None and a.cu_pkg_g<=0)):
         p.error("physical inputs must be positive")
     if a.pkg_shape and min(a.pkg_shape)<1:
         p.error("drive voltage and times must be positive")
@@ -137,13 +138,17 @@ def main(argv=None):
         return
     if not baseline["isothermal_baseline_pass"]:
         raise RuntimeError("BFZI v148 isothermal solver or M4 archive impedance mismatch; use --check-only")
+    lead_z=backend.lead_copper.conductor_internal_impedance(
+        np.full(2,backend.ambient))
     t0=time.perf_counter()
     rom=(BFZIV148ROM(backend,a.rom_train,rank=a.rom_rank)
          if a.rom_train else None)
     basis_sec=time.perf_counter()-t0
     heat_rom=bool(a.heat_rom_train)
     therm=dict(external=extra,pkg_rhoc=a.pkg_rhoc,
-               pkg_sea_g=a.pkg_sea_g,cu_pkg_g=a.cu_pkg_g)
+               pkg_sea_g=a.pkg_sea_g,
+               cu_pkg_g=(a.cu_pkg_g if a.pkg_shape else
+                         (.8 if a.cu_pkg_g is None else a.cu_pkg_g)))
     if a.pkg_shape:
         therm.update(pkg_shape=tuple(a.pkg_shape),pkg_k=a.pkg_k)
     if heat_rom:
@@ -217,7 +222,8 @@ def main(argv=None):
         p_in,p_load,p_src,eta = circuit_power(
             v,s.currents,a.source_r,a.load_r)
         p_sea=float(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents)))
-        p_gap=p_in-p_load-p_src-p_sea-float(np.sum(s.copper_power))
+        p_lead=float(.5*np.dot(lead_z.real,abs(s.currents)**2))
+        p_gap=p_in-p_load-p_src-p_sea-p_lead-float(np.sum(s.copper_power))
         rows.append({
             "time_s":s.time,
             "drive":"on" if np.any(abs(s.currents)>0) else "off",
@@ -237,6 +243,7 @@ def main(argv=None):
                 abs(.5*np.real(np.vdot(s.currents,s.sea_z@s.currents))
                     -s.sea_power)/max(abs(s.sea_power),1e-30)),
             "Pcu_W":s.copper_power.tolist(),
+            "Plead_W":p_lead,
             "Pinput_W":p_in,
             "Pload_W":p_load,
             "Psource_loss_W":p_src,
@@ -319,7 +326,9 @@ def main(argv=None):
         "package_k_W_mK":a.pkg_k if a.pkg_shape else None,
         "package_rhoc_J_m3K":a.pkg_rhoc,
         "package_to_sea_G_W_K":a.pkg_sea_g,
-        "copper_to_package_G_W_K":a.cu_pkg_g,
+        "copper_to_package_G_W_K":(
+            et.cu_pkg_total if hasattr(et,"cu_pkg_total") else
+            [therm["cu_pkg_g"]]*2),
         "package_heat_capacity_J_K":np.sum(
             et.cap[et.pkg].reshape(2,-1),axis=1).tolist(),
         "copper_heat_capacity_J_K":et.cap[et.cu].tolist(),
