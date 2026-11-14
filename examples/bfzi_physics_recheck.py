@@ -95,6 +95,8 @@ def march(et,spec,dt):
                    max_sea_loss_W=float(np.max(ps)),
                    max_source_power_W=float(np.max(np.asarray(power)[:,0])))
     return out,dict(time_s=t[:len(zs)],temp_K=np.asarray(temps),
+                    Tcu_K=np.asarray(temps)[:,et.cu],
+                    Tpkg_K=np.asarray(temps)[:,et.pkg],
                     z6=np.asarray(zs),Psea_W=np.asarray(ps),
                     Pcu_W=np.asarray(cs),power_W=np.asarray(power),
                     currents_A=np.asarray(curr))
@@ -106,15 +108,17 @@ def compare(coarse,fine):
     a=np.asarray(coarse["time_s"])
     b=np.asarray(fine["time_s"])
     ids=np.searchsorted(b,a)
-    if np.any(ids>=len(b)) or not np.allclose(a,b[ids],atol=1e-8):
+    if (a[-1]!=b[-1] or np.any(ids>=len(b)) or
+            not np.allclose(a,b[ids],atol=1e-8)):
         return None
     z0=coarse["z6"]-coarse["z6"][0]
     z1=fine["z6"][ids]-fine["z6"][0]
     return dict(delta_Z_relative_L2=float(
                     np.linalg.norm(z0-z1)/max(np.linalg.norm(z1),1e-30)),
                 copper_abs_K=float(np.max(abs(
-                    coarse["temp_K"][:,-2-1024:-1024]-
-                    fine["temp_K"][ids,-2-1024:-1024]))))
+                    coarse["Tcu_K"]-fine["Tcu_K"][ids]))),
+                package_abs_K=float(np.max(abs(
+                    coarse["Tpkg_K"]-fine["Tpkg_K"][ids]))))
 
 
 def main():
@@ -180,8 +184,7 @@ def main():
             if c is not None and f is not None:
                 checks[grid]=compare(c,f)
         if "medium_dt30" in history and "extra_dt30" in history:
-            # Common copper nodes occupy the final two pre-skin positions;
-            # package and spatial sea cells have different sizes.
+            # Shared physical copper and package coordinates across grids.
             checks["space_dt30"]=compare(
                 history["medium_dt30"],history["extra_dt30"])
         results[key]=dict(runs=rows,comparisons=checks)
