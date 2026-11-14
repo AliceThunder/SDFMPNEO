@@ -1,37 +1,64 @@
 {
-  "method": "two-node copper-package implicit thermal balance, not BFZI V150",
-  "input": {
+  "model": "Standalone 2-node backward Euler physical heat-path calculation; not F14 BFZI V150",
+  "native_BFZI_M4": {
+    "source": "AliceThunder/BFZI bfzi-v150-turn-scan bfzi_v148_results.py",
+    "copper_area_mm2": 1.963495408493621,
+    "bare_radius_m": 0.0007905694150420948,
+    "insulated_radius_m": 0.00115,
+    "insulation_thickness_m": 0.0003594305849579051,
+    "turns": 10,
+    "turn_pitch_m": 0.005,
+    "outer_centerline_radius_m": 0.08885,
+    "circular_length_estimate_m": 4.168893451835451,
+    "winding_heat_capacity_est_J_K": 28.240330868029528,
+    "source_note": "Final model reads winding length from fam.active.dl; this analytical circular-turn sum is an estimate"
+  },
+  "rc": {
+    "copper_power_W": 200,
     "duration_s": 600,
     "dt_s": 30,
-    "power_copper_W": 200,
-    "wire_length_m": 5.5,
-    "wire_radius_m": 0.001,
-    "insulation_t_m": 0.0005,
+    "package_length_m": 0.22,
+    "package_width_m": 0.22,
+    "package_thickness_m": 0.011,
+    "pkg_heat_capacity_J_K": 798.6,
+    "ambient_sink_G_W_K": 2,
     "insulation_k_W_mK": 0.25,
-    "package_dims_m": [
-      0.22,
-      0.011,
-      0.22
-    ],
-    "package_rhoc_J_m3K": 1500000,
-    "copper_rhoc_J_m3K": 3450000,
-    "package_to_environment_G_W_K": 2
+    "old": {
+      "copper_package_G_W_K": 0.8,
+      "copper_rise_K": 320.544692659,
+      "package_rise_K": 73.052508999
+    },
+    "new": {
+      "copper_package_G_W_K": 17.473628113,
+      "copper_rise_K": 86.617553062,
+      "package_rise_K": 75.268780435
+    },
+    "max_abs_heat_residual_W": 4.263256414560601e-13
   },
-  "capacity_J_K": {
-    "copper": 59.61172060186632,
-    "package": 798.5999999999999
+  "copper_lead_split_example": {
+    "frequency_Hz": 200000,
+    "assumed_external_lead_length_m": 1.2,
+    "cold_293_15K": {
+      "original_total_copper_impedance_ohm": [
+        0.13869051196549165,
+        0.12510412056540376
+      ],
+      "split_total_copper_impedance_ohm": [
+        0.13869051196549165,
+        0.12510412056540376
+      ]
+    },
+    "warm_500K": {
+      "original_all_hot_R_ohm": 0.19321328236047383,
+      "split_body_hot_lead_ambient_R_ohm": 0.18102691191611905,
+      "relative_R_diff": 0.0630721154129504
+    },
+    "warm_1000K": {
+      "original_all_hot_R_ohm": 0.29169059907519335,
+      "split_body_hot_lead_ambient_R_ohm": 0.2574935887980162,
+      "relative_R_diff": 0.11723727259499947
+    },
+    "note": "1.2 m external lead length is illustrative; actual lead panel lengths come from original BFZI V150"
   },
-  "baseline": {
-    "copper_to_package_G_W_K": 0.8,
-    "copper_rise_K": 312.11633153,
-    "package_rise_K": 68.73319937,
-    "max_energy_balance_W": 5.186961971048731e-13
-  },
-  "radial": {
-    "copper_to_package_G_W_K": 21.307332307043385,
-    "copper_rise_K": 83.15810889,
-    "package_rise_K": 73.94259582,
-    "max_energy_balance_W": 1.2292389328649733e-12
-  },
-  "scope": "Standalone RC formula check, not BFZI electromagnetic or F14 reference"
+  "limitations": "No full electromagnetic solution, feedback, 3-D seawater, phase-change material model, or F14 rerun"
 }
