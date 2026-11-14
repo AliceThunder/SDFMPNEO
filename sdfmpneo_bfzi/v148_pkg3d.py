@@ -24,8 +24,11 @@ class BFZIV148Pkg3D(BFZIV148ET):
                   cu_ins_k=.25,cu_ins_t=.0005,
                  pkg_sea_model="nearest",pkg_sea_h=20.,
                  pkg_sea_quad=2,pkg_sea_near=4,**kwargs):
-        if cu_ins_k<=0 or cu_ins_t<=0 or (cu_pkg_g is not None and cu_pkg_g<=0):
-            raise ValueError("positive copper insulation conductivity/thickness required")
+        if (not np.isfinite([cu_ins_k,cu_ins_t]).all() or
+                min(cu_ins_k,cu_ins_t)<=0 or
+                (cu_pkg_g is not None and
+                 (not np.isfinite(cu_pkg_g) or cu_pkg_g<=0))):
+            raise ValueError("positive finite winding insulation parameters required")
         super().__init__(
             model,sea_rhoc=sea_rhoc,sea_k=sea_k,pkg_rhoc=pkg_rhoc,
             pkg_sea_g=pkg_sea_g,
