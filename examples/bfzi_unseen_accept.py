@@ -221,13 +221,13 @@ def main():
             "## 几何修订与可复现性","",
             "原冻结 U09 的 alpha2=0.9851324743684382、core2_mm=25 未通过原 BFZI 几何有效性检查，保留原始失败记录。修订 U09 仅改变 alpha2=0.86、core2_mm=20；其余样本与功率、热参数均保持冻结。",
             "",
-            "在 D:/work/bfzi-et-v2.1/SDFMPNEO 中运行（BFZI 依赖目录为相邻 BFZI）：",
+            "在仓库根目录运行（BFZI 依赖目录为相邻 BFZI）：",
             "",
-            "    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys U01 U02 U03 U04 U05 U06 U07 U08 U09 U10 U11 U12 --dt 15 --grids ultra superfine --inner-step 2 --out runs/bfzi_unseen_all_h2.json",
-            "    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys U01 U02 U03 U04 U05 U06 U07 U08 U09 U10 U11 U12 --dt 15 --grids ultra superfine --inner-step 1 --out runs/bfzi_unseen_all_h1.json",
-            "    python -m examples.bfzi_unseen_accept",
+            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 2{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h2.json",
+            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 1{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h1.json",
+            f"    python -m examples.bfzi_unseen_accept{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out {a.out} --report {a.report}",
             "",
-            "源数据保存在 runs/bfzi_phys_U*_*.npz；所有样本的单组合功率、温度及热残差在 runs/bfzi_physical_unseen12_final.json 中。",
+            f"源数据保存在 runs/bfzi_phys_U*{f'_{a.run_tag}' if a.run_tag else ''}.npz；所有样本的单组合功率、温度及热残差在 {a.out} 中。",
             ""]
     lines+=["## 守恒指标（所有已完成组合的最大绝对值）",""]
     for k,v in conservation.items():
