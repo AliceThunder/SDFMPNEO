@@ -11,7 +11,9 @@ from scipy.spatial import cKDTree
 
 
 def face_links(wet, cells, half, rot, dims, start, pkg_k, sea_k, h,
-               quad=2, near=4):
+               quad=2, near=4, distance="euclidean"):
+    if distance not in ("euclidean","normal"):
+        raise ValueError("BFZI face-water thermal distance mode invalid")
     wet=np.asarray(wet,float)
     cells=np.asarray(cells,float)
     half=np.asarray(half,float)
@@ -58,7 +60,8 @@ def face_links(wet, cells, half, rot, dims, start, pkg_k, sea_k, h,
                         ids=ids[valid][:near]
                         wt=1/(d*d+(.1*min(size))**2)
                         wt=wt/wt.sum()
-                        dist=float(wt@d)
+                        dist=float(wt@(d if distance=="euclidean" else
+                                      ((wet[ids]-loc)@n)))
                         resistance=1/h+.5*size[ax]/pkg_k+dist/sea_k
                         g=area/resistance
                         links.extend((int(b),int(start+a),float(g*w))
