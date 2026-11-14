@@ -1,0 +1,95 @@
+{
+  "method": "BFZI V150 A2 independent physics",
+  "cases": {
+    "G1_medium": {
+      "anchor": "P03",
+      "extra_shift_y_mm": 20.0,
+      "voltage_scale": 1.0,
+      "sea_alpha_scale": 1.0,
+      "wet_cells": 574,
+      "setup_sec": 2.3112724000093294,
+      "direct_sec": 9.245304700001725,
+      "max_port_weak_rel": 6.104152206583783e-16,
+      "max_node_budget_W": 1.5265373320971776e-06,
+      "file": "runs\\bfzi_a2_g1_medium.npz"
+    },
+    "G1_extra": {
+      "anchor": "P03",
+      "extra_shift_y_mm": 20.0,
+      "voltage_scale": 1.0,
+      "sea_alpha_scale": 1.0,
+      "wet_cells": 1316,
+      "setup_sec": 4.070812799996929,
+      "direct_sec": 23.70095859999128,
+      "max_port_weak_rel": 6.089977590370573e-16,
+      "max_node_budget_W": 1.5197314411352636e-06,
+      "file": "runs\\bfzi_a2_g1_extra.npz"
+    },
+    "G2_medium": {
+      "anchor": "P07",
+      "extra_shift_y_mm": 25.0,
+      "voltage_scale": 1.0,
+      "sea_alpha_scale": 1.0,
+      "wet_cells": 574,
+      "setup_sec": 2.1821789000096032,
+      "direct_sec": 23.39478849999432,
+      "max_port_weak_rel": 5.816686862622748e-16,
+      "max_node_budget_W": 0.0001756787225986045,
+      "file": "runs\\bfzi_a2_g2_medium.npz"
+    },
+    "G2_extra": {
+      "anchor": "P07",
+      "extra_shift_y_mm": 25.0,
+      "voltage_scale": 1.0,
+      "sea_alpha_scale": 1.0,
+      "wet_cells": 1316,
+      "setup_sec": 3.9526780000014696,
+      "direct_sec": 59.344917099995655,
+      "max_port_weak_rel": 5.604694103782498e-16,
+      "max_node_budget_W": 0.00017286796702364882,
+      "file": "runs\\bfzi_a2_g2_extra.npz"
+    },
+    "G1_drive_extra": {
+      "anchor": "P03",
+      "extra_shift_y_mm": 20.0,
+      "voltage_scale": 0.65,
+      "sea_alpha_scale": 1.0,
+      "wet_cells": 1316,
+      "setup_sec": 4.02800489999936,
+      "direct_sec": 18.175336799991783,
+      "max_port_weak_rel": 5.386392060135036e-16,
+      "max_node_budget_W": 2.53934764771202e-07,
+      "file": "runs\\bfzi_a2_g1_drive_extra.npz"
+    },
+    "G2_mat_extra": {
+      "anchor": "P07",
+      "extra_shift_y_mm": 25.0,
+      "voltage_scale": 1.0,
+      "sea_alpha_scale": 0.8,
+      "wet_cells": 1316,
+      "setup_sec": 4.1515202000009594,
+      "direct_sec": 59.968892799995956,
+      "max_port_weak_rel": 5.726966898146636e-16,
+      "max_node_budget_W": 0.00017291854265977236,
+      "file": "runs\\bfzi_a2_g2_mat_extra.npz"
+    }
+  },
+  "cross_grid": {
+    "G1": {
+      "dynamic_delta_Z_relative_L2": 0.003897674968057075,
+      "full_Z_relative_L2": 9.333784908969618e-05,
+      "pkg_max_abs_K": 0.6330123956721536,
+      "copper_max_abs_K": 0.30990410988948724,
+      "pkg_final_max_abs_K": 0.6330123956721536,
+      "max_sea_mean_abs_K": 0.0014572939531376505
+    },
+    "G2": {
+      "dynamic_delta_Z_relative_L2": 0.015943234679716194,
+      "full_Z_relative_L2": 0.00021619629420739338,
+      "pkg_max_abs_K": 5.638675179634333,
+      "copper_max_abs_K": 7.714330293654257,
+      "pkg_final_max_abs_K": 5.638675179634333,
+      "max_sea_mean_abs_K": 0.018293729878507747
+    }
+  }
+}
