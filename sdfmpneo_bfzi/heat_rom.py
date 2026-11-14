@@ -38,6 +38,26 @@ class HeatROM:
                 cols.append(v / nv)
             if len(cols) == rank:
                 break
+        if len(cols) < rank:
+            # Enrich short trajectories using the physical thermal operator.
+            h = H.tocsr() if hasattr(H, "tocsr") else np.asarray(H)
+            seed = a[:, -1].copy()
+            for j in range(4 * rank):
+                seed = w * (h @ (seed / w)) / self.cap
+                for q in cols:
+                    seed -= q * (q @ seed)
+                norm = np.linalg.norm(seed)
+                if norm < 1e-12 or not np.isfinite(norm):
+                    seed = np.zeros(n)
+                    seed[j % n] = 1.
+                    for q in cols:
+                        seed -= q * (q @ seed)
+                    norm = np.linalg.norm(seed)
+                if norm > 1e-12:
+                    cols.append(seed / norm)
+                    seed = cols[-1].copy()
+                if len(cols) == rank:
+                    break
         self.basis = np.column_stack(cols) / w[:, None]
         self.m = self.basis.T @ (self.cap[:, None] * self.basis)
         self.k = self.basis.T @ (H @ self.basis)
