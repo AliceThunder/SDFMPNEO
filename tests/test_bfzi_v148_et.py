@@ -381,3 +381,22 @@ def test_thermal_budget_controls_large_temperature_tolerance():
     with pytest.raises(RuntimeError,match="heat residual"):
         et.advance(et.zeros(),[8.,0.],.1,iterations=1,
                    tol=1e6,budget_tol=1e-12)
+
+
+def test_external_terminal_lead_loss_is_not_winding_heat():
+    adapter=BFZIV148Adapter.__new__(BFZIV148Adapter)
+    adapter.heat_mode="port-weak"
+    adapter.vol=np.array([.1])
+    state=V148State(
+        np.zeros((2,2),complex),np.zeros((2,2),complex),
+        np.array([.3+.01j,.5+.02j]),
+        np.zeros((1,2,3),complex),np.ones(1),None,
+        np.zeros((1,2,2)),
+        winding_z=np.array([.2+.01j,.35+.02j]),
+        lead_z=np.array([.1,.15]))
+    current=np.array([3.+2j,2.-1j])
+    q,cu=adapter.heat(state,current)
+    pl=.5*state.lead_z.real*abs(current)**2
+    assert np.allclose(q,0.)
+    assert np.allclose(cu,.5*state.winding_z.real*abs(current)**2)
+    assert np.allclose(cu+pl,.5*state.copper_z.real*abs(current)**2)
