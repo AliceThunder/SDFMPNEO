@@ -94,11 +94,14 @@ class BFZIV148ROM:
         dz = -1j*model.omega*model.mu*np.einsum(
             "p,pij->ij",gamma,model.mass,optimize=True)
         sea_z = core.sym_complex(z+dz)
-        zcu = model.copper.conductor_internal_impedance(cu)
+        zw = model.copper.conductor_internal_impedance(cu)
+        zl = model.lead_copper.conductor_internal_impedance(
+            np.full(2,model.ambient))
+        zcu = zw+zl
         total = sea_z+1j*model.omega*model.air+np.diag(zcu)
         j = np.stack([-gamma[:, None]*px for px in P],axis=1)
         res = {"rom_rank":self.rank,"retained_energy":self.retained}
         weak=(_weak_q(C,X,GC,GX,sig,model.mass,model.vol,
                       model.omega,model.mu)
               if model.heat_mode=="port-weak" else None)
-        return V148State(sea_z,total,zcu,j,sig,res,weak)
+        return V148State(sea_z,total,zcu,j,sig,res,weak,zw,zl)
