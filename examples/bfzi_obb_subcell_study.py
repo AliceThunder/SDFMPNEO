@@ -84,10 +84,12 @@ def field_diff(a,b):
         for x,y in zip(aa,bb):
             interp=np.sum(w[(...,)+(None,)*(y.ndim-1)]*y[idx],axis=1)
             diff=x-interp
-            num=np.sum(vol*np.sum(abs(diff)**2,axis=tuple(range(1,diff.ndim))))
-                       if diff.ndim>1 else vol@abs(diff)**2)
-            den=np.sum(vol*np.sum(abs(interp)**2,axis=tuple(range(1,interp.ndim))))
-                       if interp.ndim>1 else vol@abs(interp)**2)
+            if diff.ndim>1:
+                num=float(np.sum(vol[:,None]*abs(diff)**2))
+                den=float(np.sum(vol[:,None]*abs(interp)**2))
+            else:
+                num=float(vol@(abs(diff)**2))
+                den=float(vol@(abs(interp)**2))
             row.append(float(np.sqrt(num/max(den,1e-30))))
         out[attr+"_cross_grid_rel_L2"]=row
     return out
