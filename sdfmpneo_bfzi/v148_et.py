@@ -147,9 +147,12 @@ class BFZIV148ET:
         power[self.cu]=cu
         return m,I,power,q,cu
 
-    def advance(self,state,drive,dt,*,iterations=16,tol=1e-5):
+    def advance(self,state,drive,dt,*,iterations=16,tol=1e-5,
+                budget_tol=1e-4):
         if not np.isfinite(dt) or dt<=0:
             raise ValueError("positive thermal time step required")
+        if not np.isfinite(budget_tol) or budget_tol<=0:
+            raise ValueError("positive heat-balance tolerance required")
         old=np.asarray(state,float)
         if old.shape!=(self.n,):
             raise ValueError("invalid thermal state")
@@ -158,17 +161,27 @@ class BFZIV148ET:
                 (diags(self.cap)+dt*self.H).tocsc())
         solve=self._factor[dt]
         theta=old.copy()
+        budget=np.inf
         for _ in range(iterations):
             _,_,heat,_,_=self.em(theta,drive)
             nxt=solve(self.cap*old+dt*heat)
             err=float(np.max(abs(nxt-theta)))
             if not np.isfinite(err):
-                raise RuntimeError('BFZI thermal fixed point became nonfinite')
+                raise RuntimeError("BFZI thermal fixed point became nonfinite")
             if err < tol:
-                return nxt
+                # Temperature-change tolerance alone cannot certify the
+                # heat equation when FV capacities are large. Evaluate the
+                # implicit residual using the Joule source at the final state.
+                _,_,heat_new,_,_=self.em(nxt,drive)
+                bal=self.cap*(nxt-old)/dt+self.H@nxt-heat_new
+                budget=float(np.max(abs(bal)))
+                if budget<=budget_tol:
+                    return nxt
             theta=nxt
-        raise RuntimeError(f'BFZI thermal fixed point did not converge: '
-                           f'{err:.4g} K after {iterations} iterations')
+        raise RuntimeError(
+            f"BFZI thermal fixed point did not converge: "
+            f"delta={err:.4g} K, heat residual={budget:.4g} W "
+            f"after {iterations} iterations")
 
     def trajectory(self,times,voltage_at,*,state=None):
         times=np.asarray(times,float)
