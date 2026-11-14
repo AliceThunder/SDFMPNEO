@@ -674,3 +674,7 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 ### 2026-11-15 — 独立 U01–U12 首轮中间验收
 
 原冻结 12 组首轮 BFZI V150 物理直接法，U01–U08 均完整运行 600 s，记录状态 `candidate`，铜峰值分别为 **345.152、368.219、334.784、435.976、330.835、309.113、403.561、408.656 K**；海水峰值 298.865–322.981 K，原始数值记录 [`runs/bfzi_physical_unseen12_probe.json`](../../../runs/bfzi_physical_unseen12_probe.json)。U09 的 `alpha2=0.9851324744, core2_mm=25` 被 BFZI `_validate_coil` 判定几何内圆角无效，**原始 U09 输入失败已保留**。在 [`runs/bfzi_physical_unseen12_corrected.json`](../../../runs/bfzi_physical_unseen12_corrected.json) 仅将 U09 改为 `alpha2=0.86, core2_mm=20`，已通过 BFZI 原生几何构建预检（2672 湿 FV）；U09 修订样本与 U10–U12 已分别启动。验收执行器已支持对几何无效样本记录失败并继续处理后续工况。**目前仅首轮 8/12 组完成，四组合时空验收 OPEN，不得宣布 12/12 PASS。**
+
+### 2026-11-15 — U09 修订完成、独立验收进入真实热步收敛
+
+修订 U09 在 BFZI 原生 2672 湿 FV、实际热步 1.875 s 下完成 600 s，铜/封装/海水峰值 **308.0295/304.4025/297.4553 K**，热节点残差 **1.82e-6 W**、全局热收支 **3.90e-7 W**、端口功率相对残差 **1.05e-15**，结果归档 [`runs/bfzi_physical_U09_corrected_probe.json`](../../../runs/bfzi_physical_U09_corrected_probe.json)。原 U09 几何失败记录保留。U10 已完成 600 s，铜峰值 **384.794 K**；U11–U12 首轮仍在运行。已启动 U01–U04 2668 湿 FV、实际 1 s 热步对照。**本轮仍未完成 12 组四组合时空验收，状态 OPEN。**
