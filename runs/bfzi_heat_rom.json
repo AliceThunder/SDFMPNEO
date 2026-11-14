@@ -1,0 +1,26 @@
+{
+  "P03": {
+    "rank": 22,
+    "nodes": 2402,
+    "snapshots": 21,
+    "retained": 1.0,
+    "pkg_max_abs_K": 0.0,
+    "copper_max_abs_K": 5.684341886080802e-14,
+    "sea_mean_max_abs_K": 4.4485122342079463e-17,
+    "build_sec": 4.14913649999653,
+    "model_file": "runs\\bfzi_heat_rom_p03.npz",
+    "reference_file": "runs\\bfzi_pose_p03_skin_source_subcell_extra.npz"
+  },
+  "P07": {
+    "rank": 32,
+    "nodes": 2402,
+    "snapshots": 41,
+    "retained": 1.0,
+    "pkg_max_abs_K": 2.6147972675971687e-12,
+    "copper_max_abs_K": 4.547473508864641e-13,
+    "sea_mean_max_abs_K": 3.6530388689057956e-15,
+    "build_sec": 4.390872699994361,
+    "model_file": "runs\\bfzi_heat_rom_p07.npz",
+    "reference_file": "runs\\bfzi_pose_p07_skin_source_subcell_extra.npz"
+  }
+}
