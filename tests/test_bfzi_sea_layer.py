@@ -38,7 +38,8 @@ def demo():
                 coil2_package_x_half_mm=102.,
                 coil2_package_z_pos_half_mm=102.,
                 coil2_package_z_neg_half_mm=102.),
-                cfg=dict(BSR_PACKAGE_NORMAL_HALF_M=.0055),
+                cfg=dict(BSR_PACKAGE_NORMAL_HALF_M=.0055,
+                         BSR_INSULATED_WIRE_RADIUS_M=.00115),
                 families=fam),
             copper=N(lines=[N(line_elements=f.active.dl) for f in fam],
                      scene=N(assemblies=[N(wire_radius=.001)]*2)))
@@ -129,7 +130,7 @@ def test_wire_insulation_radial_heat_path():
     m=demo()
     et=BFZIV148Skin3D(m,skin_depth=.002,skin_layers=6,skin_quad=1)
     length=float(np.linalg.norm(m.base['families'][0].active.dl,axis=1).sum())
-    expected=2*np.pi*.25*length/np.log1p(.0005/.001)
+    expected=2*np.pi*.25*length/np.log1p(.00015/.001)
     assert np.allclose(et.cu_pkg_total,expected)
     assert np.allclose([sum(g for _,g in links)
                         for links in et.cu_links],expected)
