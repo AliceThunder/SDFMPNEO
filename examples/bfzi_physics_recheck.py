@@ -117,7 +117,8 @@ def march(et,spec,dt,inner_step=None):
             "candidate")
     out=dict(status=status,
              failed_at=err,dt_s=float(dt),
-             inner_step_s=float(dt if inner_step is None else min(dt,inner_step)),
+             inner_step_s=float(dt if inner_step is None else
+                                dt/max(1,int(np.ceil(dt/inner_step)))),
              completed_s=float(t[len(zs)-1]) if len(zs) else None,
              elapsed_s=float(time.perf_counter()-start),
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
