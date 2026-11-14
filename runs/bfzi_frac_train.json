@@ -1,0 +1,30 @@
+{
+  "P03": {
+    "frac": {
+      "train_loss": 0.00385871110484004,
+      "delta_Z_rel_L2": 0.008757775414803357,
+      "thermal_state_rel_L2": 0.010504582416269975,
+      "model_file": "runs\\bfzi_frac_net_p03_frac.pt"
+    },
+    "exp": {
+      "train_loss": 5.17171019964735e-06,
+      "delta_Z_rel_L2": 0.0007481726342795165,
+      "thermal_state_rel_L2": 0.0004552248973501051,
+      "model_file": "runs\\bfzi_frac_net_p03_exp.pt"
+    }
+  },
+  "P07": {
+    "frac": {
+      "train_loss": 0.05386411398649216,
+      "delta_Z_rel_L2": 0.009722861997070124,
+      "thermal_state_rel_L2": 0.01699487612585312,
+      "model_file": "runs\\bfzi_frac_net_p07_frac.pt"
+    },
+    "exp": {
+      "train_loss": 0.028212130069732666,
+      "delta_Z_rel_L2": 0.011838116810292221,
+      "thermal_state_rel_L2": 0.017425521613200788,
+      "model_file": "runs\\bfzi_frac_net_p07_exp.pt"
+    }
+  }
+}
