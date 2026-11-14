@@ -250,7 +250,7 @@ def main():
     p.add_argument("--sea-grid-max-nodes",type=int,default=1400)
     p.add_argument("--sea-source-radius",type=float,default=.06,
                    help="Fixed physical source moment radius, m")
-    p.add_argument("--sea-source-mask",choices=("legacy","oriented","physical"),
+    p.add_argument("--sea-source-mask",choices=("legacy","oriented","physical","all"),
                    default="legacy",help="Original global or coil-local weak Joule source support")
     p.add_argument("--sea-fv-faces",choices=("approx","exact"),
                    default="approx",help="Original volume-fraction or exact OBB wetted FV shared faces")
