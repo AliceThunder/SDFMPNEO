@@ -59,6 +59,21 @@ python -m examples.bfzi_physics_recheck --bfzi-root /path/to/BFZI --keys F12 F14
 
 本轮独立沙箱数值记录：`runs/bfzi_rc_check.json`。测试的是圆柱导热公式、隐式两节点热模型的稳定性与功率守恒；完整原 BFZI V150 动态回归未执行。
 
+### BFZI 原始端口引线热源错误与修复
+
+对 `AliceThunder/BFZI` 的 `bfzi-v150-turn-scan` 分支源码进行了源头复核：`bfzi_v148_results._line_for_family_with_zlead` 将 `fam.active.dl` 封装内绕组与 `terminal_leads_z.zlead_line_geom_for_coil` 外部 +Z 引线拼接。旧 `BFZIV148Adapter` 对拼接后全导线采用同一铜温度，`heat()` 将 **绕组+外部引线的全部铜耗** 注入封装内铜节点，`BFZIV148ET` 又把这整段导线质量作为封装内部铜热容。外部引线延伸到计算区域 +Z 边界（M4 通常约 0.6 m），应与封装内绕组区分。
+
+现改为：
+- 原 BFZI 原生空间电磁海水算子、空气阻抗保持不变；
+- `Z_cu,total = Z_cu,winding(T_cu) + Z_cu,lead(T_amb)`：封装内绕组温度反馈，外部端子引线作为环境温度下的远端导体；**冷态复阻抗严格保留原 BFZI 的所有导线长度**；
+- `P_cu,winding = 0.5 sum(Re(Z_cu,winding)|I|²)` 仅注入封装铜热节点；外部引线耗电 `P_lead = 0.5 sum(Re(Z_cu,lead)|I|²)` 计入电路完整功率预算，按外部环境散热通道处理；
+- 封装内铜热容仅按 `fam.active.dl` 真实绕组质量确定，不计入延伸到外部终端的引线质量；
+- 物理复算结果单独给出 `P_lead`、`P_cu,winding`、`P_sea`、输入电功率、外电路耗散及热收支。外部引线温度暂以环境温度为已声明物理边界条件。
+
+沙箱独立使用原 BFZI M4 线径、200 kHz、完整 Bessel 铜趋肤导电率，示例引线总长 1.2 m（示意数值）、10 圈绕组中心线约 4.1689 m：冷态拼接与拆分复阻抗一致至双精度；令封装铜温度 500/1000 K，引线维持 293.15 K 时，旧模型因把引线当作热铜，等效总电阻分别高估约 6.31%/11.72%。并在 200 W、600 s 的示例两节点热模型计算原 0.8 W/K 和几何导热约 17.47 W/K 两方案，铜温升为 320.54/86.62 K，最大离散能量残差约 4.3e-13 W。具体输入及输出：`runs/bfzi_rc_check.json`。**以上只验证物理拆分与能量核算，不替代 F14 原 BFZI 全电磁热真值复算。**
+
+从冻结 `bfzi_final_accept.json` 直接检查物理全局热收支残差，超过 1e-4 W 的旧工况有 **F13、F14、F16、F23、F25 共 5/24**，应与可能发生的材料越界分别判定。
+
 ## 3. 闭合准则与当前状态
 
 | 任务 | 判定准则 | 当前结果 |
