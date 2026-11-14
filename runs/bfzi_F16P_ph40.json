@@ -1,0 +1,82 @@
+{
+  "method": "BFZI V150 corrected copper geometry; fixed skin depth",
+  "settings": {
+    "spec_file": "runs\\bfzi_physical_cases.json",
+    "inner_step_s": 2,
+    "dt": [
+      15
+    ],
+    "grids": [
+      "ultra"
+    ],
+    "grid_sizes_m": {
+      "ultra": [
+        0.05,
+        0.04
+      ]
+    },
+    "grid_max_nodes": 4000,
+    "skin_m": 0.002,
+    "ins_k": 0.25,
+    "ins_t": null,
+    "pkg_k": 0.25,
+    "pkg_sea_h": 40,
+    "sea_max_K": 373.15,
+    "cu_max_K": 1357.77,
+    "pkg_max_K": null
+  },
+  "cases": {
+    "F16P": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15,
+          "inner_step_s": 1.875,
+          "completed_s": 600,
+          "elapsed_s": 179.8633458000113,
+          "copper_to_package_G_W_K": [
+            16.813318949441612,
+            16.81331894944162
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0044672524551429005,
+          "skin_water_capacity_error_J_K": 0,
+          "peak_thermal_residual_W": 0.000006679729722236516,
+          "peak_global_budget_W": 0.0000017078582459362224,
+          "max_port_power_residual_W": 7.275957614183426e-12,
+          "max_rel_port_power": 1.6899399621051313e-15,
+          "max_rel_q_power": 1.9906746464452085e-16,
+          "heat_cap_J_K": {
+            "seawater": 379662.66354169784,
+            "package": 1626.5040000000001,
+            "copper": 54.34631972747759
+          },
+          "max_copper_K": 374.8687752555633,
+          "max_package_K": 345.66928798696176,
+          "max_water_K": 316.9960329192219,
+          "max_copper_loss_W": 671.6586505652838,
+          "max_lead_loss_W": 168.69909778496958,
+          "max_sea_loss_W": 591.2375937151166,
+          "max_source_power_W": 4337.290278180487,
+          "peak_ambient_loss_W": 0.17626224100859106,
+          "max_storage_rate_W": 1266.433932093984
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    }
+  },
+  "provenance": {
+    "host": "XEnergy-Zhucy",
+    "date": "2026-11-14",
+    "purpose": "single-parameter thermal sensitivity"
+  }
+}
