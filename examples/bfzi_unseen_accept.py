@@ -58,7 +58,7 @@ def main():
         "docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_final.md"))
     a=ap.parse_args()
     meta={}
-    for name in FILES:
+    for name in sorted(set(FILES+[p.name for p in a.runs.glob("bfzi_unseen_*.json")])):
         p=a.runs/name
         if not p.exists():
             continue
@@ -108,12 +108,29 @@ def main():
                 phys=False
         checks={k:check(v,"time" if k.startswith("time") else "space")
                 for k,v in tests.items()}
-        complete=all(raw.values()) if False else all(v is not None for v in raw.values())
+        complete=all(v is not None for v in raw.values())
         state=("pending" if not complete else
                "pass" if phys and all(checks.values()) else "fail")
+        failed=[k for k in tests if tests[k] is not None and not checks[k]]
+        if complete and not phys:
+            failed.insert(0,"physical_validity_or_conservation")
+        dyn=None
+        ref=next((k for k in ("superfine_h1","superfine_h2","ultra_h1","ultra_h2")
+                  if raw[k] is not None),None)
+        if ref is not None:
+            z=raw[ref]["z6"]
+            t=raw[ref]["time_s"]
+            tc=raw[ref]["Tcu_K"].max(axis=1)
+            tp=raw[ref]["Tpkg_K"].max(axis=1)
+            dyn=dict(reference=ref,
+                     max_delta_R_ohm=float(np.max(abs(z[:,0::2]-z[0,0::2]))),
+                     max_delta_X_ohm=float(np.max(abs(z[:,1::2]-z[0,1::2]))),
+                     peak_copper_s=float(t[np.argmax(tc)]),
+                     peak_package_s=float(t[np.argmax(tp)]))
         cases[key]=dict(state=state,geometry=spec["cases"][key]["geometry"],
                         thermal=spec["cases"][key]["thermal"],runs=detail,
-                        comparisons=tests,checks=checks,physical_ok=phys)
+                        comparisons=tests,checks=checks,physical_ok=phys,
+                        failed_checks=failed,dynamics=dyn)
     counts={name:sum(c["state"]==name for c in cases.values())
             for name in ("pass","fail","pending")}
     vals={k:[c["comparisons"][k] for c in cases.values()
@@ -125,12 +142,19 @@ def main():
                      p95=float(np.percentile([x[m] for x in v],95)))
               for m in ("dz","cu","pkg")} if v else {}
            for k,v in vals.items()}
+    rows=[r for c in cases.values() for r in c["runs"].values()
+          if r.get("status")=="candidate"]
+    fields=("max_rel_port_power","max_rel_q_power","peak_thermal_residual_W",
+            "peak_global_budget_W","skin_water_capacity_error_J_K")
+    conservation={k:max(abs(r[k]) for r in rows) if rows else None
+                  for k in fields}
     out=dict(method="BFZI V150 four-combination unseen independent physics",
              grid={"ultra":"2668-class wet FV","superfine":"3729-class wet FV"},
              true_heat_step_s={"h2":1.875,"h1":1.0},
              output_dt_s=15,elapsed_s=600,counts=counts,
              accepted=counts["pass"]==12,original_U09="invalid BFZI geometry; preserved",
-             corrected_U09="alpha2=0.86, core2_mm=20",stats=stats,cases=cases)
+             corrected_U09="alpha2=0.86, core2_mm=20",
+             stats=stats,conservation=conservation,cases=cases)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(out,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
     lines=[
@@ -183,6 +207,22 @@ def main():
             "",
             "源数据保存在 runs/bfzi_phys_U*_*.npz；所有样本的单组合功率、温度及热残差在 runs/bfzi_physical_unseen12_final.json 中。",
             ""]
+    lines+=["## 守恒指标（所有已完成组合的最大绝对值）",""]
+    for k,v in conservation.items():
+        lines.append(f"{k}: {v:.6e}" if v is not None else f"{k}: 待运行")
+    lines+=["","## 动态阻抗与温度峰值时刻","",
+            "| 样本 | 最大动态 R (Ω) | 最大动态 X (Ω) | 铜峰时刻 (s) | 封装峰时刻 (s) |",
+            "| --- | ---: | ---: | ---: | ---: |"]
+    for key,c in cases.items():
+        d=c["dynamics"]
+        if d:
+            lines.append(f'| {key} | {d["max_delta_R_ohm"]:.6g} | {d["max_delta_X_ohm"]:.6g} | {d["peak_copper_s"]:.0f} | {d["peak_package_s"]:.0f} |')
+        else:
+            lines.append(f"| {key} | 待运行 | 待运行 | 待运行 | 待运行 |")
+    lines+=["","## 失败项",""]
+    lines.extend(f"{k}: {', '.join(c['failed_checks'])}" for k,c in
+                 cases.items() if c["state"]=="fail")
+    lines.append("")
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text("\n".join(lines),encoding="utf-8")
     print("U01-U12",counts,"accepted",out["accepted"])

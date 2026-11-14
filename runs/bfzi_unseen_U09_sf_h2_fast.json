@@ -1,0 +1,77 @@
+{
+  "method": "BFZI V150 corrected copper geometry; fixed skin depth",
+  "settings": {
+    "spec_file": "runs\\bfzi_physical_unseen12_corrected.json",
+    "inner_step_s": 2.0,
+    "dt": [
+      15.0
+    ],
+    "grids": [
+      "superfine"
+    ],
+    "grid_sizes_m": {
+      "superfine": [
+        0.045,
+        0.035
+      ]
+    },
+    "grid_max_nodes": 4000,
+    "skin_m": 0.002,
+    "ins_k": 0.25,
+    "ins_t": null,
+    "pkg_k": 0.25,
+    "pkg_sea_h": 20.0,
+    "sea_max_K": 373.15,
+    "cu_max_K": 1357.77,
+    "pkg_max_K": null
+  },
+  "cases": {
+    "U09": {
+      "runs": {
+        "superfine_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15.0,
+          "inner_step_s": 1.875,
+          "completed_s": 600.0,
+          "elapsed_s": 420.61082590000296,
+          "copper_to_package_G_W_K": [
+            27.205745075059408,
+            26.0137498607978
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0,
+          "skin_water_capacity_error_J_K": 0.0,
+          "peak_thermal_residual_W": 1.8159705632569967e-06,
+          "peak_global_budget_W": 3.866263114105095e-07,
+          "max_port_power_residual_W": 1.3642420526593924e-12,
+          "max_rel_port_power": 9.017712236607402e-16,
+          "max_rel_q_power": 3.4889540255425973e-16,
+          "heat_cap_J_K": {
+            "seawater": 379433.8120000015,
+            "package": 1712.3205000000003,
+            "copper": 53.75730128403325
+          },
+          "max_copper_K": 307.9937136266422,
+          "max_package_K": 304.36598033849356,
+          "max_water_K": 297.2789228075454,
+          "max_copper_loss_W": 196.57480204415947,
+          "max_lead_loss_W": 53.28373840124989,
+          "max_sea_loss_W": 327.4787482804773,
+          "max_source_power_W": 1517.1197043694715,
+          "peak_ambient_loss_W": 0.191975327382354,
+          "max_storage_rate_W": 523.4885200095795
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    }
+  }
+}
