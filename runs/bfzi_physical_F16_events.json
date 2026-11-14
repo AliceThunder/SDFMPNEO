@@ -1,0 +1,83 @@
+{
+  "method": "BFZI V150 corrected copper geometry; fixed skin depth",
+  "settings": {
+    "dt": [
+      30
+    ],
+    "grids": [
+      "extra"
+    ],
+    "grid_sizes_m": {
+      "extra": [
+        0.075,
+        0.06
+      ]
+    },
+    "grid_max_nodes": 4000,
+    "skin_m": 0.002,
+    "ins_k": 0.25,
+    "ins_t": null,
+    "sea_max_K": 373.15,
+    "cu_max_K": 1357.77,
+    "pkg_max_K": null
+  },
+  "cases": {
+    "F16": {
+      "runs": {
+        "extra_dt30": {
+          "status": "outside_material_domain",
+          "failed_at": {
+            "time_s": 420,
+            "reason": "liquid seawater model exceeded: 293.15..380.71 K; range (271.15, 373.15)",
+            "kind": "material"
+          },
+          "dt_s": 30,
+          "completed_s": 390,
+          "elapsed_s": 19.783459400001448,
+          "copper_to_package_G_W_K": [
+            16.813318949441612,
+            16.81331894944162
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.005025659012035111,
+          "skin_water_capacity_error_J_K": 5.820766091346741e-11,
+          "peak_thermal_residual_W": 0.000007068928880471503,
+          "peak_global_budget_W": 0.000005485582732944749,
+          "max_port_power_residual_W": 1.000444171950221e-11,
+          "max_rel_port_power": 2.3209443085820074e-15,
+          "max_rel_q_power": 5.664265448543695e-16,
+          "heat_cap_J_K": {
+            "seawater": 379662.656,
+            "package": 1626.5040000000001,
+            "copper": 54.34631972747759
+          },
+          "max_copper_K": 505.2532788739573,
+          "max_package_K": 476.0448373993564,
+          "max_water_K": 361.33078068920156,
+          "max_copper_loss_W": 758.4926105436875,
+          "max_lead_loss_W": 168.88721641204893,
+          "max_sea_loss_W": 613.1530004326042,
+          "max_source_power_W": 4339.418324308401,
+          "peak_ambient_loss_W": 0.5854745656662844,
+          "max_storage_rate_W": 1371.0601361113854
+        }
+      },
+      "comparisons": {},
+      "physical_full_horizon": false,
+      "time_convergence_pass": false,
+      "space_convergence_pass": false,
+      "accepted": false
+    }
+  },
+  "provenance": {
+    "host": "XEnergy-Zhucy",
+    "date": "2026-11-14",
+    "bfzi_sha": "9f3fa48",
+    "sdfmpneo_source_commit": "e7797d5b28c9418dd98dc6ba19f849c5b970aa30",
+    "note": "Piecewise-constant drive applied on left-closed time intervals after the F12 switching correction"
+  }
+}
