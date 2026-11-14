@@ -172,6 +172,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--bfzi-root",type=Path,required=True)
     p.add_argument("--runs",type=Path,default=Path("runs"))
+    p.add_argument("--spec-file",type=Path,default=None,
+                   help="Additional independent direct-physics case specs")
     p.add_argument("--keys",nargs="+",default=["F12","F14","F16"])
     p.add_argument("--dt",type=float,nargs="+",default=[30.,15.])
     p.add_argument("--grids",nargs="+",choices=tuple(GRIDS),
@@ -192,6 +194,8 @@ def main():
     bf,v150=originals(a.bfzi_root)
     saved=json.loads((a.runs/"bfzi_final_accept.json").read_text())
     selected={key:item["spec"] for key,item in saved["cases"].items()}
+    if a.spec_file is not None:
+        selected.update(json.loads(a.spec_file.read_text())["cases"])
     results={}
     for key in a.keys:
         if key not in selected:
@@ -272,7 +276,8 @@ def main():
         dest.parent.mkdir(parents=True,exist_ok=True)
         dest.write_text(json.dumps(dict(
             method="BFZI V150 corrected copper geometry; fixed skin depth",
-            settings=dict(dt=a.dt,grids=a.grids,
+            settings=dict(spec_file=str(a.spec_file) if a.spec_file else None,
+                          dt=a.dt,grids=a.grids,
                           grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
                           grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,
                           ins_k=a.ins_k,ins_t=a.ins_t,
