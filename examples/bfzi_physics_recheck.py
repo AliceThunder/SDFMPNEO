@@ -54,12 +54,17 @@ def march(et,spec,dt):
     start=time.perf_counter()
     for k,now in enumerate(t):
         v=drive(spec,now)
+        prev_v=drive(spec,t[k-1]) if k else v
         try:
             if k:
                 # Preserve the actual on/off duration at a switching time.
-                # Integrate the previous interval under its left-end drive.
-                theta=et.advance(prev,drive(spec,t[k-1]),dt)
+                theta=et.advance(prev,prev_v,dt)
             z,I,heat,q,cu=et.em(theta,v)
+            # Source used by the implicit step and the endpoint source
+            # differ exactly at a voltage transition. Keep the stored
+            # energy/heat-budget check on the previous interval.
+            step_heat=(heat if np.array_equal(prev_v,v)
+                       else et.em(theta,prev_v)[2])
         except (ValueError,RuntimeError) as exc:
             err=dict(time_s=float(now),reason=str(exc),
                      kind=("material" if "model exceeded" in str(exc)
@@ -73,12 +78,12 @@ def march(et,spec,dt):
         port_sea=float(.5*np.vdot(I,z.sea_z@I).real)
         qrel.append(abs(port_sea-sea)/max(abs(port_sea),1e-12))
         if k:
-            bal=et.cap*(theta-prev)/dt+et.H@theta-heat
+            bal=et.cap*(theta-prev)/dt+et.H@theta-step_heat
             residual.append(float(np.max(abs(bal))))
             stored=float(et.cap@(theta-prev)/dt)
             ambient_loss=float(et.amb_g@theta)
-            therm.append([stored,ambient_loss,float(heat.sum()),
-                          stored+ambient_loss-float(heat.sum())])
+            therm.append([stored,ambient_loss,float(step_heat.sum()),
+                          stored+ambient_loss-float(step_heat.sum())])
         else:
             residual.append(0.)
             therm.append([0.,0.,0.,0.])
