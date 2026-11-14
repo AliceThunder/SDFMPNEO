@@ -650,3 +650,7 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 ### 2026-11-14 — 独立 F16P/F23P 高功率物理复核
 
 已将冻结独立样本 F16/F23 的几何、介质反馈系数和 95/110 V 峰值输入转为三次30 s 脉冲，新增 [独立工况定义](../../../runs/bfzi_physical_cases.json) 与 [验收记录](evidence/independent_physics_cases.md)。在 BFZI V150 原生 2668 湿单元、15 s 输出间隔和实际 1.875 s 热步下，**F16P/F23P 均完整完成 600 s**，最高铜温度分别 379.683/341.077 K、封装 350.320/325.035 K、海水 313.605/304.616 K；热节点残差分别 6.68e-6/5.38e-6 W，电路功率相对误差约 1e-15。原始记录 [`bfzi_physical_new_probe.json`](../../../runs/bfzi_physical_new_probe.json)。F16P 的 2668→3729 湿单元空间 ΔZ 为 **1.99327%**，铜/封装最大差 0.364/0.494 K，达到空间验收门槛，证据 [F16P superfine](../../../runs/bfzi_physical_F16P_superfine_h2.json)。**F16P/F23P 完整时间及跨空间交叉收敛仍 OPEN**，不得把初步候选解标为正式验收。
+
+### 2026-11-14 — F16P/F23P 独立数值验收结果
+
+新增独立高功率 95/110 V 两几何物理直接法，在 2668 湿 FV 上实际热步 1.875/1.0 s 的动态 ΔZ 分别 **0.03811%/0.03531%**，铜温度差 **0.05100/0.03081 K**、封装 **0.03990/0.03331 K**，时间验收均 PASS。2668→3729 湿 FV 的空间 ΔZ 分别 **1.99327%/1.61086%**，铜 **0.36442/0.15347 K**、封装 **0.49369/0.22641 K**，空间验收均 PASS。全部轨迹完成 600 s，材料范围及能量守恒合格；原始 [1 s JSON](../../../runs/bfzi_physical_new_h1.json) 和 [独立数值报告](evidence/independent_physics_cases.md) 已归档。**F12、F14P 及 F16P/F23P 的分项数值门槛通过；F16P/F23P 四组合交叉收敛和封装材料参数标定仍待闭合。**
