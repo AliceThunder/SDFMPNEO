@@ -101,6 +101,7 @@ def march(et,spec,dt):
              completed_s=float(t[len(zs)-1]) if len(zs) else None,
              elapsed_s=float(time.perf_counter()-start),
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
+             insulation_layer_m=list(map(float,et.cu_ins_layers)),
              skin_depth_m=float(et.skin_depth),
              peak_thermal_residual_W=node,
              peak_global_budget_W=global_budget,
@@ -160,11 +161,13 @@ def main():
     p.add_argument("--cu-max-K",type=float,default=1357.77)
     p.add_argument("--pkg-max-K",type=float,default=None)
     p.add_argument("--ins-k",type=float,default=.25)
-    p.add_argument("--ins-t",type=float,default=.0005)
+    p.add_argument("--ins-t",type=float,default=None,
+                   help="Radial insulation thickness; default derives from original BFZI wire")
     p.add_argument("--skin",type=float,default=.002)
     p.add_argument("--out",type=Path,default=None)
     a=p.parse_args()
-    if min(a.ins_k,a.ins_t,a.skin,*a.dt)<=0:
+    if (min(a.ins_k,a.skin,*a.dt)<=0 or
+            (a.ins_t is not None and a.ins_t<=0)):
         p.error("insulation and time-step parameters must be positive")
     bf,v150=originals(a.bfzi_root)
     saved=json.loads((a.runs/"bfzi_final_accept.json").read_text())
