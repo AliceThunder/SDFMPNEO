@@ -237,19 +237,32 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                     link(end,int(j),exposed*g*float(w))
         owner=np.asarray(owner,int)
         shell_vol=np.asarray(shell_vol,float)
+        geom_vol=float(shell_vol.sum())
+        share_i=np.asarray(share_i,int)
+        share_j=np.asarray(share_j,int)
+        share_v=np.asarray(share_v,float)
+        # Rotated face quadrature may put slightly more shell water into
+        # partially wet native BFZI cells than their clipped FV volume.
+        # Occupy at most 99% of each real wet FV; leave the remainder in
+        # that same FV's bulk. This conserves the original sea capacity
+        # exactly, and retains the geometric 2-mm diffusion distance.
+        take0=np.bincount(share_i,weights=share_v,
+                          minlength=self.count)
+        scale=np.minimum(1.,.99*model.vol/np.maximum(take0,1e-30))
+        share_v*=scale[share_i]
+        shell_vol=np.bincount(share_j,weights=share_v,
+                             minlength=len(owner))
+        clip=1.-float(shell_vol.sum())/geom_vol
+        if clip>.02 or np.any(shell_vol<=0):
+            raise ValueError(
+                f"skin effective-water clipping too large: {clip:.3%}")
         mix=coo_matrix(
             (share_v,(share_i,share_j)),
             shape=(self.count,len(owner))).tocsr()
         take=np.asarray(mix.sum(axis=1)).ravel()
         bulk=model.vol-take
         if np.any(bulk<=0):
-            ids=np.flatnonzero(bulk<=0)
-            ratio=float(np.max(take/model.vol))
-            extra=float(np.maximum(take-model.vol,0).sum())
-            raise ValueError(
-                f"skin water capacity exceeds original BFZI wet FV: "
-                f"{ids[:8]}; peak={ratio:.3f}x FV, excess={extra:.6g} m3, "
-                f"skin_total={float(shell_vol.sum()):.6g} m3")
+            raise ValueError("nonpositive native BFZI wet-FV bulk volume")
         self.bulk_vol=bulk
         self.skin_owner=owner
         self.skin_vol=shell_vol
@@ -291,6 +304,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
             gap_bridge=bool(gap_bridge),gap=gap_info,
             gap_bulk_area_covered_m2=float(sum(covered)),
             redistributed_water_m3=float(shell_vol.sum()),
+            geometric_shell_m3=geom_vol,clipped_shell_fraction=clip,
             max_wet_fraction=float(np.max(take/model.vol)),
             sea_cap_delta_J_K=float(np.sum(self.cap[:self.count])+
                 np.sum(self.cap[self.skin])-
