@@ -45,7 +45,8 @@ def measure(et, t, v):
     total=0.
     for k in range(1,len(hist)):
         dt=float(t[k]-t[k-1])
-        heat=et.heat_vec(hist[k].sea_q,hist[k].copper_power)
+        heat=et.source_heat(hist[k].temp,hist[k].unit_j,
+                            hist[k].currents,hist[k].sea_q,hist[k].copper_power)
         res=(et.cap*(state[k]-state[k-1])/dt+et.H@state[k]-heat)
         node=max(node,float(np.max(abs(res))))
         total=max(total,float(abs(np.sum(res))))
@@ -106,14 +107,18 @@ def main():
     p.add_argument("--source-masks",nargs="+",
                    choices=("legacy","all","subcell"),
                    default=("legacy","all","subcell"))
+    p.add_argument("--skin-heat",choices=("volume","source"),default="volume")
     p.add_argument("--out",type=Path,default=Path(
         "runs/bfzi_obb_subcell_study.json"))
     a=p.parse_args()
+    if a.skin_heat=="source" and a.source_masks!=["subcell"]:
+        raise ValueError("source skin heating requires --source-masks subcell")
     bf,v150=originals(a.bfzi_root)
     old=json.loads((a.runs/"bfzi_obb_physical_study.json").read_text())
     out=dict(method="original BFZI V150 600s skin thermal quadrature",
              source_masks=a.source_masks,
              skin_depth_m=.002,skin_layers=8,skin_map=2,
+             skin_heat=a.skin_heat,
              wet_faces="exact",gap_bridge=False,geometries={})
     for name in a.poses:
         stem=f"bfzi_pose_{name.lower()}"
@@ -139,11 +144,13 @@ def main():
                 et=BFZIV148Skin3D(
                     em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
                     skin_depth=.002,skin_layers=8,skin_ratio=1.4,
-                    skin_quad=2,skin_near=4,skin_map=2,pkg_sea_h=20.)
+                    skin_quad=2,skin_near=4,skin_map=2,pkg_sea_h=20.,
+                    skin_heat=a.skin_heat)
                 setup=time.perf_counter()-start
                 item=measure(et,t,v)
                 run[mask,label]=item
-                f=a.runs/f"{stem}_subcell_{mask}_{label}.npz"
+                kind="subcell" if a.skin_heat=="volume" else "skin_source"
+                f=a.runs/f"{stem}_{kind}_{mask}_{label}.npz"
                 np.savez_compressed(
                     f,time_s=t,voltage_v=v,
                     temp_K=item["temp_K"],z6=item["z6"],
