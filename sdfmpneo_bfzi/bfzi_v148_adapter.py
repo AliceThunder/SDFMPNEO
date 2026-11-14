@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from ast import literal_eval
+from itertools import product
 from types import SimpleNamespace
 import numpy as np
 import scipy.sparse as sp
@@ -168,8 +169,21 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
     for fam in fams:
         geom,_ = calc.zlead_line_geom_for_coil(fam.coil,cfg)
         lead.append(geom)
+    full_rule=None
+    if mask=="subcell" and order>2:
+        x,wx=np.polynomial.legendre.leggauss(order)
+        g=np.array(list(product(range(order),repeat=3)),int)
+        full_rule=(x[g],np.prod(wx[g],axis=1)/8.)
     for p in np.flatnonzero(union):
         q,w = calc.base._record_quadrature(rec[p],order)
+        if (full_rule is not None and
+                float(rec[p].get("volume_fraction",1.))>1.-1e-10):
+            # V150 records store a fixed 2x2x2 rule independently of
+            # the requested source order.
+            mn=np.asarray(rec[p]["cell_min"],float)
+            mx=np.asarray(rec[p]["cell_max"],float)
+            q=.5*(mn+mx)+.5*(mx-mn)*full_rule[0]
+            w=vols[p]*full_rule[1]
         if len(q) == 0:
             continue
         src = []
@@ -186,11 +200,15 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
             moments=np.einsum("qic,qjc->qij",fields,fields,optimize=True)
             extra[p]=(np.asarray(q,float),np.asarray(w,float),
                       np.asarray(moments,float),np.asarray(fields,float))
+        avg=(np.einsum("q,qic->ic",w,fields,optimize=True)/w.sum()
+             if extra is not None else None)
         for i in range(len(fams)):
             for j in range(i,len(fams)):
                 if masks[i][p] and masks[j][p]:
                     exact = np.sum(w*np.einsum("pk,pk->p",src[i],src[j]))
-                    lump = vols[p]*np.dot(data["C"][i][p],data["C"][j][p])
+                    ci=(avg[i] if avg is not None else data["C"][i][p])
+                    cj=(avg[j] if avg is not None else data["C"][j][p])
+                    lump = vols[p]*np.dot(ci,cj)
                     out[p,i,j] = out[p,j,i] = exact-lump
     return (out,extra) if extra is not None else out
 
@@ -237,6 +255,11 @@ class BFZIV148Adapter:
             np.einsum("q,qpc->pc",rec[1],rec[3])/rec[1].sum()
             for rec in self.subcells])
             if self.subcells is not None else None)
+        if self.source_mean is not None:
+            # Use the same high-order cell source means in the FV EM
+            # solve and in the exact source covariance subtraction.
+            self.base["C"]=[self.source_mean[:,p,:].copy()
+                            for p in range(len(data["families"]))]
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
             # Neumann/GMD air calculation is needed for the time history.

@@ -88,7 +88,7 @@ def _qmap(subcells, faces, dx):
     cuts=np.r_[0,np.cumsum(sizes)]
     xyz=np.concatenate([item[0] for item in subcells])
     ids=np.repeat(np.arange(len(subcells)),sizes)
-    seen=np.zeros(len(ids),bool)
+    best=np.full(len(ids),np.inf)
     depths=np.cumsum(dx)
     for face in faces:
         v1,v2=face["v1"],face["v2"]
@@ -98,11 +98,12 @@ def _qmap(subcells, faces, dx):
         v=(d@v2)/(v2@v2)
         hit=((depth>=-1e-12)&(depth<depths[-1]-1e-12)&
              (abs(u)<=.5+1e-12)&(abs(v)<=.5+1e-12))
-        if np.any(hit&seen):
-            raise ValueError("overlapping physical seawater skin prisms")
-        layer=np.searchsorted(depths,depth[hit],side="right")
-        ids[hit]=face["last"]-len(dx)+1+layer
-        seen|=hit
+        # Adjacent face prisms intersect at package edges. Assign a
+        # shared physical point to its nearest package face exactly once.
+        take=hit&(depth<best-1e-12)
+        layer=np.searchsorted(depths,depth[take],side="right")
+        ids[take]=face["last"]-len(dx)+1+layer
+        best[take]=depth[take]
     return {id(item[0]):ids[cuts[i]:cuts[i+1]].copy()
             for i,item in enumerate(subcells)}
 

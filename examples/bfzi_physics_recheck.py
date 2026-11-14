@@ -201,6 +201,8 @@ def main():
                    help="Radial insulation thickness; default derives from original BFZI wire")
     p.add_argument("--skin",type=float,default=.002)
     p.add_argument("--out",type=Path,default=None)
+    p.add_argument("--run-tag",default="",
+                   help="Distinct NPZ tag for a numerical-method comparison")
     a=p.parse_args()
     if (min(a.ins_k,a.pkg_k,a.pkg_sea_h,a.skin,*a.dt)<=0 or a.grid_max_nodes<1 or
             (a.inner_step is not None and a.inner_step<=0) or
@@ -270,6 +272,8 @@ def main():
                         suffix+=f'_ph{opts["pkg_sea_h"]:g}'
                     if opts["skin"]!=.002:
                         suffix+=f'_sk{opts["skin"]:g}'
+                    if a.run_tag:
+                        suffix+=f"_{a.run_tag}"
                     np.savez_compressed(
                         a.runs/f"bfzi_phys_{key}_{tag}{suffix}.npz",**raw)
                 print("PHYS",key,tag,rec["status"],
@@ -321,7 +325,7 @@ def main():
         dest.write_text(json.dumps(dict(
             method="BFZI V150 corrected copper geometry; fixed skin depth",
             settings=dict(spec_file=str(a.spec_file) if a.spec_file else None,
-                          inner_step_s=a.inner_step,
+                          run_tag=a.run_tag,inner_step_s=a.inner_step,
                           dt=a.dt,grids=a.grids,
                           grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
                           grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,

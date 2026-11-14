@@ -154,3 +154,14 @@ def test_single_phase_material_domain():
     theta[et.skin.start]=373.15-et.amb
     with pytest.raises(ValueError,match="liquid seawater"):
         et.check_domain(theta)
+
+
+def test_source_quadrature_nearest_face_at_skin_corner():
+    from sdfmpneo_bfzi.sea_layer import _qmap
+    q=np.array([[.05,.12,0.],[.15,.02,0.],[.21,.21,0.]])
+    faces=[dict(center=np.zeros(3),normal=np.array([1.,0.,0.]),
+                v1=np.array([0.,1.,0.]),v2=np.array([0.,0.,1.]),last=20),
+           dict(center=np.zeros(3),normal=np.array([0.,1.,0.]),
+                v1=np.array([1.,0.,0.]),v2=np.array([0.,0.,1.]),last=30)]
+    node=_qmap([(q,)],faces,np.array([.1,.1]))[id(q)]
+    assert np.array_equal(node,[19,29,0])
