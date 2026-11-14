@@ -79,7 +79,7 @@ U11 在原冻结工况、原 ultra/superfine 网格、15 s 输出和 1.875 s 内
 
 U01 和 U11 的两级空间验收通过后，已按原冻样清单启动剩余 U02/U03/U04/U05/U06/U07/U08/U09/U10/U12 全集的两档网格与两个内部热步复算。验收使用 `--run-tag s3` 保存独立 NPZ 与 JSON，原冻结数据不覆盖。当前**总验收仍为 OPEN**，以新 48 次完整时程的四组合结果为最终依据。
 
-源记录：`runs/bfzi_unseen_u01_u11_s3_h2.json`；余下独立记录将分别保存于 `runs/bfzi_unseen_u01_u11_s3_h1.json`、`runs/bfzi_unseen_rest_s3_h2.json`、`runs/bfzi_unseen_rest_s3_h1.json`，运行完成后通过 `python -m examples.bfzi_unseen_accept --run-tag s3 --out runs/bfzi_physical_unseen12_s3.json --report docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_s3.md` 汇总。
+源记录：`runs/bfzi_unseen_u01_u11_s3_h2.json`；余下独立记录将分别保存于 `runs/bfzi_unseen_u01_u11_s3_h1.json`、`runs/bfzi_unseen_G1_s3_h2.json`、`runs/bfzi_unseen_G2_s3_h2.json`、`runs/bfzi_unseen_G3_s3_h2.json`、`runs/bfzi_unseen_rest_s3_h1.json`，运行完成后通过 `python -m examples.bfzi_unseen_accept --run-tag s3 --out runs/bfzi_physical_unseen12_s3.json --report docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_s3.md` 汇总。
 
 
 ## U11 三阶近源方案完整双向耦合初验（1.875 s）
