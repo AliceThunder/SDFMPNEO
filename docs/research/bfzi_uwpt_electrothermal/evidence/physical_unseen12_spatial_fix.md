@@ -72,3 +72,18 @@ python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-f
 保持冻结几何、激励与热材料参数，BFZI V150 ultra/superfine 原始两网格、真实 1.875 s 热步、每 15 s 输出阻抗，分别完成 600 s 的电磁热直接法。修复后的动态复阻抗空间相对 L2 为 **0.277465%**（原始 2.57138%，固定旧热轨迹电磁重放 0.29598%）；铜/封装空间最大温差为 **0.05149/0.08263 K**。最大热节点残差 **4.1431e-6 W**，全局热预算最大 **1.2466e-6 W**，最大相对端口功率失衡 **4.19e-15**，热容量相对原 FV 保持守恒。两组均 `candidate`，空间门槛通过。
 
 证据文件：`runs/bfzi_unseen_u01_u11_s3_h2.json`，`runs/bfzi_phys_U01_{ultra,superfine}_dt15_h2_*_s3.npz`。原 `runs/bfzi_physical_unseen12_final.json` 及其 NPZ 不覆盖。原样本总验收仍 OPEN；U01 1 s 热步及 U11 空间对照另行验收。
+
+## 完整闭环 U11 及全集复算启动
+
+U11 在原冻结工况、原 ultra/superfine 网格、15 s 输出和 1.875 s 内部热步下两次均完整完成 600 s，空间动态复阻抗相对 L2 **0.371160%**（原 2.7943%），铜/封装空间全程最大差 **0.37538/0.53481 K**，热节点/全局最大残差分别低于 **7.64e-6/1.70e-6 W**，端口相对功率误差低于 **2.83e-15**。两档均为 `candidate`，空间收敛通过。原 U01 在 ultra 网格真实内部 1.875/1 s 比较的动态复阻抗、铜、封装误差为 **0.15819%/0.14213 K/0.02052 K**，时间收敛通过。
+
+U01 和 U11 的两级空间验收通过后，已按原冻样清单启动剩余 U02/U03/U04/U05/U06/U07/U08/U09/U10/U12 全集的两档网格与两个内部热步复算。验收使用 `--run-tag s3` 保存独立 NPZ 与 JSON，原冻结数据不覆盖。当前**总验收仍为 OPEN**，以新 48 次完整时程的四组合结果为最终依据。
+
+源记录：`runs/bfzi_unseen_u01_u11_s3_h2.json`；余下独立记录将分别保存于 `runs/bfzi_unseen_u01_u11_s3_h1.json`、`runs/bfzi_unseen_rest_s3_h2.json`、`runs/bfzi_unseen_rest_s3_h1.json`，运行完成后通过 `python -m examples.bfzi_unseen_accept --run-tag s3 --out runs/bfzi_physical_unseen12_s3.json --report docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_s3.md` 汇总。
+
+
+## U11 三阶近源方案完整双向耦合初验（1.875 s）
+
+冻结 U11 原两级网格、600 s 全时程通过材料域和功率/热能守恒。空间动态复阻抗 L2 **0.3711600%**（原 2.7943%；二阶切割求积仍为 2.7650%）；铜温空间差 **0.37538 K**，封装温空间差 **0.53481 K**，全部优于原 2%/1 K/1.5 K 门槛。最大热残差 ≤7.637e-6 W，全局预算残差 ≤1.692e-6 W，端口功率相对误差 ≤2.83e-15，海水热容量守恒偏差 ≤5.82e-11 J/K。
+
+**U01、U11 两组独立失败样本已通过三阶近源方案完整 600 s 空间 h2 验收。** 1 s 内部热步复验及其余 U02–U10/U12 的全部四组合继续执行。证据 `runs/bfzi_unseen_u01_u11_s3_h2.json` 和对应 `*_s3.npz`，原 48 次冻结基准均保持原文件。
