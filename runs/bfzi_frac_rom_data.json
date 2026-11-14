@@ -1,0 +1,14 @@
+{
+  "P03": {
+    "samples": 21,
+    "rank": 32,
+    "max_recon_K": 1.1880274541908875e-11,
+    "file": "runs\\bfzi_frac_rom_p03.npz"
+  },
+  "P07": {
+    "samples": 41,
+    "rank": 32,
+    "max_recon_K": 1.3699263945454732e-11,
+    "file": "runs\\bfzi_frac_rom_p07.npz"
+  }
+}
