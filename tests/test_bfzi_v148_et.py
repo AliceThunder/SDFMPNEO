@@ -400,3 +400,16 @@ def test_external_terminal_lead_loss_is_not_winding_heat():
     assert np.allclose(q,0.)
     assert np.allclose(cu,.5*state.winding_z.real*abs(current)**2)
     assert np.allclose(cu+pl,.5*state.copper_z.real*abs(current)**2)
+
+
+def test_switch_off_applies_after_previous_interval():
+    model=Model()
+    et=BFZIV148ET(model,sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.eye(2)*.5)
+    t=np.array([0.,1.,2.,3.])
+    steps=et.trajectory(t,lambda now: [1. if now<2. else 0.,0.])
+    # 1..2 s must still receive the ON drive. Off current begins at 2 s.
+    assert steps[2].temp[et.cu][0]>steps[1].temp[et.cu][0]
+    assert np.allclose(steps[2].currents,0.)
+    assert steps[3].temp[et.cu][0]<steps[2].temp[et.cu][0]
