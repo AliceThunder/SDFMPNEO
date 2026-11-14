@@ -148,44 +148,32 @@ class BFZIV148ET:
         return m,I,power,q,cu
 
     def advance(self,state,drive,dt,*,iterations=16,tol=1e-5,
-                budget_tol=1e-4,method="be"):
+                budget_tol=1e-4):
         if not np.isfinite(dt) or dt<=0:
             raise ValueError("positive thermal time step required")
         if not np.isfinite(budget_tol) or budget_tol<=0:
             raise ValueError("positive heat-balance tolerance required")
-        if method not in ("be","cn"):
-            raise ValueError("heat integrator must be be or cn")
         old=np.asarray(state,float)
         if old.shape!=(self.n,):
             raise ValueError("invalid thermal state")
-        weight=1. if method=="be" else .5
-        key=(float(dt),method)
-        if key not in self._factor:
-            self._factor[key]=factorized(
-                (diags(self.cap)+dt*weight*self.H).tocsc())
-        solve=self._factor[key]
-        if method=="cn":
-            _,_,old_heat,_,_=self.em(old,drive)
-            rhs=self.cap*old+.5*dt*(old_heat-self.H@old)
-        else:
-            old_heat=None
-            rhs=self.cap*old
+        if dt not in self._factor:
+            self._factor[dt]=factorized(
+                (diags(self.cap)+dt*self.H).tocsc())
+        solve=self._factor[dt]
         theta=old.copy()
         budget=np.inf
         for _ in range(iterations):
             _,_,heat,_,_=self.em(theta,drive)
-            nxt=solve(rhs+dt*weight*heat)
+            nxt=solve(self.cap*old+dt*heat)
             err=float(np.max(abs(nxt-theta)))
             if not np.isfinite(err):
                 raise RuntimeError("BFZI thermal fixed point became nonfinite")
-            if err<tol:
+            if err < tol:
+                # Temperature-change tolerance alone cannot certify the
+                # heat equation when FV capacities are large. Evaluate the
+                # implicit residual using the Joule source at the final state.
                 _,_,heat_new,_,_=self.em(nxt,drive)
-                if method=="cn":
-                    bal=(self.cap*(nxt-old)/dt+
-                         .5*(self.H@old+self.H@nxt)-
-                         .5*(old_heat+heat_new))
-                else:
-                    bal=self.cap*(nxt-old)/dt+self.H@nxt-heat_new
+                bal=self.cap*(nxt-old)/dt+self.H@nxt-heat_new
                 budget=max(float(np.max(abs(bal))),
                            float(abs(np.sum(bal))))
                 if budget<=budget_tol:
