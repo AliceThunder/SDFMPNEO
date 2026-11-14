@@ -32,15 +32,34 @@ def pattern(pts, head, scale):
     return np.exp(-.5*(gap/scale)**2)
 
 
-def calc(em,amb,head):
+def mean_pattern(rec,head,scale):
+    """Volume integral of the same analytic T over original wet FV quadrature."""
+    values=[]
+    for cell in rec:
+        q=np.asarray(cell["quadrature_points"],float)
+        w=np.asarray(cell["quadrature_weights"],float)
+        if len(q)==0 or w.sum()<=0:
+            raise ValueError("BFZI oriented wet FV quadrature has no volume")
+        values.append(float(w@pattern(q,head,scale)/w.sum()))
+    return np.asarray(values)
+
+
+def calc(em,amb,head,integrate=False):
     cold=em.solve(np.full(len(em.vol),amb),np.full(2,amb))
     cs=pack(cold.sea_z)
     ct=pack(cold.total_z)
     vals={}
-    for name,scale in (("uniform",None),("layer_3mm",.003),
-                       ("layer_10mm",.01),("layer_30mm",.03),
-                       ("layer_80mm",.08)):
-        theta=pattern(em.points,head,scale)*5.
+    modes=[("uniform",None),("layer_3mm",.003),
+           ("layer_10mm",.01),("layer_30mm",.03),
+           ("layer_80mm",.08)]
+    if integrate:
+        modes += [("integral_3mm",.003),("integral_10mm",.01),
+                  ("integral_30mm",.03),("integral_80mm",.08)]
+    for name,scale in modes:
+        if name.startswith("integral_"):
+            theta=mean_pattern(em.base["records"],head,scale)*5.
+        else:
+            theta=pattern(em.points,head,scale)*5.
         warm=em.solve(amb+theta,np.full(2,amb))
         ds=pack(warm.sea_z)-cs
         dz=pack(warm.total_z)-ct
@@ -77,6 +96,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--bfzi-root",type=Path,required=True)
     p.add_argument("--runs",type=Path,default=Path("runs"))
+    p.add_argument("--integrate-temp",action="store_true",
+                   help="Integrate analytic sigma(T) over true oriented wet FV quadrature")
     p.add_argument("--source-mask",choices=("legacy","oriented",
                     "physical","all"),default="legacy")
     p.add_argument("--poses",nargs="+",choices=("P03","P07"),
@@ -89,6 +110,7 @@ def main():
     out=dict(method="original BFZI V150 fixed analytic T sea impedance mesh experiment",
              no_thermal_solver=True,reference="1312 true OBB water FV",
              source_mask=a.source_mask,
+             integrate_temperature=a.integrate_temp,
              geometries={})
     for name in a.poses:
         meta=json.loads((a.runs/
@@ -106,7 +128,7 @@ def main():
                           grid_xz=xz,grid_y=y)
             em=BFZIV148Adapter(data,bf,heat_mode="port-weak",
                                fv_faces="exact",source_mask=a.source_mask)
-            vals=calc(em,head.amb,head)
+            vals=calc(em,head.amb,head,integrate=a.integrate_temp)
             run[level]=dict(nodes=len(em.vol),fields=vals)
             print(name,level,"nodes",len(em.vol),flush=True)
         compare={}
