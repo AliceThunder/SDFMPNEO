@@ -373,7 +373,7 @@ class BFZIV148Adapter:
         z = core.sym_complex(z+dz)
         z_w=(np.zeros(2,complex) if self.copper is None
              else self.copper.conductor_internal_impedance(tc))
-        z_l=(np.zeros(2,complex) if self.lead_copper is None
+        z_l=(np.zeros(2,complex) if getattr(self,"lead_copper",None) is None
              else self.lead_copper.conductor_internal_impedance(
                  np.full(2,self.ambient)))
         zcu=z_w+z_l
