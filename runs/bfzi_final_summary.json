@@ -1,0 +1,11 @@
+{
+  "total": 24,
+  "passed": 1,
+  "failed": 23,
+  "pass_rate": 0.041666666666666664,
+  "worst_delta_Z_percent": 60.89799812472918,
+  "worst_copper_K": 793.3753726895816,
+  "worst_pkg_K": 308.4578361034229,
+  "min_online_speedup": 388.49082555462036,
+  "worst_thermal_budget": 6.43027369818862e-06
+}

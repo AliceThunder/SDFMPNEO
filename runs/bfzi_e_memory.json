@@ -1,0 +1,26 @@
+{
+  "g1": {
+    "frac": {
+      "train_residual_delta_Z_rel_L2": 1.0565288808705742e-05,
+      "train_loss": 0.010638582520186901,
+      "model_file": "runs\\bfzi_frac_rom_g1_frac.pt"
+    },
+    "exp": {
+      "train_residual_delta_Z_rel_L2": 7.504486180131452e-06,
+      "train_loss": 0.00533880852162838,
+      "model_file": "runs\\bfzi_frac_rom_g1_exp.pt"
+    }
+  },
+  "g2": {
+    "frac": {
+      "train_residual_delta_Z_rel_L2": 5.39589358813399e-05,
+      "train_loss": 0.004374980926513672,
+      "model_file": "runs\\bfzi_frac_rom_g2_frac.pt"
+    },
+    "exp": {
+      "train_residual_delta_Z_rel_L2": 7.98792482173474e-05,
+      "train_loss": 0.002387566491961479,
+      "model_file": "runs\\bfzi_frac_rom_g2_exp.pt"
+    }
+  }
+}

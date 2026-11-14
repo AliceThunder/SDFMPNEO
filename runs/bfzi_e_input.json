@@ -1,0 +1,29 @@
+{
+  "geometry": {
+    "alpha1": 1.0,
+    "alpha2": 0.88,
+    "core1_mm": 0.0,
+    "core2_mm": 16.0,
+    "shift_mm": [
+      8.0,
+      26.81307082508511,
+      5.0
+    ],
+    "tilt_deg": 22.0,
+    "yaw_deg": 6.0,
+    "pitch_deg": 8.0,
+    "box1_mm": 210.0,
+    "box2_mm": 228.0
+  },
+  "donor": "g1",
+  "medium": {
+    "alpha_per_K": 0.016
+  },
+  "voltage": 75.0,
+  "duration": 600.0,
+  "dt": 15.0,
+  "off": [
+    "120:240",
+    "450:510"
+  ]
+}

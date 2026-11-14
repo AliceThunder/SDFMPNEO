@@ -1,0 +1,27 @@
+{
+  "target": "g3",
+  "donor": "g1",
+  "memory": "frac",
+  "original_BFZI_cold_solves": 1,
+  "original_BFZI_dynamic_solves": 0,
+  "build_sec": 2.1314509000076214,
+  "infer_sec": 0.04381660000944976,
+  "steps": 21,
+  "sea_cells": 1316,
+  "metrics": {
+    "q_power_max_abs_W": 1.2434497875801753e-14,
+    "port_power_max_abs_W": 3.907985046680551e-14,
+    "thermal_budget_max_abs_W": 2.5511645896775345e-09,
+    "max_rel_port_power": 1.1440308799559161e-15,
+    "max_rel_q_power": 3.6827853540411846e-16,
+    "max_rel_thermal_power": 7.485672868737348e-11,
+    "max_abs_shutdown_budget_W": 1.8465097769779983e-14
+  },
+  "heldout": {
+    "delta_Z_rel_L2": 0.008288898488652111,
+    "pkg_max_abs_K": 0.3403204232525354,
+    "copper_max_abs_K": 0.0561344514422899,
+    "direct_sec": 19.262646900009713,
+    "online_speedup": 439.6198448956654
+  }
+}

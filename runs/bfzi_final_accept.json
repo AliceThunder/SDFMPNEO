@@ -1,0 +1,1456 @@
+{
+  "method": "Original BFZI V150 source-skin independent unseen final acceptance",
+  "cases": {
+    "F11": {
+      "spec": {
+        "id": "F11",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            2.0,
+            35.0,
+            2.0
+          ],
+          "tilt_deg": 4.0,
+          "yaw_deg": -3.0,
+          "pitch_deg": 2.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 20.0,
+        "alpha_per_K": 0.02,
+        "off": [],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.034649565320550496,
+        "copper_max_abs_K": 0.18967322896418182,
+        "pkg_max_abs_K": 0.26692112071589236,
+        "sea_mean_max_abs_K": 0.0049232092569983866,
+        "cold_Z_abs": 0.0024426566529207852
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.3322676295501878e-15,
+        "port_power_max_abs_W": 3.552713678800501e-14,
+        "thermal_budget_max_abs_W": 2.9649330280764874e-10,
+        "max_rel_port_power": 5.555410182737129e-15,
+        "max_rel_q_power": 2.0809232184894653e-16,
+        "max_rel_thermal_power": 4.6537595962682454e-11,
+        "max_abs_shutdown_budget_W": 0.0
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.239315099999658,
+        "online_sec": 0.042329099989729,
+        "physical_setup_sec": 5.208382400000119,
+        "physical_direct_sec": 16.444466999993892,
+        "online_speedup": 388.49082555462036
+      },
+      "physical_budget_W": 6.444257135526308e-08
+    },
+    "F12": {
+      "spec": {
+        "id": "F12",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            13.0,
+            43.0,
+            -5.0
+          ],
+          "tilt_deg": 16.0,
+          "yaw_deg": 8.0,
+          "pitch_deg": -7.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 45.0,
+        "alpha_per_K": 0.016,
+        "off": [
+          [
+            180.0,
+            300.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.023670646185068527,
+        "copper_max_abs_K": 1.1953067825567132,
+        "pkg_max_abs_K": 1.3839912925461704,
+        "sea_mean_max_abs_K": 0.018575412140384676,
+        "cold_Z_abs": 0.0012030898994411926
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.4210854715202004e-14,
+        "port_power_max_abs_W": 3.979039320256561e-13,
+        "thermal_budget_max_abs_W": 3.663210253366911e-09,
+        "max_rel_port_power": 7.207928941088821e-15,
+        "max_rel_q_power": 2.5900356663463676e-16,
+        "max_rel_thermal_power": 6.821719681185382e-11,
+        "max_abs_shutdown_budget_W": 2.203257558252501e-14
+      },
+      "passed": true,
+      "timing": {
+        "offline_sec": 2.0786828999989666,
+        "online_sec": 0.02379099999961909,
+        "physical_setup_sec": 5.297699400005513,
+        "physical_direct_sec": 20.26251179999963,
+        "online_speedup": 851.6881089623827
+      },
+      "physical_budget_W": 6.155269853176444e-07
+    },
+    "F13": {
+      "spec": {
+        "id": "F13",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            -12.0,
+            77.0,
+            11.0
+          ],
+          "tilt_deg": 18.85,
+          "yaw_deg": -11.0,
+          "pitch_deg": 12.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 75.0,
+        "alpha_per_K": 0.025,
+        "off": [
+          [
+            120.0,
+            240.0
+          ],
+          [
+            420.0,
+            480.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.15074808710639875,
+        "copper_max_abs_K": 74.01162642333156,
+        "pkg_max_abs_K": 40.25569398705716,
+        "sea_mean_max_abs_K": 0.516853116872256,
+        "cold_Z_abs": 0.004881328525692888
+      },
+      "energy": {
+        "q_power_max_abs_W": 2.2737367544323206e-13,
+        "port_power_max_abs_W": 4.604316927725449e-12,
+        "thermal_budget_max_abs_W": 0.0018091523030856814,
+        "max_rel_port_power": 6.789755128833759e-15,
+        "max_rel_q_power": 2.530747097072584e-16,
+        "max_rel_thermal_power": 2.3049348222752786e-06,
+        "max_abs_shutdown_budget_W": 7.58389289206048e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.1348530999966897,
+        "online_sec": 0.04846190000534989,
+        "physical_setup_sec": 5.2243797999981325,
+        "physical_direct_sec": 28.469981499991263,
+        "online_speedup": 587.4714259417884
+      },
+      "physical_budget_W": 0.001799062558533777
+    },
+    "F14": {
+      "spec": {
+        "id": "F14",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            6.0,
+            88.0,
+            -9.0
+          ],
+          "tilt_deg": 24.7,
+          "yaw_deg": 14.0,
+          "pitch_deg": -9.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 110.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            90.0,
+            150.0
+          ],
+          [
+            300.0,
+            390.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.6089799812472918,
+        "copper_max_abs_K": 793.3753726895816,
+        "pkg_max_abs_K": 308.4578361034229,
+        "sea_mean_max_abs_K": 1.9973168114042186,
+        "cold_Z_abs": 0.004781706455796378
+      },
+      "energy": {
+        "q_power_max_abs_W": 6.821210263296962e-13,
+        "port_power_max_abs_W": 6.139089236967266e-12,
+        "thermal_budget_max_abs_W": 9.600266907655482e-06,
+        "max_rel_port_power": 2.5635628877458817e-15,
+        "max_rel_q_power": 3.532986175791839e-16,
+        "max_rel_thermal_power": 4.061409555675666e-09,
+        "max_abs_shutdown_budget_W": 2.533197993053755e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.2577780000137864,
+        "online_sec": 0.038804600000730716,
+        "physical_setup_sec": 5.147577099996852,
+        "physical_direct_sec": 28.33797449999838,
+        "online_speedup": 730.2735886844539
+      },
+      "physical_budget_W": 0.009238283450321065
+    },
+    "F15": {
+      "spec": {
+        "id": "F15",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            19.0,
+            75.0,
+            8.0
+          ],
+          "tilt_deg": 7.800000000000001,
+          "yaw_deg": 17.0,
+          "pitch_deg": 16.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 65.0,
+        "alpha_per_K": 0.012,
+        "off": [
+          [
+            300.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.013052394814903551,
+        "copper_max_abs_K": 4.9703955840786875,
+        "pkg_max_abs_K": 14.066529922015775,
+        "sea_mean_max_abs_K": 0.17073392584065575,
+        "cold_Z_abs": 0.0037910131475293826
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.4210854715202004e-13,
+        "port_power_max_abs_W": 1.9895196601282805e-12,
+        "thermal_budget_max_abs_W": 8.606874440122663e-05,
+        "max_rel_port_power": 3.7807219662496465e-15,
+        "max_rel_q_power": 3.0109927986586937e-16,
+        "max_rel_thermal_power": 1.8236226798129317e-07,
+        "max_abs_shutdown_budget_W": 9.957970912854039e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.1509009000001242,
+        "online_sec": 0.04576539999106899,
+        "physical_setup_sec": 5.146463299999596,
+        "physical_direct_sec": 26.333170700003393,
+        "online_speedup": 575.3947459246997
+      },
+      "physical_budget_W": 8.547750710276647e-05
+    },
+    "F16": {
+      "spec": {
+        "id": "F16",
+        "family": "round",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 1.0,
+          "core1_mm": 0.0,
+          "core2_mm": 0.0,
+          "shift_mm": [
+            -7.0,
+            84.0,
+            -13.0
+          ],
+          "tilt_deg": 16.900000000000002,
+          "yaw_deg": -18.0,
+          "pitch_deg": -13.0,
+          "box1_mm": 220.0,
+          "box2_mm": 224.0
+        },
+        "donor": "g1",
+        "voltage": 95.0,
+        "alpha_per_K": 0.028,
+        "off": [
+          [
+            60.0,
+            120.0
+          ],
+          [
+            240.0,
+            300.0
+          ],
+          [
+            480.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.45612820838793183,
+        "copper_max_abs_K": 411.30406000013363,
+        "pkg_max_abs_K": 168.55240314366438,
+        "sea_mean_max_abs_K": 0.7480868907317545,
+        "cold_Z_abs": 0.004583738452472139
+      },
+      "energy": {
+        "q_power_max_abs_W": 6.821210263296962e-13,
+        "port_power_max_abs_W": 6.366462912410498e-12,
+        "thermal_budget_max_abs_W": 0.01075735409795557,
+        "max_rel_port_power": 3.7668443914162304e-15,
+        "max_rel_q_power": 3.941213000165225e-16,
+        "max_rel_thermal_power": 6.43027369818862e-06,
+        "max_abs_shutdown_budget_W": 4.312342071697947e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.1772208000038518,
+        "online_sec": 0.026010999994468875,
+        "physical_setup_sec": 5.057564099988667,
+        "physical_direct_sec": 28.035216799995396,
+        "online_speedup": 1077.8215680272563
+      },
+      "physical_budget_W": 0.011251281899485143
+    },
+    "F21": {
+      "spec": {
+        "id": "F21",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            13.0,
+            81.0,
+            -5.0
+          ],
+          "tilt_deg": 18.85,
+          "yaw_deg": -11.0,
+          "pitch_deg": 12.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 45.0,
+        "alpha_per_K": 0.025,
+        "off": [
+          [
+            90.0,
+            150.0
+          ],
+          [
+            300.0,
+            390.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.0523207311066982,
+        "copper_max_abs_K": 0.814363822892517,
+        "pkg_max_abs_K": 3.942494374466321,
+        "sea_mean_max_abs_K": 0.045590634976210825,
+        "cold_Z_abs": 0.0023947823202978783
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.1368683772161603e-13,
+        "port_power_max_abs_W": 4.263256414560601e-13,
+        "thermal_budget_max_abs_W": 3.1948683832556782e-09,
+        "max_rel_port_power": 1.7524468317762488e-15,
+        "max_rel_q_power": 4.644352800753761e-16,
+        "max_rel_thermal_power": 1.3216233199731847e-11,
+        "max_abs_shutdown_budget_W": 7.960544770048593e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.3057254000013927,
+        "online_sec": 0.04838690000178758,
+        "physical_setup_sec": 2.6467524000036065,
+        "physical_direct_sec": 22.898388800007524,
+        "online_speedup": 473.2352930061975
+      },
+      "physical_budget_W": 3.236372561388035e-07
+    },
+    "F22": {
+      "spec": {
+        "id": "F22",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            -12.0,
+            77.0,
+            11.0
+          ],
+          "tilt_deg": 24.7,
+          "yaw_deg": 14.0,
+          "pitch_deg": -9.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 75.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            300.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.052978164984008425,
+        "copper_max_abs_K": 3.55961396221403,
+        "pkg_max_abs_K": 6.876140469216068,
+        "sea_mean_max_abs_K": 0.13931594737263517,
+        "cold_Z_abs": 0.002124464305854944
+      },
+      "energy": {
+        "q_power_max_abs_W": 2.2737367544323206e-13,
+        "port_power_max_abs_W": 2.5011104298755527e-12,
+        "thermal_budget_max_abs_W": 2.4546893154039244e-07,
+        "max_rel_port_power": 3.9178428539853474e-15,
+        "max_rel_q_power": 3.498918426297429e-16,
+        "max_rel_thermal_power": 3.87920069608684e-10,
+        "max_abs_shutdown_budget_W": 2.6999715166089804e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.5085072000074433,
+        "online_sec": 0.04427080000459682,
+        "physical_setup_sec": 5.119149699996342,
+        "physical_direct_sec": 23.74361809999391,
+        "online_speedup": 536.326836143203
+      },
+      "physical_budget_W": 4.1242878844576834e-07
+    },
+    "F23": {
+      "spec": {
+        "id": "F23",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            6.0,
+            88.0,
+            -9.0
+          ],
+          "tilt_deg": 7.800000000000001,
+          "yaw_deg": 17.0,
+          "pitch_deg": 16.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 110.0,
+        "alpha_per_K": 0.012,
+        "off": [
+          [
+            60.0,
+            120.0
+          ],
+          [
+            240.0,
+            300.0
+          ],
+          [
+            480.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "score": {
+        "delta_Z_rel_L2": 0.17299923520331906,
+        "copper_max_abs_K": 107.42567879793364,
+        "pkg_max_abs_K": 42.969366058564106,
+        "sea_mean_max_abs_K": 0.208069087928534,
+        "cold_Z_abs": 0.0023332847355061873
+      },
+      "energy": {
+        "q_power_max_abs_W": 5.684341886080801e-13,
+        "port_power_max_abs_W": 4.547473508864641e-12,
+        "thermal_budget_max_abs_W": 0.002187951180204249,
+        "max_rel_port_power": 2.7192553646969275e-15,
+        "max_rel_q_power": 3.4041526031589854e-16,
+        "max_rel_thermal_power": 1.357912022572449e-06,
+        "max_abs_shutdown_budget_W": 5.553370283579139e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.3464254999998957,
+        "online_sec": 0.04931889999716077,
+        "physical_setup_sec": 2.655002699990291,
+        "physical_direct_sec": 28.80252979999932,
+        "online_speedup": 584.0059247399566
+      },
+      "physical_budget_W": 0.002211543566583169
+    },
+    "F24": {
+      "spec": {
+        "id": "F24",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            19.0,
+            75.0,
+            8.0
+          ],
+          "tilt_deg": 16.900000000000002,
+          "yaw_deg": -18.0,
+          "pitch_deg": -13.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 65.0,
+        "alpha_per_K": 0.028,
+        "off": [],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.06411286333170163,
+        "copper_max_abs_K": 2.5072819647069196,
+        "pkg_max_abs_K": 9.98735357316366,
+        "sea_mean_max_abs_K": 0.09464600794308141,
+        "cold_Z_abs": 0.002307113464101078
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.9895196601282805e-13,
+        "port_power_max_abs_W": 1.3073986337985843e-12,
+        "thermal_budget_max_abs_W": 2.1771250782029442e-08,
+        "max_rel_port_power": 2.6587651443567984e-15,
+        "max_rel_q_power": 4.1094377697905853e-16,
+        "max_rel_thermal_power": 4.547452259991997e-11,
+        "max_abs_shutdown_budget_W": 0.0
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.295401600000332,
+        "online_sec": 0.02850080000644084,
+        "physical_setup_sec": 2.6477421000017785,
+        "physical_direct_sec": 27.69378770000185,
+        "online_speedup": 971.6845735468262
+      },
+      "physical_budget_W": 3.2381801680140106e-07
+    },
+    "F25": {
+      "spec": {
+        "id": "F25",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            -7.0,
+            84.0,
+            -13.0
+          ],
+          "tilt_deg": 2.6,
+          "yaw_deg": -3.0,
+          "pitch_deg": 2.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 95.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            180.0,
+            300.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0002,
+      "score": {
+        "delta_Z_rel_L2": 0.2749609866141743,
+        "copper_max_abs_K": 211.2995489313032,
+        "pkg_max_abs_K": 96.25812428668485,
+        "sea_mean_max_abs_K": 0.8689800645500507,
+        "cold_Z_abs": 0.0025126150729310494
+      },
+      "energy": {
+        "q_power_max_abs_W": 7.958078640513122e-13,
+        "port_power_max_abs_W": 4.092726157978177e-12,
+        "thermal_budget_max_abs_W": 0.0029069342804575165,
+        "max_rel_port_power": 2.8069057361487937e-15,
+        "max_rel_q_power": 5.457492657242391e-16,
+        "max_rel_thermal_power": 2.0858539153915444e-06,
+        "max_abs_shutdown_budget_W": 3.663912356574501e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.1755625000078,
+        "online_sec": 0.03391960001317784,
+        "physical_setup_sec": 5.272534599993378,
+        "physical_direct_sec": 29.76420170000347,
+        "online_speedup": 877.492708889256
+      },
+      "physical_budget_W": 0.002980943224071309
+    },
+    "F26": {
+      "spec": {
+        "id": "F26",
+        "family": "blend",
+        "geometry": {
+          "alpha1": 0.95,
+          "alpha2": 0.86,
+          "core1_mm": 7.0,
+          "core2_mm": 20.0,
+          "shift_mm": [
+            2.0,
+            73.0,
+            2.0
+          ],
+          "tilt_deg": 10.4,
+          "yaw_deg": 8.0,
+          "pitch_deg": -7.0,
+          "box1_mm": 228.0,
+          "box2_mm": 236.0
+        },
+        "donor": "g2",
+        "voltage": 20.0,
+        "alpha_per_K": 0.016,
+        "off": [
+          [
+            120.0,
+            240.0
+          ],
+          [
+            420.0,
+            480.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.05052931592109564,
+        "copper_max_abs_K": 0.2843080627460495,
+        "pkg_max_abs_K": 0.6099693942142608,
+        "sea_mean_max_abs_K": 0.007473878592162585,
+        "cold_Z_abs": 0.0012694449894884933
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.7763568394002505e-14,
+        "port_power_max_abs_W": 1.9895196601282805e-13,
+        "thermal_budget_max_abs_W": 1.1343655804714249e-10,
+        "max_rel_port_power": 4.3182379716404135e-15,
+        "max_rel_q_power": 3.8609109260251803e-16,
+        "max_rel_thermal_power": 2.466648045737036e-12,
+        "max_abs_shutdown_budget_W": 2.9986760314101016e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.2072228000033647,
+        "online_sec": 0.04046590000507422,
+        "physical_setup_sec": 2.539496199999121,
+        "physical_direct_sec": 18.141370900004404,
+        "online_speedup": 448.31255199389034
+      },
+      "physical_budget_W": 1.583265006659964e-08
+    },
+    "F31": {
+      "spec": {
+        "id": "F31",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            -12.0,
+            77.0,
+            11.0
+          ],
+          "tilt_deg": 7.800000000000001,
+          "yaw_deg": 17.0,
+          "pitch_deg": 16.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 75.0,
+        "alpha_per_K": 0.012,
+        "off": [],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.05579658823339296,
+        "copper_max_abs_K": 1.7406281496111546,
+        "pkg_max_abs_K": 4.419080927711434,
+        "sea_mean_max_abs_K": 0.028890294132942723,
+        "cold_Z_abs": 0.001890273778309637
+      },
+      "energy": {
+        "q_power_max_abs_W": 6.394884621840902e-14,
+        "port_power_max_abs_W": 3.552713678800501e-13,
+        "thermal_budget_max_abs_W": 6.002909449523949e-09,
+        "max_rel_port_power": 3.4161233634214753e-15,
+        "max_rel_q_power": 5.986668573585702e-16,
+        "max_rel_thermal_power": 5.6649393918772265e-11,
+        "max_abs_shutdown_budget_W": 0.0
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.182102099992335,
+        "online_sec": 0.028715899999951944,
+        "physical_setup_sec": 4.884415900000022,
+        "physical_direct_sec": 23.31408339999325,
+        "online_speedup": 811.8876093046803
+      },
+      "physical_budget_W": 6.261958794025575e-07
+    },
+    "F32": {
+      "spec": {
+        "id": "F32",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            6.0,
+            88.0,
+            -9.0
+          ],
+          "tilt_deg": 16.900000000000002,
+          "yaw_deg": -18.0,
+          "pitch_deg": -13.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 110.0,
+        "alpha_per_K": 0.028,
+        "off": [
+          [
+            180.0,
+            300.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.07078801964815516,
+        "copper_max_abs_K": 3.4647088344586905,
+        "pkg_max_abs_K": 7.8196205418246905,
+        "sea_mean_max_abs_K": 0.0424687679825139,
+        "cold_Z_abs": 0.0026049123777517036
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.1368683772161603e-13,
+        "port_power_max_abs_W": 1.0800249583553523e-12,
+        "thermal_budget_max_abs_W": 1.3843081571659158e-08,
+        "max_rel_port_power": 5.867917279594862e-15,
+        "max_rel_q_power": 6.006019889172243e-16,
+        "max_rel_thermal_power": 7.832068458758093e-11,
+        "max_abs_shutdown_budget_W": 4.101769095061617e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.436033799996949,
+        "online_sec": 0.05072430000291206,
+        "physical_setup_sec": 4.972717700002249,
+        "physical_direct_sec": 24.82196620000468,
+        "online_speedup": 489.3505913059355
+      },
+      "physical_budget_W": 1.1089260998779814e-06
+    },
+    "F33": {
+      "spec": {
+        "id": "F33",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            19.0,
+            75.0,
+            8.0
+          ],
+          "tilt_deg": 2.6,
+          "yaw_deg": -3.0,
+          "pitch_deg": 2.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 65.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            120.0,
+            240.0
+          ],
+          [
+            420.0,
+            480.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.06007791774279113,
+        "copper_max_abs_K": 0.9287094368215776,
+        "pkg_max_abs_K": 2.2820690324054453,
+        "sea_mean_max_abs_K": 0.02406220584521483,
+        "cold_Z_abs": 0.0021353076630156367
+      },
+      "energy": {
+        "q_power_max_abs_W": 2.1316282072803006e-14,
+        "port_power_max_abs_W": 2.1316282072803006e-13,
+        "thermal_budget_max_abs_W": 4.419930086314081e-09,
+        "max_rel_port_power": 3.135269118671378e-15,
+        "max_rel_q_power": 3.1652189538401573e-16,
+        "max_rel_thermal_power": 6.50097904455288e-11,
+        "max_abs_shutdown_budget_W": 2.537791817301587e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.0487065999914194,
+        "online_sec": 0.023556300002383068,
+        "physical_setup_sec": 5.073216199991293,
+        "physical_direct_sec": 19.841511000005994,
+        "online_speedup": 842.3016771733562
+      },
+      "physical_budget_W": 1.743602612714958e-07
+    },
+    "F34": {
+      "spec": {
+        "id": "F34",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            -7.0,
+            84.0,
+            -13.0
+          ],
+          "tilt_deg": 10.4,
+          "yaw_deg": 8.0,
+          "pitch_deg": -7.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 95.0,
+        "alpha_per_K": 0.016,
+        "off": [
+          [
+            90.0,
+            150.0
+          ],
+          [
+            300.0,
+            390.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.055203106366066075,
+        "copper_max_abs_K": 2.3415292521489732,
+        "pkg_max_abs_K": 5.2777391204326705,
+        "sea_mean_max_abs_K": 0.04399207032800407,
+        "cold_Z_abs": 0.0021239314204524306
+      },
+      "energy": {
+        "q_power_max_abs_W": 5.684341886080802e-14,
+        "port_power_max_abs_W": 4.547473508864641e-13,
+        "thermal_budget_max_abs_W": 7.329737600193645e-09,
+        "max_rel_port_power": 3.2918429076375944e-15,
+        "max_rel_q_power": 4.191775398643911e-16,
+        "max_rel_thermal_power": 5.3697361954910244e-11,
+        "max_abs_shutdown_budget_W": 5.677544607060809e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.2619836000085343,
+        "online_sec": 0.026425399992149323,
+        "physical_setup_sec": 5.0852453999978025,
+        "physical_direct_sec": 23.472381100000348,
+        "online_speedup": 888.2507400824101
+      },
+      "physical_budget_W": 8.17276186562647e-07
+    },
+    "F35": {
+      "spec": {
+        "id": "F35",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            2.0,
+            73.0,
+            2.0
+          ],
+          "tilt_deg": 18.85,
+          "yaw_deg": -11.0,
+          "pitch_deg": 12.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 20.0,
+        "alpha_per_K": 0.025,
+        "off": [
+          [
+            300.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.06839103186849624,
+        "copper_max_abs_K": 0.08392785560175753,
+        "pkg_max_abs_K": 0.18274816254222515,
+        "sea_mean_max_abs_K": 0.0016014616012182217,
+        "cold_Z_abs": 0.0021193488549856206
+      },
+      "energy": {
+        "q_power_max_abs_W": 3.552713678800501e-15,
+        "port_power_max_abs_W": 2.6645352591003757e-14,
+        "thermal_budget_max_abs_W": 9.069933572311133e-11,
+        "max_rel_port_power": 3.2440322903359218e-15,
+        "max_rel_q_power": 4.3140510764672945e-16,
+        "max_rel_thermal_power": 1.1032121989245261e-11,
+        "max_abs_shutdown_budget_W": 2.953114765146106e-14
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.4459876000037184,
+        "online_sec": 0.01887929999793414,
+        "physical_setup_sec": 5.0906131000083406,
+        "physical_direct_sec": 14.052067700002226,
+        "online_speedup": 744.3108431742633
+      },
+      "physical_budget_W": 3.7382310934365905e-08
+    },
+    "F36": {
+      "spec": {
+        "id": "F36",
+        "family": "square",
+        "geometry": {
+          "alpha1": 0.79,
+          "alpha2": 0.76,
+          "core1_mm": 24.0,
+          "core2_mm": 27.0,
+          "shift_mm": [
+            13.0,
+            81.0,
+            -5.0
+          ],
+          "tilt_deg": 24.7,
+          "yaw_deg": 14.0,
+          "pitch_deg": -9.0,
+          "box1_mm": 238.0,
+          "box2_mm": 242.0
+        },
+        "donor": "g2",
+        "voltage": 45.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            60.0,
+            120.0
+          ],
+          [
+            240.0,
+            300.0
+          ],
+          [
+            480.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.0008,
+      "score": {
+        "delta_Z_rel_L2": 0.05878305671992966,
+        "copper_max_abs_K": 0.4114036083819883,
+        "pkg_max_abs_K": 1.0242595483153423,
+        "sea_mean_max_abs_K": 0.011493655619923533,
+        "cold_Z_abs": 0.0023634922770463095
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.4210854715202004e-14,
+        "port_power_max_abs_W": 1.3500311979441904e-13,
+        "thermal_budget_max_abs_W": 2.0306035000192786e-09,
+        "max_rel_port_power": 4.112459431227622e-15,
+        "max_rel_q_power": 4.3103155256629236e-16,
+        "max_rel_thermal_power": 6.208843889985363e-11,
+        "max_abs_shutdown_budget_W": 1.813497380605272e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.2821189000096638,
+        "online_sec": 0.042624900001101196,
+        "physical_setup_sec": 5.15284559999418,
+        "physical_direct_sec": 17.25181889999658,
+        "online_speedup": 404.73570376824074
+      },
+      "physical_budget_W": 1.7308164830481117e-07
+    },
+    "F41": {
+      "spec": {
+        "id": "F41",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            6.0,
+            88.0,
+            -9.0
+          ],
+          "tilt_deg": 2.6,
+          "yaw_deg": -3.0,
+          "pitch_deg": 2.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 110.0,
+        "alpha_per_K": 0.02,
+        "off": [
+          [
+            90.0,
+            150.0
+          ],
+          [
+            300.0,
+            390.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.3275550825619299,
+        "copper_max_abs_K": 235.06391696243463,
+        "pkg_max_abs_K": 84.87104662617787,
+        "sea_mean_max_abs_K": 0.5618575781994402,
+        "cold_Z_abs": 0.0051933360344413905
+      },
+      "energy": {
+        "q_power_max_abs_W": 5.684341886080801e-13,
+        "port_power_max_abs_W": 5.343281372915953e-12,
+        "thermal_budget_max_abs_W": 2.583516635163405e-05,
+        "max_rel_port_power": 3.218719792281042e-15,
+        "max_rel_q_power": 3.4241699917883425e-16,
+        "max_rel_thermal_power": 1.5562751700552398e-08,
+        "max_abs_shutdown_budget_W": 2.9341280977851046e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 1.9370868999976665,
+        "online_sec": 0.0494324999890523,
+        "physical_setup_sec": 2.5820309999980964,
+        "physical_direct_sec": 29.376553100009914,
+        "online_speedup": 594.27609581785
+      },
+      "physical_budget_W": 4.827273381941867e-05
+    },
+    "F42": {
+      "spec": {
+        "id": "F42",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            19.0,
+            75.0,
+            8.0
+          ],
+          "tilt_deg": 10.4,
+          "yaw_deg": 8.0,
+          "pitch_deg": -7.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 65.0,
+        "alpha_per_K": 0.016,
+        "off": [
+          [
+            300.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.05654256164703047,
+        "copper_max_abs_K": 2.328296867042809,
+        "pkg_max_abs_K": 5.801581438280891,
+        "sea_mean_max_abs_K": 0.06811058879526365,
+        "cold_Z_abs": 0.004518687436034717
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.1368683772161603e-13,
+        "port_power_max_abs_W": 1.5063505998114124e-12,
+        "thermal_budget_max_abs_W": 1.0401415678029787e-08,
+        "max_rel_port_power": 3.7261738188323175e-15,
+        "max_rel_q_power": 2.835247952975249e-16,
+        "max_rel_thermal_power": 2.594019949907655e-11,
+        "max_abs_shutdown_budget_W": 8.568977088095881e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.3152518999995664,
+        "online_sec": 0.04429089999757707,
+        "physical_setup_sec": 2.718386199994711,
+        "physical_direct_sec": 23.022795099997893,
+        "online_speedup": 519.8086988807487
+      },
+      "physical_budget_W": 7.237462278244498e-08
+    },
+    "F43": {
+      "spec": {
+        "id": "F43",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            -7.0,
+            84.0,
+            -13.0
+          ],
+          "tilt_deg": 18.85,
+          "yaw_deg": -11.0,
+          "pitch_deg": 12.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 95.0,
+        "alpha_per_K": 0.025,
+        "off": [
+          [
+            60.0,
+            120.0
+          ],
+          [
+            240.0,
+            300.0
+          ],
+          [
+            480.0,
+            540.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.05600323943153901,
+        "copper_max_abs_K": 2.4145050279064435,
+        "pkg_max_abs_K": 20.963452923499517,
+        "sea_mean_max_abs_K": 0.14537519020088516,
+        "cold_Z_abs": 0.005625224055821508
+      },
+      "energy": {
+        "q_power_max_abs_W": 2.2737367544323206e-13,
+        "port_power_max_abs_W": 3.979039320256561e-12,
+        "thermal_budget_max_abs_W": 3.1213111483541346e-05,
+        "max_rel_port_power": 4.141491086327219e-15,
+        "max_rel_q_power": 2.271454013627656e-16,
+        "max_rel_thermal_power": 3.146992359264035e-08,
+        "max_abs_shutdown_budget_W": 1.186720971319045e-12
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.3917557000095258,
+        "online_sec": 0.034979699994437397,
+        "physical_setup_sec": 2.7537215999909677,
+        "physical_direct_sec": 27.774271800008137,
+        "online_speedup": 794.0111494502498
+      },
+      "physical_budget_W": 3.0613240885706686e-05
+    },
+    "F44": {
+      "spec": {
+        "id": "F44",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            2.0,
+            73.0,
+            2.0
+          ],
+          "tilt_deg": 24.7,
+          "yaw_deg": 14.0,
+          "pitch_deg": -9.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 20.0,
+        "alpha_per_K": 0.02,
+        "off": [],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.06153233855432535,
+        "copper_max_abs_K": 0.28781698065211003,
+        "pkg_max_abs_K": 0.6210720589343737,
+        "sea_mean_max_abs_K": 0.008527497806655874,
+        "cold_Z_abs": 0.004639876520145171
+      },
+      "energy": {
+        "q_power_max_abs_W": 1.7763568394002505e-14,
+        "port_power_max_abs_W": 1.3322676295501878e-13,
+        "thermal_budget_max_abs_W": 1.1653573156114899e-09,
+        "max_rel_port_power": 4.448054888844701e-15,
+        "max_rel_q_power": 5.932412319096473e-16,
+        "max_rel_thermal_power": 3.891887002623277e-11,
+        "max_abs_shutdown_budget_W": 0.0
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.3626478999940446,
+        "online_sec": 0.040095199990901165,
+        "physical_setup_sec": 2.6297446000098716,
+        "physical_direct_sec": 16.88768460000574,
+        "online_speedup": 421.18968364886763
+      },
+      "physical_budget_W": 1.1249020677372482e-07
+    },
+    "F45": {
+      "spec": {
+        "id": "F45",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            13.0,
+            81.0,
+            -5.0
+          ],
+          "tilt_deg": 7.800000000000001,
+          "yaw_deg": 17.0,
+          "pitch_deg": 16.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 45.0,
+        "alpha_per_K": 0.012,
+        "off": [
+          [
+            180.0,
+            300.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.03796059888289276,
+        "copper_max_abs_K": 1.1141181735840746,
+        "pkg_max_abs_K": 3.650426283503009,
+        "sea_mean_max_abs_K": 0.022137866552090647,
+        "cold_Z_abs": 0.004697047821448964
+      },
+      "energy": {
+        "q_power_max_abs_W": 8.526512829121202e-14,
+        "port_power_max_abs_W": 6.821210263296962e-13,
+        "thermal_budget_max_abs_W": 5.946428192209479e-10,
+        "max_rel_port_power": 3.382344791267681e-15,
+        "max_rel_q_power": 4.2202455651652156e-16,
+        "max_rel_thermal_power": 2.9195488876635622e-12,
+        "max_abs_shutdown_budget_W": 1.9790400084497109e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.413860200002091,
+        "online_sec": 0.04603050000150688,
+        "physical_setup_sec": 2.7268611999897985,
+        "physical_direct_sec": 22.680595700003323,
+        "online_speedup": 492.7297270127598
+      },
+      "physical_budget_W": 4.3508912231108514e-08
+    },
+    "F46": {
+      "spec": {
+        "id": "F46",
+        "family": "mixed",
+        "geometry": {
+          "alpha1": 1.0,
+          "alpha2": 0.81,
+          "core1_mm": 0.0,
+          "core2_mm": 25.0,
+          "shift_mm": [
+            -12.0,
+            77.0,
+            11.0
+          ],
+          "tilt_deg": 16.900000000000002,
+          "yaw_deg": -18.0,
+          "pitch_deg": -13.0,
+          "box1_mm": 224.0,
+          "box2_mm": 240.0
+        },
+        "donor": "g1",
+        "voltage": 75.0,
+        "alpha_per_K": 0.028,
+        "off": [
+          [
+            120.0,
+            240.0
+          ],
+          [
+            420.0,
+            480.0
+          ]
+        ],
+        "dt": 30.0,
+        "duration": 600.0
+      },
+      "skin_depth_m": 0.002,
+      "score": {
+        "delta_Z_rel_L2": 0.07571059133477492,
+        "copper_max_abs_K": 3.7368635260471024,
+        "pkg_max_abs_K": 8.827687460594916,
+        "sea_mean_max_abs_K": 0.06155894159894382,
+        "cold_Z_abs": 0.005649875455173817
+      },
+      "energy": {
+        "q_power_max_abs_W": 3.410605131648481e-13,
+        "port_power_max_abs_W": 2.1032064978498966e-12,
+        "thermal_budget_max_abs_W": 1.451470808508249e-07,
+        "max_rel_port_power": 3.8863168504701944e-15,
+        "max_rel_q_power": 6.188405646157594e-16,
+        "max_rel_thermal_power": 2.7794986865014396e-10,
+        "max_abs_shutdown_budget_W": 6.642664610954777e-13
+      },
+      "passed": false,
+      "timing": {
+        "offline_sec": 2.6116514000023017,
+        "online_sec": 0.049725400007446297,
+        "physical_setup_sec": 2.6960825999994995,
+        "physical_direct_sec": 26.38710130000254,
+        "online_speedup": 530.6563908194025
+      },
+      "physical_budget_W": 2.3531474158068524e-07
+    }
+  }
+}

@@ -34,13 +34,21 @@ class SharedROM:
                    FracROM.load(base.with_name(base.name+"_tangent.npz")),
                    corr,xyz)
 
-    def target(self,cold_z):
-        """Cold Z in canonical 6 real components from target BFZI legacy."""
+    def target(self,cold_z,*,alpha_scale=1.):
+        """Cold 6-port Z and material-dependent sea conductivity slope."""
         model=copy.copy(self.fr)
         a=np.asarray(cold_z,float)
-        if a.shape!=(6,):
-            raise ValueError("expected target original BFZI cold 6-port vector")
+        if a.shape!=(6,) or not np.isfinite(alpha_scale) or alpha_scale<=0:
+            raise ValueError("BFZI cold Z or seawater material scaling invalid")
         model.z0=a+self.corr
+        if alpha_scale!=1.:
+            # Separate the original temperature copper derivative from the
+            # seawater derivative. Only sea sigma'(T) changes with alpha.
+            from .geom_heat import pack
+            B=self.rom.basis[self.fr.cu]
+            jcu=np.stack([pack(np.diag(self.fr.dcu*B[:,j]))
+                           for j in range(self.rom.rank)],axis=1)
+            model.jac=jcu+alpha_scale*(self.fr.jac-jcu)
         return model
 
     def project(self,temp,xyz):
@@ -63,8 +71,10 @@ class SharedROM:
         sea[:,exact]=val[:,idx[exact,0]]
         return np.column_stack((sea,val[:,self.ns:]))
 
-    def rollout(self,cold_z,times,voltage,*,net=None,ck=None,sea_xyz=None):
-        pred=self.target(cold_z).rollout(self.rom,times,voltage,net,ck)
+    def rollout(self,cold_z,times,voltage,*,net=None,ck=None,sea_xyz=None,
+                alpha_scale=1.):
+        pred=self.target(cold_z,alpha_scale=alpha_scale).rollout(
+            self.rom,times,voltage,net,ck)
         if sea_xyz is not None:
             pred["temp_K"]=self.project(pred["temp_K"],sea_xyz)
         return pred

@@ -39,3 +39,25 @@ def test_shared_cold_causal_field():
     np.testing.assert_allclose(a["temp_K"][:3,3:],
                                donor.project(c["temp_K"][:3],
                                              np.array([[1.,0.,0.],[0.,0.,0.],[.5,0.,0.]]))[:,3:])
+
+    from types import SimpleNamespace
+    from sdfmpneo_bfzi.end_to_end import complete, metrics
+    weak=np.zeros((3,2,2))
+    weak[:,0,0]=.03
+    weak[:,1,1]=.03
+    cold_field=SimpleNamespace(weak_q=weak,
+        unit_j=np.ones((3,2,3),complex)*.01)
+    coils=[SimpleNamespace(coil=SimpleNamespace(
+        center=(0.,s,0.),yaw_deg=0.,pitch_deg=0.,
+        roll_deg=90.,plane_angle_deg=90.)) for s in (-.02,.02)]
+    em=SimpleNamespace(vol=np.ones(3),points=np.array([
+        [1.,0.,0.],[0.,0.,0.],[.5,0.,0.]]),
+        sigma0=4.,alpha=.02,ambient=293.15,
+        base=dict(sample={},cfg={},families=coils))
+    field=complete(em,cold_field,new,a,v)
+    np.testing.assert_allclose(field["qsea_W_m3"]@em.vol,
+                               a["Psea_W"],atol=1e-10)
+    assert metrics(field)["max_rel_port_power"]<1e-10
+    assert metrics(field)["max_rel_q_power"]<1e-10
+    altered=donor.target(cold,alpha_scale=.8)
+    assert np.linalg.norm(altered.jac-fr.jac)>0
