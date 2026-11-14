@@ -28,9 +28,9 @@ def build(data,bf,ext,opts):
                       fv_faces="exact",source_mask="subcell")
     em.alpha=opts["alpha"]
     et=BFZIV148Skin3D(
-        em,external=ext,pkg_shape=(4,2,4),pkg_k=.25,
+        em,external=ext,pkg_shape=(4,2,4),pkg_k=opts["pkg_k"],
         skin_depth=opts["skin"],skin_layers=8,skin_ratio=1.4,
-        skin_quad=2,skin_near=4,skin_map=2,pkg_sea_h=20.,
+        skin_quad=2,skin_near=4,skin_map=2,pkg_sea_h=opts["pkg_sea_h"],
         skin_heat="source",cu_ins_k=opts["ins_k"],cu_ins_t=opts["ins_t"],
         sea_max_K=opts["sea_max"],cu_max_K=opts["cu_max"],
         pkg_max_K=opts["pkg_max"])
@@ -194,13 +194,15 @@ def main():
     p.add_argument("--sea-max-K",type=float,default=373.15)
     p.add_argument("--cu-max-K",type=float,default=1357.77)
     p.add_argument("--pkg-max-K",type=float,default=None)
+    p.add_argument("--pkg-k",type=float,default=.25)
+    p.add_argument("--pkg-sea-h",type=float,default=20.)
     p.add_argument("--ins-k",type=float,default=.25)
     p.add_argument("--ins-t",type=float,default=None,
                    help="Radial insulation thickness; default derives from original BFZI wire")
     p.add_argument("--skin",type=float,default=.002)
     p.add_argument("--out",type=Path,default=None)
     a=p.parse_args()
-    if (min(a.ins_k,a.skin,*a.dt)<=0 or a.grid_max_nodes<1 or
+    if (min(a.ins_k,a.pkg_k,a.pkg_sea_h,a.skin,*a.dt)<=0 or a.grid_max_nodes<1 or
             (a.inner_step is not None and a.inner_step<=0) or
             (a.ins_t is not None and a.ins_t<=0)):
         p.error("insulation and time-step parameters must be positive")
@@ -226,6 +228,7 @@ def main():
                           grid_max_nodes=a.grid_max_nodes)
             opts=dict(alpha=spec["alpha_per_K"],skin=a.skin,
                       ins_k=a.ins_k,ins_t=a.ins_t,
+                      pkg_k=a.pkg_k,pkg_sea_h=a.pkg_sea_h,
                       sea_max=a.sea_max_K,cu_max=a.cu_max_K,
                       pkg_max=a.pkg_max_K)
             try:
@@ -246,6 +249,10 @@ def main():
                         suffix+=f"_ik{a.ins_k:g}"
                         if a.ins_t is not None:
                             suffix+=f"_it{a.ins_t:g}"
+                    if a.pkg_k!=.25:
+                        suffix+=f"_pk{a.pkg_k:g}"
+                    if a.pkg_sea_h!=20.:
+                        suffix+=f"_ph{a.pkg_sea_h:g}"
                     np.savez_compressed(
                         a.runs/f"bfzi_phys_{key}_{tag}{suffix}.npz",**raw)
                 print("PHYS",key,tag,rec["status"],
@@ -302,6 +309,7 @@ def main():
                           grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
                           grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,
                           ins_k=a.ins_k,ins_t=a.ins_t,
+                          pkg_k=a.pkg_k,pkg_sea_h=a.pkg_sea_h,
                           sea_max_K=a.sea_max_K,cu_max_K=a.cu_max_K,
                           pkg_max_K=a.pkg_max_K),
             cases=results),indent=2)+"\n")
