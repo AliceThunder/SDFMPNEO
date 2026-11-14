@@ -380,4 +380,4 @@ def test_thermal_budget_controls_large_temperature_tolerance():
                   external=np.diag([.5,.5]))
     with pytest.raises(RuntimeError,match="heat residual"):
         et.advance(et.zeros(),[8.,0.],.1,iterations=1,
-                   tol=100.,budget_tol=1e-12)
+                   tol=1e6,budget_tol=1e-12)
