@@ -54,3 +54,15 @@ def test_subcell_source_requires_valid_temperature_and_geometry():
     em.subcells=None
     with pytest.raises(ValueError,match="not built"):
         em.subcell_temp(lambda q:np.zeros(len(q)))
+
+
+def test_subcell_conservative_target_mean_keeps_local_covariance():
+    em,_=adapter()
+    field=lambda q: em.ambient+5+2*q[:,0]
+    avg,old=em.subcell_temp(field)
+    target=avg+7.
+    mean,local=em.subcell_temp(field,mean=target)
+    assert np.array_equal(mean,target)
+    assert np.allclose(old,local,rtol=1e-12,atol=1e-12)
+    with pytest.raises(ValueError,match="mean"):
+        em.subcell_temp(field,mean=np.zeros(2))

@@ -75,6 +75,37 @@ def _owner(pt, lo, hi):
     return int(ids[0])
 
 
+def _qmap(subcells, faces, dx):
+    """Map native wet-FV EM quadrature points to physical 3-D skin nodes.
+
+    Off-skin points retain their original wet FV bulk temperature. Each
+    layer prism is defined by its actual rotated package-face patch.
+    """
+    if subcells is None:
+        return {}
+    sizes=[len(item[0]) for item in subcells]
+    cuts=np.r_[0,np.cumsum(sizes)]
+    xyz=np.concatenate([item[0] for item in subcells])
+    ids=np.repeat(np.arange(len(subcells)),sizes)
+    seen=np.zeros(len(ids),bool)
+    depths=np.cumsum(dx)
+    for face in faces:
+        v1,v2=face["v1"],face["v2"]
+        d=xyz-face["center"]
+        depth=d@face["normal"]
+        u=(d@v1)/(v1@v1)
+        v=(d@v2)/(v2@v2)
+        hit=((depth>=-1e-12)&(depth<depths[-1]-1e-12)&
+             (abs(u)<=.5+1e-12)&(abs(v)<=.5+1e-12))
+        if np.any(hit&seen):
+            raise ValueError("overlapping physical seawater skin prisms")
+        layer=np.searchsorted(depths,depth[hit],side="right")
+        ids[hit]=face["last"]-len(dx)+1+layer
+        seen|=hit
+    return {id(item[0]):ids[cuts[i]:cuts[i+1]].copy()
+            for i,item in enumerate(subcells)}
+
+
 class BFZIV148Skin3D(BFZIV148Pkg3D):
     """Conservative skin RC ladder replacing direct package-sea heat links.
 
@@ -199,6 +230,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         self.skin_owner=owner
         self.skin_vol=shell_vol
         self.skin_mix=mix
+        self._qmap=_qmap(getattr(model,"subcells",None),faces,dx)
         self.skin=slice(orig_n,orig_n+len(owner))
         self.n=self.skin.stop
         cap[:self.count]=sea_rhoc*bulk
@@ -248,8 +280,17 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         v=np.asarray(drive,complex)
         if theta.shape!=(self.n,) or v.shape!=(2,):
             raise ValueError("BFZI layered thermal state or voltage mismatch")
-        warm=self.model.solve(self.amb+self.sea_temp(theta),
-                              self.amb+theta[self.cu])
+        sea=self.amb+self.sea_temp(theta)
+        copper=self.amb+theta[self.cu]
+        if self._qmap:
+            # Same thermal state: exact conserved FV mean for Green,
+            # physical eight-layer values at native BFZI source quadrature.
+            def at_q(q):
+                return self.amb+theta[self._qmap[id(q)]]
+            warm=self.model.solve(sea,copper,sea_temp=at_q,
+                                  sea_mean=True)
+        else:
+            warm=self.model.solve(sea,copper)
         I=np.linalg.solve(warm.total_z+self.external,v)
         q,cu=self.model.heat(warm,I)
         return warm,I,self.heat_vec(q,cu),q,cu

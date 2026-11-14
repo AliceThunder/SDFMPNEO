@@ -110,3 +110,16 @@ def test_finite_skin_shorttime_fractional_diffusion():
     surface=x[0]+100.*dx[0]/(2*k)
     exact=2*100.*np.sqrt(2./(np.pi*k*rhoc))
     assert abs(surface/exact-1)<.025
+
+
+def test_native_wet_quadrature_maps_rotated_skin_and_bulk():
+    from sdfmpneo_bfzi.sea_layer import _qmap
+    # Face patch in the xy plane, with water occupying positive z.
+    face=dict(center=np.zeros(3),normal=np.array([0.,0.,1.]),
+              v1=np.array([.2,0.,0.]),v2=np.array([0.,.1,0.]),
+              last=12)
+    q=np.array([[.01,.01,.00025],[.01,.01,.0015],
+                [.01,.01,.004],[.2,0.,.00025]])
+    samples=[(q,np.ones(4),np.zeros((4,2,2)))]
+    m=_qmap(samples,[face],np.array([.001,.001]))
+    assert np.array_equal(m[id(q)],np.array([11,12,3,3]))

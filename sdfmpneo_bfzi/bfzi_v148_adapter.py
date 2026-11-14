@@ -256,7 +256,7 @@ class BFZIV148Adapter:
             self.air,
         )
 
-    def subcell_temp(self, fn):
+    def subcell_temp(self, fn, mean=None):
         """Original wet-FV quadrature of temperature and local source covariance.
 
         The Green response uses each cell's volume-mean conductivity;
@@ -266,25 +266,34 @@ class BFZIV148Adapter:
         if self.subcells is None:
             raise ValueError("BFZI subcell source moments were not built")
         t=np.empty(len(self.vol))
+        target=None if mean is None else np.asarray(mean,float)
+        if target is not None and (target.shape!=self.vol.shape or
+                                   not np.isfinite(target).all()):
+            raise ValueError("conservative wet FV temperature mean invalid")
         cov=np.zeros((len(self.vol),2,2))
         for p,item in enumerate(self.subcells):
             q,w,m=item
             tq=np.asarray(fn(q),float)
             if tq.shape!=(len(w),) or not np.isfinite(tq).all():
                 raise ValueError("physical temperature must match wet FV quadrature")
-            t[p]=float(w@tq/w.sum())
+            avg=float(w@tq/w.sum())
+            t[p]=avg if target is None else target[p]
+            # Recenter this quadrature field to the thermal FV volume mean.
+            # The zero-mean subcell covariance is unchanged by the shift.
+            tq=tq+(t[p]-avg)
             delta=self.sigma0*self.alpha*(tq-t[p])
             cov[p]=np.einsum("q,q,qij->ij",w,delta,m,optimize=True)
         return t,cov
 
-    def solve(self, sea_t, cu_t, *, sea_temp=None):
+    def solve(self, sea_t, cu_t, *, sea_temp=None, sea_mean=False):
         temp = np.asarray(sea_t,float)
         tc = np.asarray(cu_t,float)
         if temp.shape != self.vol.shape or tc.shape != (2,):
             raise ValueError("sea and copper temperature dimensions differ")
         cov=None
         if sea_temp is not None:
-            temp,cov=self.subcell_temp(sea_temp)
+            temp,cov=self.subcell_temp(
+                sea_temp,mean=temp if sea_mean else None)
         sig = self.sigma0*(1+self.alpha*(temp-self.ambient))
         if np.min(sig)<=0 or not np.all(np.isfinite(sig)):
             raise ValueError("seawater sigma(T) must be finite and positive")
