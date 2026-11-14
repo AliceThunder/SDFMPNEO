@@ -244,8 +244,12 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         bulk=model.vol-take
         if np.any(bulk<=0):
             ids=np.flatnonzero(bulk<=0)
+            ratio=float(np.max(take/model.vol))
+            extra=float(np.maximum(take-model.vol,0).sum())
             raise ValueError(
-                f"skin water capacity exceeds original BFZI wet FV: {ids[:8]}")
+                f"skin water capacity exceeds original BFZI wet FV: "
+                f"{ids[:8]}; peak={ratio:.3f}x FV, excess={extra:.6g} m3, "
+                f"skin_total={float(shell_vol.sum()):.6g} m3")
         self.bulk_vol=bulk
         self.skin_owner=owner
         self.skin_vol=shell_vol
