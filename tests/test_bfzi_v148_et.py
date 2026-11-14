@@ -413,3 +413,19 @@ def test_switch_off_applies_after_previous_interval():
     assert steps[2].temp[et.cu][0]>steps[1].temp[et.cu][0]
     assert np.allclose(steps[2].currents,0.)
     assert steps[3].temp[et.cu][0]<steps[2].temp[et.cu][0]
+
+
+def test_cn_thermal_step_midpoint_energy_budget():
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.eye(2)*.5)
+    old=et.zeros()
+    dt=.1
+    v=np.array([2.,0.])
+    new=et.advance(old,v,dt,method="cn")
+    q0=et.em(old,v)[2]
+    q1=et.em(new,v)[2]
+    residual=et.cap*(new-old)/dt+.5*(et.H@old+et.H@new)-.5*(q0+q1)
+    assert np.max(abs(residual))<1e-4
+    assert abs(np.sum(residual))<1e-4
+    assert np.max(new)>0.
