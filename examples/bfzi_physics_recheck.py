@@ -238,7 +238,9 @@ def main():
                 history[tag]=raw
                 if len(raw["time_s"]):
                     np.savez_compressed(
-                        a.runs/f"bfzi_phys_{key}_{tag}.npz",**raw)
+                        a.runs/f"bfzi_phys_{key}_{tag}"+
+                        ("_cn.npz" if a.integrator=="cn" else ".npz"),
+                        **raw)
                 print("PHYS",key,tag,rec["status"],
                       rec["completed_s"],rec.get("max_copper_K"),
                       flush=True)
