@@ -1,0 +1,45 @@
+{
+  "description": "F14 unseen geometry, 110 V peak, three 60-s energization pulses over a 600-s record; single-phase water valid-range experiment",
+  "protocol": "Voltage on during [0,60), [180,240), [360,420) seconds; zero elsewhere within [0,600].",
+  "cases": {
+    "F14P": {
+      "id": "F14P",
+      "family": "round",
+      "geometry": {
+        "alpha1": 1,
+        "alpha2": 1,
+        "core1_mm": 0,
+        "core2_mm": 0,
+        "shift_mm": [
+          6,
+          88,
+          -9
+        ],
+        "tilt_deg": 24.7,
+        "yaw_deg": 14,
+        "pitch_deg": -9,
+        "box1_mm": 220,
+        "box2_mm": 224
+      },
+      "donor": "g1",
+      "voltage": 110,
+      "alpha_per_K": 0.02,
+      "off": [
+        [
+          60,
+          180
+        ],
+        [
+          240,
+          360
+        ],
+        [
+          420,
+          630
+        ]
+      ],
+      "dt": 30,
+      "duration": 600
+    }
+  }
+}
