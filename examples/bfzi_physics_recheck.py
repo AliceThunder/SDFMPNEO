@@ -226,11 +226,19 @@ def main():
                           sea_void="oriented",physical_box_only=True,
                           grid_xz=xz,grid_y=y,
                           grid_max_nodes=a.grid_max_nodes)
-            opts=dict(alpha=spec["alpha_per_K"],skin=a.skin,
-                      ins_k=a.ins_k,ins_t=a.ins_t,
-                      pkg_k=a.pkg_k,pkg_sea_h=a.pkg_sea_h,
+            mat=spec.get("thermal",{})
+            opts=dict(alpha=spec["alpha_per_K"],
+                      skin=mat.get("skin_m",a.skin),
+                      ins_k=mat.get("ins_k",a.ins_k),
+                      ins_t=mat.get("ins_t",a.ins_t),
+                      pkg_k=mat.get("pkg_k",a.pkg_k),
+                      pkg_sea_h=mat.get("pkg_sea_h",a.pkg_sea_h),
                       sea_max=a.sea_max_K,cu_max=a.cu_max_K,
                       pkg_max=a.pkg_max_K)
+            if (min(opts["skin"],opts["ins_k"],opts["pkg_k"],
+                    opts["pkg_sea_h"])<=0 or
+                    (opts["ins_t"] is not None and opts["ins_t"]<=0)):
+                raise ValueError(f"invalid thermal inputs for {key}")
             try:
                 et=build(data,bf,ext,opts)
             except ValueError as exc:
