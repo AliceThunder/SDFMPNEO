@@ -1,0 +1,141 @@
+{
+  "p03": {
+    "donor": "g1",
+    "geometry": {
+      "alpha1": 1.0,
+      "alpha2": 0.8,
+      "core1_mm": 0.0,
+      "core2_mm": 20.0,
+      "shift_mm": [
+        8.0,
+        16.81307082508511,
+        5.0
+      ],
+      "tilt_deg": 20.0,
+      "yaw_deg": 5.0,
+      "pitch_deg": 7.0,
+      "box1_mm": 210.0,
+      "box2_mm": 232.0
+    },
+    "offline": {
+      "cold_geometry_sec": 1.4218337000056636,
+      "cold_mass_sec": 0.6725334999937331,
+      "cold_solve_sec": 0.1340580999967642,
+      "ROM_share_sec": 0.007496500009438023,
+      "new_geometry_train_sec": 0.0,
+      "total_sec": 2.235921800005599
+    },
+    "infer_sec": 0.029911599995102733,
+    "target_cells": 1312,
+    "baseline": {
+      "cold_geometry_sec": 1.4218337000056636,
+      "thermal_setup_sec": 2.5562191999924835,
+      "rom_build_sec": 0.014209200002369471,
+      "cold_solve_sec": 0.170505600006436,
+      "eight_em_directions_sec": 1.5127684000035515,
+      "train_sec": 0.0,
+      "total_sec": 5.675536100010504
+    },
+    "offline_reduction": 0.6060421851600132,
+    "heldout": {
+      "delta_Z_rel_L2": 0.013093318975550675,
+      "pkg_max_abs_K": 0.14145536539399473,
+      "copper_max_abs_K": 0.059001059796287336,
+      "max_total_budget_W": 7.712290423322718e-09,
+      "cold_delta_Z_abs": 0.003154850072547886
+    }
+  },
+  "p07": {
+    "donor": "g2",
+    "geometry": {
+      "alpha1": 1.0,
+      "alpha2": 0.72,
+      "core1_mm": 0.0,
+      "core2_mm": 23.0,
+      "shift_mm": [
+        13.000000000000002,
+        30.601672022640972,
+        9.000000000000002
+      ],
+      "tilt_deg": 27.0,
+      "yaw_deg": 7.0,
+      "pitch_deg": 9.0,
+      "box1_mm": 216.0,
+      "box2_mm": 240.0
+    },
+    "offline": {
+      "cold_geometry_sec": 1.6859325999976136,
+      "cold_mass_sec": 0.6737052999960724,
+      "cold_solve_sec": 0.1382479999883799,
+      "ROM_share_sec": 0.007696500004385598,
+      "new_geometry_train_sec": 0.0,
+      "total_sec": 2.5055823999864515
+    },
+    "infer_sec": 0.04740720000700094,
+    "target_cells": 1312,
+    "baseline": {
+      "cold_geometry_sec": 1.6859325999976136,
+      "thermal_setup_sec": 2.5375287999922875,
+      "rom_build_sec": 0.028430699996533804,
+      "cold_solve_sec": 0.20751940000627656,
+      "eight_em_directions_sec": 1.4947691999987,
+      "train_sec": 0.0,
+      "total_sec": 5.9541806999914115
+    },
+    "offline_reduction": 0.579189392087132,
+    "heldout": {
+      "delta_Z_rel_L2": 0.009173307278711993,
+      "pkg_max_abs_K": 0.6421093099189648,
+      "copper_max_abs_K": 0.1320151850942466,
+      "max_total_budget_W": 2.445597254034109e-07,
+      "cold_delta_Z_abs": 0.0008319966593467027
+    }
+  },
+  "g3": {
+    "donor": "g1",
+    "geometry": {
+      "alpha1": 1.0,
+      "alpha2": 0.88,
+      "core1_mm": 0.0,
+      "core2_mm": 16.0,
+      "shift_mm": [
+        8.0,
+        26.81307082508511,
+        5.0
+      ],
+      "tilt_deg": 22.0,
+      "yaw_deg": 6.0,
+      "pitch_deg": 8.0,
+      "box1_mm": 210.0,
+      "box2_mm": 228.0
+    },
+    "offline": {
+      "cold_geometry_sec": 1.3958319000084884,
+      "cold_mass_sec": 0.7002372999995714,
+      "cold_solve_sec": 0.13252810000267345,
+      "ROM_share_sec": 0.007243399988510646,
+      "new_geometry_train_sec": 0.0,
+      "total_sec": 2.235840699999244
+    },
+    "infer_sec": 0.01579019999189768,
+    "target_cells": 1316,
+    "baseline": {
+      "cold_geometry_sec": 1.3958319000084884,
+      "thermal_setup_sec": 2.7981031999952393,
+      "rom_build_sec": 0.016388599993661046,
+      "cold_solve_sec": 0.19229279999854043,
+      "eight_em_directions_sec": 1.6597975000040606,
+      "train_sec": 0.0,
+      "total_sec": 6.06241399999999
+    },
+    "offline_reduction": 0.6311963023311757,
+    "direct_sec": 19.262646900009713,
+    "heldout": {
+      "delta_Z_rel_L2": 0.008258099040480629,
+      "pkg_max_abs_K": 0.3403207124945311,
+      "copper_max_abs_K": 0.05613460502348744,
+      "max_total_budget_W": 2.5509846130373343e-09,
+      "cold_delta_Z_abs": 0.0032915737078727013
+    }
+  }
+}
