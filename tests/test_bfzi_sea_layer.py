@@ -75,7 +75,10 @@ def test_skin_em_temperature_and_heat_injection_conserve_each_original_FV():
     cu=np.array([5.,8.])
     power=et.heat_vec(q,cu)
     assert np.isclose(power.sum(),q@m.vol+cu.sum())
-    for i in range(et.count):
-        mask=et.skin_owner==i
-        assert np.isclose(power[i]+sum(power[et.skin][mask]),
-                          q[i]*m.vol[i],atol=1e-12)
+    assert np.allclose(power[et.skin],et.skin_mix.T@q)
+    assert np.allclose(
+        np.asarray(et.skin_mix.sum(axis=0)).ravel(),et.skin_vol)
+    assert np.allclose(
+        et.bulk_vol+np.asarray(et.skin_mix.sum(axis=1)).ravel(),
+        m.vol)
+    assert et.skin_info["map_order"]==2
