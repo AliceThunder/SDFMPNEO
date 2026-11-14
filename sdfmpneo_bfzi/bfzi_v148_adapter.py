@@ -16,6 +16,8 @@ from types import SimpleNamespace
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+from scipy.spatial import cKDTree
+from .pose import axes
 
 from sdfmpneo_vnext.scene import ConductorMaterial
 from .source import BFZISources
@@ -99,7 +101,20 @@ def _weak_q(C, X, G, GX, sigma, mass, vol, omega, mu):
     return w*sigma[:,None,None]*(mat.real+mass/vol[:,None,None])
 
 
-def _mass(data, calc, order=3):
+def _oriented_mask(pts,mn,mx,coil,hx,hy,zp,zn,line,rad):
+    """True coil-local support of original BFZI wet-cell source moments."""
+    center=np.asarray(coil.center,float)
+    rot=axes(coil)
+    local=(pts-center)@rot
+    ext=.5*(mx-mn)@np.abs(rot)
+    face=(np.abs(np.abs(local[:,1])-hy)<=ext[:,1]+1e-12)
+    footprint=(np.abs(local[:,0])<=hx+ext[:,0]) & (
+        local[:,2]<=zp+ext[:,2]) & (local[:,2]>=-zn-ext[:,2])
+    dist=cKDTree(np.asarray(line,float)).query(pts)[0]
+    return footprint & face & (dist<=rad)
+
+
+def _mass(data, calc, order=3,mask="legacy"):
     """Original v148 local mass correction as fixed per-cell source moments."""
     rec = data["records"] or []
     pts = np.asarray(data["points"],float)
@@ -113,6 +128,8 @@ def _mass(data, calc, order=3):
     sizes = np.median(mx-mn,axis=0)
     rad = .5*np.hypot(sizes[0],sizes[2])
     y_extra = .5*sizes[1]
+    if mask not in ("legacy","oriented"):
+        raise ValueError("BFZI weak-source mask must be legacy or oriented")
     masks = []
     for i,fam in enumerate(fams):
         lp,ldl = calc.base._source_line_for_family(fam,cfg)
@@ -127,11 +144,15 @@ def _mass(data, calc, order=3):
             hx = float(sample.get(prefix+"package_x_half_mm",102.))*1e-3
             zp = float(sample.get(prefix+"package_z_pos_half_mm",102.))*1e-3
             zn = float(sample.get(prefix+"package_z_neg_half_mm",102.))*1e-3
-        face = ((mn[:,1]<=yc-hy+y_extra)&(mx[:,1]>=yc-hy-y_extra)
-                | (mn[:,1]<=yc+hy+y_extra)&(mx[:,1]>=yc+hy-y_extra))
-        dist = calc.base._nearest_dist_xz(pts,lp,chunk=4096)
-        masks.append((abs(pts[:,0])<=hx)&(pts[:,2]<=zp)
-                     &(pts[:,2]>=-zn)&face&(dist<=rad))
+        if mask=="oriented":
+            masks.append(_oriented_mask(
+                pts,mn,mx,fam.coil,hx,hy,zp,zn,lp,rad))
+        else:
+            face = ((mn[:,1]<=yc-hy+y_extra)&(mx[:,1]>=yc-hy-y_extra)
+                    | (mn[:,1]<=yc+hy+y_extra)&(mx[:,1]>=yc+hy-y_extra))
+            dist = calc.base._nearest_dist_xz(pts,lp,chunk=4096)
+            masks.append((abs(pts[:,0])<=hx)&(pts[:,2]<=zp)
+                         &(pts[:,2]>=-zn)&face&(dist<=rad))
     out = np.zeros((n,len(fams),len(fams)),float)
     union = np.any(masks,axis=0)
     lead = []
@@ -165,14 +186,17 @@ class BFZIV148Adapter:
 
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
                  copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False,
-                 heat_mode="j2",fv_faces="approx"):
+                 heat_mode="j2",fv_faces="approx",source_mask="legacy"):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
         if heat_mode not in ("j2","port-weak"):
             raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
         if fv_faces not in ("approx","exact"):
             raise ValueError("BFZI FV face area mode must be approx or exact")
+        if source_mask not in ("legacy","oriented"):
+            raise ValueError("BFZI weak-source mask must be legacy or oriented")
         self.heat_mode=heat_mode
+        self.source_mask=source_mask
         self.fv_faces=fv_faces
         self.calc = calc
         self.base = dict(data)
@@ -188,7 +212,7 @@ class BFZIV148Adapter:
         if fv_faces=="exact":
             from .obb_faces import apply
             self.proj=apply(self.proj,data["records"],data["vol_meta"])
-        self.mass = _mass(data,calc)
+        self.mass = _mass(data,calc,mask=source_mask)
         if sea_only:
             # M4 isothermal gate tests only the sea solver. Its expensive
             # Neumann/GMD air calculation is needed for the time history.
