@@ -239,10 +239,15 @@ def main():
                 rows[tag]=rec
                 history[tag]=raw
                 if len(raw["time_s"]):
+                    # Keep material-sensitivity trajectories separate from
+                    # the fixed-parameter convergence reference histories.
+                    suffix=(f"_h{a.inner_step:g}" if a.inner_step else "")
+                    if a.ins_k!=.25 or a.ins_t is not None:
+                        suffix+=f"_ik{a.ins_k:g}"
+                        if a.ins_t is not None:
+                            suffix+=f"_it{a.ins_t:g}"
                     np.savez_compressed(
-                        a.runs/(f"bfzi_phys_{key}_{tag}"+
-                                (f"_h{a.inner_step:g}" if a.inner_step else "")+
-                                ".npz"),**raw)
+                        a.runs/f"bfzi_phys_{key}_{tag}{suffix}.npz",**raw)
                 print("PHYS",key,tag,rec["status"],
                       rec["completed_s"],rec.get("max_copper_K"),
                       flush=True)
