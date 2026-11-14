@@ -1,0 +1,99 @@
+{
+  "method": "original BFZI near-source C(q)-mean(C), conserved original mean J",
+  "q_mode": "native weak Joule cell power, source-shaped nonnegative profile",
+  "no_warm_em_solve": true,
+  "geometries": {
+    "P03": {
+      "common_points": 18131,
+      "source_calc_sec": 5.8061702999984846,
+      "rows": [
+        {
+          "time_s": 0.0,
+          "voltage_V": 115.0,
+          "J_center_rel": 0.5133233708676502,
+          "J_source_rel": 0.10251516294791102,
+          "q_center_rel": 0.4503743424403153,
+          "q_source_rel": 0.0390955077752122,
+          "max_j_mean_rel": 2.4907241554994327e-16,
+          "max_weak_power_rel": 1.7128576486395378e-16
+        },
+        {
+          "time_s": 60.0,
+          "voltage_V": 115.0,
+          "J_center_rel": 0.5139175649223438,
+          "J_source_rel": 0.10251427098214806,
+          "q_center_rel": 0.4511296699356629,
+          "q_source_rel": 0.03870808451309669,
+          "max_j_mean_rel": 2.4732005816211687e-16,
+          "max_weak_power_rel": 1.716054663671246e-16
+        },
+        {
+          "time_s": 300.0,
+          "voltage_V": 115.0,
+          "J_center_rel": 0.5153156601119985,
+          "J_source_rel": 0.10246083344751296,
+          "q_center_rel": 0.45334226827475854,
+          "q_source_rel": 0.03747159087277715,
+          "max_j_mean_rel": 2.4812374735107873e-16,
+          "max_weak_power_rel": 3.390770209261536e-16
+        },
+        {
+          "time_s": 600.0,
+          "voltage_V": 0.0,
+          "J_center_rel": null,
+          "J_source_rel": null,
+          "q_center_rel": null,
+          "q_source_rel": null,
+          "max_j_mean_rel": 0.0,
+          "max_weak_power_rel": 0.0
+        }
+      ]
+    },
+    "P07": {
+      "common_points": 18261,
+      "source_calc_sec": 6.201784400007455,
+      "rows": [
+        {
+          "time_s": 0.0,
+          "voltage_V": 150.0,
+          "J_center_rel": 0.5194834030719953,
+          "J_source_rel": 0.10723659140106451,
+          "q_center_rel": 0.49140532338900283,
+          "q_source_rel": 0.043854687963406,
+          "max_j_mean_rel": 2.863016638574985e-16,
+          "max_weak_power_rel": 3.472236886492781e-16
+        },
+        {
+          "time_s": 60.0,
+          "voltage_V": 150.0,
+          "J_center_rel": 0.5215958314505235,
+          "J_source_rel": 0.10720257465228397,
+          "q_center_rel": 0.4928935096295425,
+          "q_source_rel": 0.04331870158953817,
+          "max_j_mean_rel": 2.818451226224334e-16,
+          "max_weak_power_rel": 2.360525487614734e-16
+        },
+        {
+          "time_s": 300.0,
+          "voltage_V": 150.0,
+          "J_center_rel": 0.5282269137654245,
+          "J_source_rel": 0.10714087343450471,
+          "q_center_rel": 0.5017557147342698,
+          "q_source_rel": 0.04314609504457278,
+          "max_j_mean_rel": 2.854414385458787e-16,
+          "max_weak_power_rel": 1.1676547725244874e-16
+        },
+        {
+          "time_s": 600.0,
+          "voltage_V": 150.0,
+          "J_center_rel": 0.5343801858685193,
+          "J_source_rel": 0.10831598507425405,
+          "q_center_rel": 0.5112105142511306,
+          "q_source_rel": 0.04885220949940435,
+          "max_j_mean_rel": 2.645012276028231e-16,
+          "max_weak_power_rel": 1.1276935592734144e-16
+        }
+      ]
+    }
+  }
+}
