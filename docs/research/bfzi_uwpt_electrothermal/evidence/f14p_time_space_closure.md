@@ -13,16 +13,18 @@
 | 旧热步时间收敛 | 2668 湿单元，15/7.5 s | 1.3741% | 3.1627 K | 0.3864 K | 未过时间门槛 |
 | 热子步时间收敛 | 2668 湿单元，内部实际 1.875/1.0 s | 0.04697% | 0.07393 K | 0.04981 K | PASS |
 | 空间收敛 | 2668/3729 湿单元，内部实际 1.875 s | 1.45470% | 0.47870 K | 0.68434 K | PASS |
-| 细网格时间收敛 | 3729 湿单元，内部实际 1.875/1.0 s | 待完成 | 待完成 | 待完成 | RUNNING |
-| 最细时间步空间收敛 | 2668/3729 湿单元，内部实际 1.0 s | 待完成 | 待完成 | 待完成 | RUNNING |
+| 细网格时间收敛 | 3729 湿单元，内部实际 1.875/1.0 s | 0.04659% | 0.07398 K | 0.04991 K | PASS |
+| 最细时间步空间收敛 | 2668/3729 湿单元，内部实际 1.0 s | 1.45471% | 0.47785 K | 0.68354 K | PASS |
 
 时间门槛：动态复阻抗 ≤1%，铜/封装温度 ≤0.5 K。空间门槛：动态复阻抗 ≤2%，铜 ≤1 K，封装 ≤1.5 K。比较完整 600 s 的共同时间点，不允许只验收有效前缀。
 
 3729 湿单元、内部实际 1.875 s：铜峰值 421.22164 K，封装峰值 377.37850 K，海水峰值 321.70712 K；热节点残差 1.05e-5 W，全局热功率残差 3.87e-6 W，电路功率相对残差 2.08e-15。2668 湿单元、内部 1 s：铜峰值 421.54458 K，封装峰值 377.68231 K，海水峰值 323.41601 K；热节点残差 1.15e-5 W，全局残差 1.82e-6 W，电路功率相对残差 2.10e-15。
 
+3729 湿单元、内部 1 s 的最终高功率直接法结果：铜峰值 **421.21551 K**，封装峰值 **377.40874 K**，海水峰值 **321.70240 K**；热节点残差 **1.1492e-5 W**，全局热功率残差 **1.8177e-6 W**，电路功率相对残差 **2.0812e-15**。两级空间网格、两级真实热子步的四组交叉验收全部 PASS，均完成 600 s，未发生材料越界。**F14P 物理数值收敛验收 CLOSED。**
+
 ## 实机结果文件
 
-`runs/bfzi_physical_F14P_h2.json`、`runs/bfzi_physical_F14P_h1.json`、`runs/bfzi_physical_F14P_superfine_h2.json`；对应的 `runs/bfzi_phys_F14P_ultra_dt15_h2.npz`、`runs/bfzi_phys_F14P_ultra_dt15_h1.npz`、`runs/bfzi_phys_F14P_superfine_dt15_h2.npz`。结果在 XEnergy 的 `D:\\work\\bfzi-et-v2.1\\SDFMPNEO` 生成，仓库记录以本证据为准，未将本机 NPZ 当作已提交附件。
+`runs/bfzi_physical_F14P_h2.json`、`runs/bfzi_physical_F14P_h1.json`、`runs/bfzi_physical_F14P_superfine_h2.json`、`runs/bfzi_physical_F14P_superfine_h1.json`；对应的 `runs/bfzi_phys_F14P_ultra_dt15_h2.npz`、`runs/bfzi_phys_F14P_ultra_dt15_h1.npz`、`runs/bfzi_phys_F14P_superfine_dt15_h2.npz`、`runs/bfzi_phys_F14P_superfine_dt15_h1.npz`。结果在 XEnergy 的 `D:\\work\\bfzi-et-v2.1\\SDFMPNEO` 生成，仓库记录以本证据为准，未将本机 NPZ 当作已提交附件。
 
 ## 边界
 
