@@ -65,9 +65,9 @@ def main():
         em = BFZIV148Adapter(data, bf, heat_mode="port-weak",
                              fv_faces="exact", source_mask="subcell")
         if sig != 1.:
-            # Material perturbation is applied to the original adapter's
-            # conductivity reference, before thermal integration.
-            em.sigma0 *= sig
+            # Vary the temperature coefficient without changing the cold
+            # Green operator or its reference conductivity.
+            em.alpha *= sig
         et = BFZIV148Skin3D(
             em, external=prev.ext, pkg_shape=(4, 2, 4), pkg_k=.25,
             skin_depth=.002, skin_layers=8, skin_ratio=1.4,
@@ -87,7 +87,7 @@ def main():
         saved[name, level] = res
         out["cases"][name + "_" + level] = dict(
             anchor=pose, extra_shift_y_mm=dy, voltage_scale=gain,
-            conductivity_scale=sig, wet_cells=et.count,
+            sea_alpha_scale=sig, wet_cells=et.count,
             setup_sec=setup, direct_sec=res["direct_sec"],
             max_port_weak_rel=res["max_port_weak_rel"],
             max_node_budget_W=res["max_node_budget_W"],
