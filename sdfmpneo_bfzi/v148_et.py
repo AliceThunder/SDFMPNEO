@@ -148,7 +148,7 @@ class BFZIV148ET:
         return m,I,power,q,cu
 
     def advance(self,state,drive,dt,*,iterations=16,tol=1e-5,
-                budget_tol=1e-4):
+                budget_tol=1e-4,return_heat=False):
         if not np.isfinite(dt) or dt<=0:
             raise ValueError("positive thermal time step required")
         if not np.isfinite(budget_tol) or budget_tol<=0:
@@ -156,10 +156,25 @@ class BFZIV148ET:
         old=np.asarray(state,float)
         if old.shape!=(self.n,):
             raise ValueError("invalid thermal state")
+        v=np.asarray(drive,complex)
+        if v.shape!=(2,):
+            raise ValueError("two-port voltage mismatch")
         if dt not in self._factor:
             self._factor[dt]=factorized(
                 (diags(self.cap)+dt*self.H).tocsc())
         solve=self._factor[dt]
+        if not np.any(v):
+            # Zero drive means exactly zero Joule heating. Cooling is
+            # linear, so skip costly electromagnetic solves.
+            if hasattr(self,"check_domain"):
+                self.check_domain(old)
+            nxt=solve(self.cap*old)
+            if hasattr(self,"check_domain"):
+                self.check_domain(nxt)
+            bal=self.cap*(nxt-old)/dt+self.H@nxt
+            if max(float(np.max(abs(bal))),float(abs(np.sum(bal))))>budget_tol:
+                raise RuntimeError("BFZI passive cooling heat balance failed")
+            return (nxt,np.zeros(self.n),bal) if return_heat else nxt
         theta=old.copy()
         budget=np.inf
         for _ in range(iterations):
@@ -177,7 +192,7 @@ class BFZIV148ET:
                 budget=max(float(np.max(abs(bal))),
                            float(abs(np.sum(bal))))
                 if budget<=budget_tol:
-                    return nxt
+                    return (nxt,heat_new,bal) if return_heat else nxt
             theta=nxt
         raise RuntimeError(
             f"BFZI thermal fixed point did not converge: "
