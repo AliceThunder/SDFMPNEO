@@ -12,7 +12,6 @@ from pathlib import Path
 
 import numpy as np
 
-from examples.bfzi_final_accept import cases
 from examples.bfzi_param import originals,create
 from examples.bfzi_obb_layer_study import GRIDS
 from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
@@ -147,7 +146,8 @@ def main():
     if min(a.ins_k,a.ins_t,a.skin,*a.dt)<=0:
         p.error("insulation and time-step parameters must be positive")
     bf,v150=originals(a.bfzi_root)
-    selected={x["id"]:x for x in cases(a.runs)}
+    saved=json.loads((a.runs/"bfzi_final_accept.json").read_text())
+    selected={key:item["spec"] for key,item in saved["cases"].items()}
     results={}
     for key in a.keys:
         if key not in selected:
