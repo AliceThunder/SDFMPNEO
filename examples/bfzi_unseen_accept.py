@@ -53,12 +53,18 @@ def fmt(v,kind):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--runs",type=Path,default=Path("runs"))
+    ap.add_argument("--run-tag",default="",help="select independent new direct-physics run")
     ap.add_argument("--out",type=Path,default=Path("runs/bfzi_physical_unseen12_final.json"))
     ap.add_argument("--report",type=Path,default=Path(
         "docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_final.md"))
     a=ap.parse_args()
     meta={}
-    for name in sorted(set(FILES+[p.name for p in a.runs.glob("bfzi_unseen_*.json")])):
+    names=(sorted(p.name for p in a.runs.glob(
+               f"bfzi_unseen_*_{a.run_tag}_*.json")) if a.run_tag else
+           sorted(set(FILES+
+               [p.name for p in a.runs.glob("bfzi_unseen_U*.json")]+
+               [p.name for p in a.runs.glob("bfzi_unseen_resume_*.json")])))
+    for name in names:
         p=a.runs/name
         if not p.exists():
             continue
@@ -66,16 +72,31 @@ def main():
         for key,case in d.get("cases",{}).items():
             for tag,rec in case.get("runs",{}).items():
                 h=d["settings"]["inner_step_s"]
-                g=d["settings"]["grids"][0]
-                if h in (1,2) and tag==f"{g}_dt15":
+                if h in (1,2) and tag in ("ultra_dt15","superfine_dt15"):
+                    g=tag.removesuffix("_dt15")
                     meta[(key,g,int(h))]=rec
+    if not a.run_tag:
+        base=a.runs/"bfzi_physical_unseen12_final.json"
+        if base.exists():
+            frozen=json.loads(base.read_text(encoding="utf-8"))
+            for key,c in frozen["cases"].items():
+                for g,h in CFG:
+                    rec=c["runs"].get(f"{g}_h{h}")
+                    if rec is not None:
+                        meta.setdefault((key,g,h),rec)
     spec=json.loads((a.runs/"bfzi_physical_unseen12_corrected.json").read_text(encoding="utf-8"))
     cases={}
     for key in KEYS:
         raw={}
         detail={}
         for grid,h in CFG:
-            files=list(a.runs.glob(f"bfzi_phys_{key}_{grid}_dt15_h{h}*.npz"))
+            pat=(f"bfzi_phys_{key}_{grid}_dt15_h{h}*"
+                 + (f"_{a.run_tag}.npz" if a.run_tag else ".npz"))
+            files=list(a.runs.glob(pat))
+            if not a.run_tag and base.exists():
+                name=frozen["cases"][key]["runs"][f"{grid}_h{h}"].get("file")
+                p=a.runs/Path(name).name if name else None
+                files=[p] if p is not None and p.exists() else []
             rec=meta.get((key,grid,h))
             k=f"{grid}_h{h}"
             if len(files)==1 and rec is not None:
@@ -149,6 +170,7 @@ def main():
     conservation={k:max(abs(r[k]) for r in rows) if rows else None
                   for k in fields}
     out=dict(method="BFZI V150 four-combination unseen independent physics",
+             run_tag=a.run_tag,
              grid={"ultra":"2668-class wet FV","superfine":"3729-class wet FV"},
              true_heat_step_s={"h2":1.875,"h1":1.0},
              output_dt_s=15,elapsed_s=600,counts=counts,
