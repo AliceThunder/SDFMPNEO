@@ -44,14 +44,25 @@ def calc(em,amb,head):
         warm=em.solve(amb+theta,np.full(2,amb))
         ds=pack(warm.sea_z)-cs
         dz=pack(warm.total_z)-ct
+        # Original BFZI sea_z = bulk Green response + additive near-
+        # source mass moment. Resolve these two contributions exactly
+        # algebraically, with no additional EM/GMRES solves.
+        dm=((em.omega*em.mu)**2*em.sigma0*em.alpha*
+            np.einsum("n,nij->ij",theta,em.mass,optimize=True))
+        dmass=pack(dm)
+        dcore=ds-dmass
         vals[name]=dict(sea_delta_z6=ds.tolist(),
                         total_delta_z6=dz.tolist(),
+                        core_delta_z6=dcore.tolist(),
+                        mass_delta_z6=dmass.tolist(),
                         peak_K=float(theta.max()),
                         vol_mean_K=float(theta@em.vol/em.vol.sum()))
     cu=em.solve(np.full(len(em.vol),amb),np.full(2,amb+5.))
     vals["copper_only"]=dict(
         sea_delta_z6=(pack(cu.sea_z)-cs).tolist(),
         total_delta_z6=(pack(cu.total_z)-ct).tolist(),
+        core_delta_z6=(pack(cu.sea_z)-cs).tolist(),
+        mass_delta_z6=np.zeros(6).tolist(),
         peak_K=5.,vol_mean_K=0.)
     return vals
 
@@ -104,13 +115,22 @@ def main():
                                       high["sea_delta_z6"]),
                 total_delta_Z_rel=error(low["total_delta_z6"],
                                         high["total_delta_z6"]),
+                bulk_Green_delta_Z_rel=error(low["core_delta_z6"],
+                                             high["core_delta_z6"]),
+                local_mass_delta_Z_rel=error(low["mass_delta_z6"],
+                                             high["mass_delta_z6"]),
+                mass_fraction_high=float(
+                    np.linalg.norm(high["mass_delta_z6"])/
+                    max(np.linalg.norm(high["sea_delta_z6"]),1e-20)),
                 mean_temperature_low_K=low["vol_mean_K"],
                 mean_temperature_high_K=high["vol_mean_K"])
         out["geometries"][name]=dict(levels=run,
                                      low_vs_high=compare)
-        print("PROBE",name,[(key,round(v["sea_delta_Z_rel"]*100,5),
-                             round(v["total_delta_Z_rel"]*100,5))
-                            for key,v in compare.items()],flush=True)
+        print("PROBE",name,[
+            (key,round(v["sea_delta_Z_rel"]*100,4),
+             round(v["bulk_Green_delta_Z_rel"]*100,4),
+             round(v["local_mass_delta_Z_rel"]*100,4))
+            for key,v in compare.items()],flush=True)
         a.out.parent.mkdir(parents=True,exist_ok=True)
         a.out.write_text(json.dumps(out,indent=2))
     print("SAVED",a.out,flush=True)
