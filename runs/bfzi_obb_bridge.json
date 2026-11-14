@@ -1,0 +1,249 @@
+{
+  "method": "original BFZI V150 passive conservative finite sea skin",
+  "skin_depth_m": 0.002,
+  "skin_layers": 8,
+  "skin_ratio": 1.4,
+  "skin_map_order": 2,
+  "gap_bridge": true,
+  "gap_max_m": 0.012,
+  "gap_quad": 4,
+  "gap_align": 0.5,
+  "skin_q_remapped": true,
+  "sea_volume_conserved": true,
+  "geometries": {
+    "P03": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "skin_states": 1024,
+          "original_em_nodes": 572,
+          "setup_sec": 1.7254384999978356,
+          "skin_info": {
+            "layers": 8,
+            "depth_m": 0.002,
+            "ratio": 1.4,
+            "map_order": 2,
+            "faces": 128,
+            "gap_bridge": true,
+            "gap": {
+              "bridges": 8,
+              "area_m2": 0.0012950924344678283,
+              "G_W_K": 0.12928808092237695,
+              "min_gap_m": 0.0076983380715209965,
+              "max_gap_m": 0.011645757970743343,
+              "covered_face_fraction": 0.012030808138263833
+            },
+            "gap_bulk_area_covered_m2": 0.0025901848689356567,
+            "redistributed_water_m3": 0.000430592,
+            "max_wet_fraction": 0.3402278867372299,
+            "sea_cap_delta_J_K": 5.820766091346741e-11
+          },
+          "unit_power": {
+            "copper": {
+              "pkg_final_K": 0.661508704447802,
+              "pkg_peak_K": 0.661508704447802,
+              "copper_final_K": 1.7951743085928726,
+              "copper_peak_K": 1.7951743085928726
+            },
+            "seawater": {
+              "pkg_final_K": 0.007236197426870882,
+              "pkg_peak_K": 0.007236197426870882,
+              "copper_final_K": 0.0054398169710359896,
+              "copper_peak_K": 0.0054398169710359896
+            }
+          },
+          "physical_file": "runs\\bfzi_pose_p03_bridge_medium.npz",
+          "direct_sec": 3.9821147000038764,
+          "material_node_residual_W": 5.115263235211387e-07,
+          "vs_no_layer": {
+            "dynamic_delta_Z_relative_L2": 0.02140168205335658,
+            "pkg_max_abs_K": 2.994400693056491,
+            "copper_max_abs_K": 2.114984239233422
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "skin_states": 1024,
+          "original_em_nodes": 1312,
+          "setup_sec": 2.6499826999934157,
+          "skin_info": {
+            "layers": 8,
+            "depth_m": 0.002,
+            "ratio": 1.4,
+            "map_order": 2,
+            "faces": 128,
+            "gap_bridge": true,
+            "gap": {
+              "bridges": 8,
+              "area_m2": 0.0012950924344678283,
+              "G_W_K": 0.12928808092237695,
+              "min_gap_m": 0.0076983380715209965,
+              "max_gap_m": 0.011645757970743343,
+              "covered_face_fraction": 0.012030808138263833
+            },
+            "gap_bulk_area_covered_m2": 0.0025901848689356567,
+            "redistributed_water_m3": 0.000430592,
+            "max_wet_fraction": 0.8076453488372092,
+            "sea_cap_delta_J_K": 5.820766091346741e-11
+          },
+          "unit_power": {
+            "copper": {
+              "pkg_final_K": 0.6571209978519004,
+              "pkg_peak_K": 0.6571209978519004,
+              "copper_final_K": 1.79109315920594,
+              "copper_peak_K": 1.79109315920594
+            },
+            "seawater": {
+              "pkg_final_K": 0.010792666801166077,
+              "pkg_peak_K": 0.010792666801166077,
+              "copper_final_K": 0.0071112388967970695,
+              "copper_peak_K": 0.0071112388967970695
+            }
+          },
+          "physical_file": "runs\\bfzi_pose_p03_bridge_extra.npz",
+          "direct_sec": 11.48172880000493,
+          "material_node_residual_W": 5.097183901625613e-07,
+          "vs_no_layer": {
+            "dynamic_delta_Z_relative_L2": 0.016273728109831326,
+            "pkg_max_abs_K": 2.3343094312561448,
+            "copper_max_abs_K": 1.708925925500239
+          }
+        }
+      },
+      "cross_grid": {
+        "copper": {
+          "pkg_max_abs_K": 0.008059518067557558,
+          "copper_max_abs_K": 0.004081149386932603
+        },
+        "seawater": {
+          "pkg_max_abs_K": 0.003710401949718536,
+          "copper_max_abs_K": 0.00167142192576108
+        },
+        "dynamic": {
+          "dynamic_delta_Z_relative_L2": 0.012207422346473576,
+          "full_Z_relative_L2": 0.00022203385545010006,
+          "pkg_max_abs_K": 0.1769873687200061,
+          "copper_max_abs_K": 0.05018596019050392,
+          "pkg_final_max_abs_K": 0.1769873687200061
+        }
+      }
+    },
+    "P07": {
+      "levels": {
+        "medium": {
+          "nsea": 572,
+          "skin_states": 1024,
+          "original_em_nodes": 572,
+          "setup_sec": 1.7827700999914669,
+          "skin_info": {
+            "layers": 8,
+            "depth_m": 0.002,
+            "ratio": 1.4,
+            "map_order": 2,
+            "faces": 128,
+            "gap_bridge": true,
+            "gap": {
+              "bridges": 6,
+              "area_m2": 0.0009765176196542219,
+              "G_W_K": 0.08601275464906938,
+              "min_gap_m": 0.008900393336218504,
+              "max_gap_m": 0.011779924190349409,
+              "covered_face_fraction": 0.008544358284808751
+            },
+            "gap_bulk_area_covered_m2": 0.0019530352393084438,
+            "redistributed_water_m3": 0.000457152,
+            "max_wet_fraction": 0.32786421217192463,
+            "sea_cap_delta_J_K": 0.0
+          },
+          "unit_power": {
+            "copper": {
+              "pkg_final_K": 0.6579039685569934,
+              "pkg_peak_K": 0.6579039685569934,
+              "copper_final_K": 1.783318694892103,
+              "copper_peak_K": 1.783318694892103
+            },
+            "seawater": {
+              "pkg_final_K": 0.006118379497340791,
+              "pkg_peak_K": 0.006118379497340791,
+              "copper_final_K": 0.004697441182528602,
+              "copper_peak_K": 0.004697441182528602
+            }
+          },
+          "physical_file": "runs\\bfzi_pose_p07_bridge_medium.npz",
+          "direct_sec": 10.403239000006579,
+          "material_node_residual_W": 2.0023620663778274e-06,
+          "vs_no_layer": {
+            "dynamic_delta_Z_relative_L2": 0.022497853213865833,
+            "pkg_max_abs_K": 14.87370417802481,
+            "copper_max_abs_K": 12.925968402656395
+          }
+        },
+        "extra": {
+          "nsea": 1312,
+          "skin_states": 1024,
+          "original_em_nodes": 1312,
+          "setup_sec": 2.724270399994566,
+          "skin_info": {
+            "layers": 8,
+            "depth_m": 0.002,
+            "ratio": 1.4,
+            "map_order": 2,
+            "faces": 128,
+            "gap_bridge": true,
+            "gap": {
+              "bridges": 6,
+              "area_m2": 0.0009765176196542219,
+              "G_W_K": 0.08601275464906938,
+              "min_gap_m": 0.008900393336218504,
+              "max_gap_m": 0.011779924190349409,
+              "covered_face_fraction": 0.008544358284808751
+            },
+            "gap_bulk_area_covered_m2": 0.0019530352393084438,
+            "redistributed_water_m3": 0.000457152,
+            "max_wet_fraction": 0.8544558139534884,
+            "sea_cap_delta_J_K": 5.820766091346741e-11
+          },
+          "unit_power": {
+            "copper": {
+              "pkg_final_K": 0.6521936953452582,
+              "pkg_peak_K": 0.6521936953452582,
+              "copper_final_K": 1.779694664337024,
+              "copper_peak_K": 1.779694664337024
+            },
+            "seawater": {
+              "pkg_final_K": 0.009483806511295937,
+              "pkg_peak_K": 0.009483806511295937,
+              "copper_final_K": 0.006184741985612173,
+              "copper_peak_K": 0.006184741985612173
+            }
+          },
+          "physical_file": "runs\\bfzi_pose_p07_bridge_extra.npz",
+          "direct_sec": 29.082793800000218,
+          "material_node_residual_W": 1.9869486038714967e-06,
+          "vs_no_layer": {
+            "dynamic_delta_Z_relative_L2": 0.017137176279860073,
+            "pkg_max_abs_K": 11.345680370768775,
+            "copper_max_abs_K": 10.330151607439689
+          }
+        }
+      },
+      "cross_grid": {
+        "copper": {
+          "pkg_max_abs_K": 0.006356166337193048,
+          "copper_max_abs_K": 0.003624030555078983
+        },
+        "seawater": {
+          "pkg_max_abs_K": 0.0036105233787763072,
+          "copper_max_abs_K": 0.0014873008030835714
+        },
+        "dynamic": {
+          "dynamic_delta_Z_relative_L2": 0.010543829357906707,
+          "full_Z_relative_L2": 0.0002928560670657477,
+          "pkg_max_abs_K": 0.7936761834239405,
+          "copper_max_abs_K": 0.7219574102309707,
+          "pkg_final_max_abs_K": 0.7936761834239405
+        }
+      }
+    }
+  }
+}
