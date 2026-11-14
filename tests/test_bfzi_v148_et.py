@@ -364,3 +364,11 @@ def test_m4_archive_circuit_power_reference():
     assert np.isclose(pin,pload+psrc+psea,atol=1e-12)
     assert np.isclose(eta,.789055655984629,rtol=1e-12)
     assert np.isclose(psea,.013982265015249606,rtol=1e-12)
+
+
+def test_thermal_fixed_point_must_converge():
+    et=BFZIV148ET(Model(),sea_rhoc=1.,pkg_rhoc=1.,cu_rhoc=1.,
+                  sea_k=.05,cu_pkg_g=.01,pkg_sea_g=.01,outer_h=.1,
+                  external=np.diag([.5,.5]))
+    with pytest.raises(RuntimeError,match="did not converge"):
+        et.advance(et.zeros(),[8.,0.],.1,iterations=1,tol=1e-14)
