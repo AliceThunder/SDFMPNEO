@@ -15,6 +15,13 @@
 | 热节点最大离散残差 | **1.1541e−5 W** | ≤1e−4 W |
 | 电路功率最大相对残差 | **2.098e−15** | ≤1e−10 |
 
+完整复算命令（在包含独立 BFZI 仓库及冻结 `runs` 锚点数据的环境执行）：
+
+```bash
+python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_cases.json --keys F14P --dt 15 --grids ultra superfine --inner-step 2 --skin .002 --out runs/bfzi_physical_F14P_h2.json
+python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_cases.json --keys F14P --dt 15 --grids ultra superfine --inner-step 1 --skin .002 --out runs/bfzi_physical_F14P_h1.json
+```
+
 原生 BFZI 计算网格：`ultra=(0.05,0.04) m`，2668 湿 FV；`superfine=(0.045,0.035) m`，3729 湿 FV。两个时间对照的内部热步分别为输出区间 15 s 的 8 等分（真实 **1.875 s**）和 15 等分（真实 **1 s**）。时间和空间对照均包含相同的600 s物理启停历史。所有四组完整轨迹已在 XEnergy 产生 `runs/bfzi_phys_F14P_{ultra,superfine}_dt15_h{2,1}.npz`；GitHub [权威验收 JSON](../../../../runs/bfzi_physical_F14P_accept.json) 保存四组热、电、材料预算与全部交叉误差，便于复核。当前导热系数 `k_ins=0.25 W/(m K)` 仍为声明的试算材料参数，后续实际材料规格标定属于独立任务。
 
 **结论：F12 低功率与 F14P 110 V 脉冲高功率物理数值参考均已闭合。** 原 F14/F16 高功率长通电仍首次越过单相海水材料域，不能沿用其完整旧标签。后续回到可信物理标签支持下的 ROM 和跨几何神经代理训练/泛化验证。
