@@ -76,7 +76,12 @@ def calc(em,amb,head,integrate=False):
             np.einsum("n,nij->ij",theta,em.mass,optimize=True))
         dmass=pack(dm)
         dcore=ds-dmass
-        vals[name]=dict(sea_delta_z6=ds.tolist(),
+        rawweak=float(.5*np.einsum(
+            "n,n->",em.vol,warm.weak_q[:,0,0]))
+        port=float(.5*warm.sea_z[0,0].real)
+        weak_gap=abs(rawweak-port)/max(abs(port),1e-20)
+        vals[name]=dict(weak_port_relative_gap=weak_gap,
+                        sea_delta_z6=ds.tolist(),
                         total_delta_z6=dz.tolist(),
                         core_delta_z6=dcore.tolist(),
                         mass_delta_z6=dmass.tolist(),
