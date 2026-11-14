@@ -14,7 +14,7 @@ import numpy as np
 from examples.bfzi_param import create, originals
 from examples.bfzi_native_sea_study import build_args
 from examples.bfzi_obb_layer_study import GRIDS
-from sdfmpneo_bfzi.field_transfer import shared, compare
+from sdfmpneo_bfzi.field_transfer import shared, compare, project
 
 
 def study(a):
@@ -54,6 +54,17 @@ def study(a):
                     coarse=m[attr][:,im,...]
                     fine=e[attr][:,ie,...]
                     out[attr]=compare(coarse,fine,w)
+                    avg=[]
+                    row_vol=None
+                    for snapshot in e[attr]:
+                        projected,row_vol=project(
+                            w,im,ie,len(m["sea_xyz"]),len(e["sea_xyz"]),snapshot)
+                        avg.append(projected)
+                    out[attr+"_coarse_resolved"]=compare(
+                        m[attr],np.asarray(avg),row_vol)
+                    if "row_vol_mismatch_rel" not in data:
+                        data["row_vol_mismatch_rel"]=float(np.max(
+                            abs(row_vol-m["sea_vol"])/m["sea_vol"]))
                 data["modes"][mask]=out
                 print(name,mask,"samples",len(w),"raw J",
                       out["sea_J"]["raw"],"q",out["sea_q"]["raw"],flush=True)

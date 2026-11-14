@@ -55,6 +55,24 @@ def shared(rec_a, rec_b):
     return xyz[good],w[good],ia[good],ib[good]
 
 
+def project(w, ia, ib, n_a, n_b, field):
+    """Conservative shared-volume projection from fine to coarse wet FV.
+
+    Returns coarse-cell reconstructed averages and their sampled wet
+    volumes, using the same symmetric physical quadrature for both.
+    """
+    from scipy.sparse import coo_matrix
+    mat=coo_matrix((w,(ia,ib)),shape=(n_a,n_b)).tocsr()
+    vol=np.asarray(mat.sum(axis=1)).ravel()
+    if np.any(vol<=0):
+        raise ValueError("native coarse wet FV has no shared physical volume")
+    src=np.asarray(field)
+    if src.shape[0]!=n_b:
+        raise ValueError("source wet FV field count mismatch")
+    dst=(mat@src.reshape(n_b,-1))/vol[:,None]
+    return dst.reshape((n_a,)+src.shape[1:]),vol
+
+
 def norm(x,w):
     """Weighted spatial L2 norm for scalar or vector fields."""
     vals = np.asarray(x)
