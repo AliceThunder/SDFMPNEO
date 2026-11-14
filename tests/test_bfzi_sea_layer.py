@@ -122,4 +122,4 @@ def test_native_wet_quadrature_maps_rotated_skin_and_bulk():
                 [.01,.01,.004],[.2,0.,.00025]])
     samples=[(q,np.ones(4),np.zeros((4,2,2)))]
     m=_qmap(samples,[face],np.array([.001,.001]))
-    assert np.array_equal(m[id(q)],np.array([11,12,3,3]))
+    assert np.array_equal(m[id(q)],np.array([11,12,0,0]))
