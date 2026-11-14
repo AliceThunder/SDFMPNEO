@@ -1,0 +1,164 @@
+{
+  "P07": {
+    "offline_file": "runs\\bfzi_frac_tangent_p07.npz",
+    "train": {
+      "frac": {
+        "train_residual_delta_Z_rel_L2": 5.3307227632066553e-05,
+        "train_loss": 0.006482102442532778,
+        "model_file": "runs\\bfzi_frac_rom_p07_frac.pt"
+      },
+      "exp": {
+        "train_residual_delta_Z_rel_L2": 8.418985180907738e-05,
+        "train_loss": 0.004064592067152262,
+        "model_file": "runs\\bfzi_frac_rom_p07_exp.pt"
+      }
+    },
+    "heldout": {
+      "H1_validation": {
+        "physics": {
+          "delta_Z_rel_L2": 0.0016566730863123002,
+          "pkg_max_abs_K": 0.04180900600954374,
+          "copper_max_abs_K": 0.023623450209697694,
+          "sea_mean_max_abs_K": 6.197436633805408e-05,
+          "max_total_budget_W": 9.569404873765679e-09,
+          "infer_sec": 0.02452810000977479,
+          "direct_sec": 44.15188190000481,
+          "speedup": 1800.0530771812603
+        },
+        "frac": {
+          "delta_Z_rel_L2": 0.0013559024701442486,
+          "pkg_max_abs_K": 0.04177039262464177,
+          "copper_max_abs_K": 0.022800155852223725,
+          "sea_mean_max_abs_K": 3.436371213511793e-05,
+          "max_total_budget_W": 9.569936112273038e-09,
+          "infer_sec": 0.035668800002895296,
+          "direct_sec": 44.15188190000481,
+          "speedup": 1237.8291923591746
+        },
+        "exp": {
+          "delta_Z_rel_L2": 0.0005050092031228476,
+          "pkg_max_abs_K": 0.041781730929471905,
+          "copper_max_abs_K": 0.02305328644877136,
+          "sea_mean_max_abs_K": 4.2697921110819415e-05,
+          "max_total_budget_W": 9.569593377752162e-09,
+          "infer_sec": 0.03340389998629689,
+          "direct_sec": 44.15188190000481,
+          "speedup": 1321.758295232503
+        }
+      },
+      "H2_test": {
+        "physics": {
+          "delta_Z_rel_L2": 0.0017067825164898244,
+          "pkg_max_abs_K": 0.07880334860351468,
+          "copper_max_abs_K": 0.04699049938619737,
+          "sea_mean_max_abs_K": 0.00012261187352859737,
+          "max_total_budget_W": 1.4835229462692085e-08,
+          "infer_sec": 0.025258100009523332,
+          "direct_sec": 46.79377570000361,
+          "speedup": 1852.6245316298712
+        },
+        "frac": {
+          "delta_Z_rel_L2": 0.0007677001567100146,
+          "pkg_max_abs_K": 0.07863614252062234,
+          "copper_max_abs_K": 0.04479367248950439,
+          "sea_mean_max_abs_K": 7.268903147100668e-05,
+          "max_total_budget_W": 1.4836291939706802e-08,
+          "infer_sec": 0.03550510000786744,
+          "direct_sec": 46.79377570000361,
+          "speedup": 1317.9451878641307
+        },
+        "exp": {
+          "delta_Z_rel_L2": 0.0004639312790916367,
+          "pkg_max_abs_K": 0.07866187783446321,
+          "copper_max_abs_K": 0.04516584574855642,
+          "sea_mean_max_abs_K": 8.018425505546747e-05,
+          "max_total_budget_W": 1.4836360486610979e-08,
+          "infer_sec": 0.035529399989172816,
+          "direct_sec": 46.79377570000361,
+          "speedup": 1317.0437923033737
+        }
+      }
+    }
+  },
+  "P03": {
+    "offline_file": "runs\\bfzi_frac_tangent_p03.npz",
+    "train": {
+      "frac": {
+        "train_residual_delta_Z_rel_L2": 7.040487534723453e-05,
+        "train_loss": 0.003704286180436611,
+        "model_file": "runs\\bfzi_frac_rom_p03_frac.pt"
+      },
+      "exp": {
+        "train_residual_delta_Z_rel_L2": 3.618846489899479e-05,
+        "train_loss": 0.0012194567825645208,
+        "model_file": "runs\\bfzi_frac_rom_p03_exp.pt"
+      }
+    },
+    "heldout": {
+      "H1_validation": {
+        "physics": {
+          "delta_Z_rel_L2": 0.0003974777543639371,
+          "pkg_max_abs_K": 0.004959484204164255,
+          "copper_max_abs_K": 0.0029448166541783394,
+          "sea_mean_max_abs_K": 5.570179084004106e-06,
+          "max_total_budget_W": 3.5566340862617878e-09,
+          "infer_sec": 0.011505899994517677,
+          "direct_sec": 22.075107600001502,
+          "speedup": 1918.590254610229
+        },
+        "frac": {
+          "delta_Z_rel_L2": 0.0002593365678957961,
+          "pkg_max_abs_K": 0.004961535872439526,
+          "copper_max_abs_K": 0.0029491410894593173,
+          "sea_mean_max_abs_K": 5.403425988349944e-06,
+          "max_total_budget_W": 3.5566555120522877e-09,
+          "infer_sec": 0.016750800001318567,
+          "direct_sec": 22.075107600001502,
+          "speedup": 1317.8539292609203
+        },
+        "exp": {
+          "delta_Z_rel_L2": 0.0002873931848163949,
+          "pkg_max_abs_K": 0.004960023629735133,
+          "copper_max_abs_K": 0.0029550831185929383,
+          "sea_mean_max_abs_K": 5.895960623525926e-06,
+          "max_total_budget_W": 3.556591234680788e-09,
+          "infer_sec": 0.017057999997632578,
+          "direct_sec": 22.075107600001502,
+          "speedup": 1294.1205066869054
+        }
+      },
+      "H2_test": {
+        "physics": {
+          "delta_Z_rel_L2": 0.00029434212596157045,
+          "pkg_max_abs_K": 0.009069747460955568,
+          "copper_max_abs_K": 0.005293879972271043,
+          "sea_mean_max_abs_K": 1.0544962662573863e-05,
+          "max_total_budget_W": 5.7804125970992425e-09,
+          "infer_sec": 0.012770999994245358,
+          "direct_sec": 21.446361500013154,
+          "speedup": 1679.3016607686895
+        },
+        "frac": {
+          "delta_Z_rel_L2": 0.0001530916844119199,
+          "pkg_max_abs_K": 0.009073789774333818,
+          "copper_max_abs_K": 0.005302466048760834,
+          "sea_mean_max_abs_K": 1.0155123477270592e-05,
+          "max_total_budget_W": 5.780652565952843e-09,
+          "infer_sec": 0.01890100000309758,
+          "direct_sec": 21.446361500013154,
+          "speedup": 1134.6680861593793
+        },
+        "exp": {
+          "delta_Z_rel_L2": 0.00012309888834500577,
+          "pkg_max_abs_K": 0.009072857657429267,
+          "copper_max_abs_K": 0.005305434857234559,
+          "sea_mean_max_abs_K": 1.0445195088551712e-05,
+          "max_total_budget_W": 5.780464018996443e-09,
+          "infer_sec": 0.016361700007109903,
+          "direct_sec": 21.446361500013154,
+          "speedup": 1310.7660873071707
+        }
+      }
+    }
+  }
+}
