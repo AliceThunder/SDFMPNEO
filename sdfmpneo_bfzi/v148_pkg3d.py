@@ -140,8 +140,9 @@ class BFZIV148Pkg3D(BFZIV148ET):
             # An explicit cu_pkg_g retains historical lumped comparisons.
             if cu_pkg_g is None:
                 radius=float(model.copper.scene.assemblies[p].wire_radius)
-                length=float(np.linalg.norm(
-                    model.copper.lines[p].line_elements,axis=1).sum())
+                # Only winding length inside the sealed package conducts
+                # radially to this package. Remote leads are not attached.
+                length=float(np.sum(np.linalg.norm(dl,axis=1)))
                 if radius<=0 or length<=0:
                     raise ValueError("invalid physical copper wire length/radius")
                 total_g=2*np.pi*cu_ins_k*length/np.log1p(cu_ins_t/radius)
