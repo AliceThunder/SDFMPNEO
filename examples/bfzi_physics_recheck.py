@@ -222,10 +222,17 @@ def main():
         history={}
         for grid in a.grids:
             xz,y=GRIDS[grid]
-            data,_=create(bf,v150,"M4",**spec["geometry"],
-                          sea_void="oriented",physical_box_only=True,
-                          grid_xz=xz,grid_y=y,
-                          grid_max_nodes=a.grid_max_nodes)
+            try:
+                data,_=create(bf,v150,"M4",**spec["geometry"],
+                              sea_void="oriented",physical_box_only=True,
+                              grid_xz=xz,grid_y=y,
+                              grid_max_nodes=a.grid_max_nodes)
+            except ValueError as exc:
+                rows[grid]=dict(status="invalid_geometry_or_grid",
+                                reason=str(exc))
+                print("PHYS",key,grid,"invalid_geometry_or_grid",
+                      str(exc),flush=True)
+                continue
             mat=spec.get("thermal",{})
             opts=dict(alpha=spec["alpha_per_K"],
                       skin=mat.get("skin_m",a.skin),
