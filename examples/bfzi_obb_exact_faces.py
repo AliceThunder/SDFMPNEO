@@ -39,6 +39,8 @@ def main():
     p.add_argument("--levels",nargs="+",choices=("medium","extra"),
                    default=["medium","extra"])
     p.add_argument("--hybrid",action="store_true")
+    p.add_argument("--pkg-sea-model",choices=("face-resistance","face-normal"),
+                   default="face-resistance")
     p.add_argument("--source-radius",type=float,default=.06)
     p.add_argument("--source-mask",choices=("legacy","oriented","physical"),
                    default="legacy")
@@ -67,8 +69,10 @@ def main():
             study["geometries"][name]["new_shift_mm"],float)
         program=load(a.runs/f"bfzi_pose_{name.lower()}_disjoint_oriented_medium.npz")
         g=out["geometries"].setdefault(name,dict(levels={}))
-        prefix={"legacy":"exact","oriented":"source",
-                "physical":"fixed"}[a.source_mask]
+        prefix=("normal" if a.pkg_sea_model=="face-normal" and
+                a.source_mask=="legacy" else
+                {"legacy":"exact","oriented":"source",
+                 "physical":"fixed"}[a.source_mask])
         for key in a.levels:
             xz,y=GRIDS[key]
             t0=time.perf_counter()
@@ -81,7 +85,7 @@ def main():
                 source_radius=a.source_radius)
             et=BFZIV148Pkg3D(
                 em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
-                pkg_sea_model="face-resistance",pkg_sea_h=20.,
+                pkg_sea_model=a.pkg_sea_model,pkg_sea_h=20.,
                 pkg_sea_quad=2,pkg_sea_near=4)
             head=GeomHeat.from_original(em,et,prev.ext)
             setup=time.perf_counter()-t0
@@ -90,7 +94,8 @@ def main():
             pack_save(path,phy)
             old="oriented_medium" if key=="medium" else key
             refpath=(a.runs/f"bfzi_pose_{name.lower()}_exact_{key}.npz"
-                     if a.source_mask!="legacy" else
+                     if (a.source_mask!="legacy" or
+                         a.pkg_sea_model=="face-normal") else
                      a.runs/f"bfzi_pose_{name.lower()}_disjoint_{old}.npz")
             ref=load(refpath)
             row=dict(
