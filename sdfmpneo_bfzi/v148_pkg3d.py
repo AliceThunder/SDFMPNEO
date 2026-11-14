@@ -20,13 +20,17 @@ class BFZIV148Pkg3D(BFZIV148ET):
 
     def __init__(self,model,*,pkg_shape=(4,2,4),pkg_k=.25,
                  sea_rhoc=4e6,sea_k=.6,pkg_rhoc=1.5e6,
-                 pkg_sea_g=.6,cu_pkg_g=.8,outer_h=10.,
+                 pkg_sea_g=.6,cu_pkg_g=None,outer_h=10.,
+                  cu_ins_k=.25,cu_ins_t=.0005,
                  pkg_sea_model="nearest",pkg_sea_h=20.,
                  pkg_sea_quad=2,pkg_sea_near=4,**kwargs):
+        if cu_ins_k<=0 or cu_ins_t<=0 or (cu_pkg_g is not None and cu_pkg_g<=0):
+            raise ValueError("positive copper insulation conductivity/thickness required")
         super().__init__(
             model,sea_rhoc=sea_rhoc,sea_k=sea_k,pkg_rhoc=pkg_rhoc,
-            pkg_sea_g=pkg_sea_g,cu_pkg_g=cu_pkg_g,outer_h=outer_h,
-            **kwargs)
+            pkg_sea_g=pkg_sea_g,
+            cu_pkg_g=.8 if cu_pkg_g is None else cu_pkg_g,
+            outer_h=outer_h,**kwargs)
         dims=tuple(int(x) for x in pkg_shape)
         if len(dims)!=3 or min(dims)<1 or pkg_k<=0:
             raise ValueError("positive 3-D package grid and conductivity required")
@@ -48,6 +52,7 @@ class BFZIV148Pkg3D(BFZIV148ET):
         self.pkg_axes=[axes(fam.coil) for fam in model.base["families"]]
         self.pkg_links=[]
         self.cu_links=[]
+        self.cu_pkg_total=[]
         rows,cols,vals=[],[],[]
         def link(i,j,g):
             if g<=0:
@@ -130,7 +135,20 @@ class BFZIV148Pkg3D(BFZIV148ET):
                              minlength=self.pkg_n)
             if np.sum(mass)<=0:
                 raise ValueError("BFZI winding segment lengths are zero")
-            g=cu_pkg_g*mass/np.sum(mass)
+            # Radial conduction across the real wire insulation/potting:
+            # R = ln((r+t)/r)/(2*pi*k*L), independent of FV grid size.
+            # An explicit cu_pkg_g retains historical lumped comparisons.
+            if cu_pkg_g is None:
+                radius=float(model.copper.scene.assemblies[p].wire_radius)
+                length=float(np.linalg.norm(
+                    model.copper.lines[p].line_elements,axis=1).sum())
+                if radius<=0 or length<=0:
+                    raise ValueError("invalid physical copper wire length/radius")
+                total_g=2*np.pi*cu_ins_k*length/np.log1p(cu_ins_t/radius)
+            else:
+                total_g=float(cu_pkg_g)
+            self.cu_pkg_total.append(total_g)
+            g=total_g*mass/np.sum(mass)
             couplings=[]
             for a,cond in enumerate(g):
                 if cond>0:
