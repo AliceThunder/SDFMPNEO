@@ -137,18 +137,23 @@ def compare(coarse,fine):
         return None
     a=np.asarray(coarse["time_s"])
     b=np.asarray(fine["time_s"])
-    ids=np.searchsorted(b,a)
-    if (a[-1]!=b[-1] or np.any(ids>=len(b)) or
-            not np.allclose(a,b[ids],atol=1e-8)):
+    until=float(min(a[-1],b[-1]))
+    ai=np.flatnonzero(a<=until+1e-8)
+    if len(ai)<2:
         return None
-    z0=coarse["z6"]-coarse["z6"][0]
+    ids=np.searchsorted(b,a[ai])
+    if np.any(ids>=len(b)) or not np.allclose(a[ai],b[ids],atol=1e-8):
+        return None
+    z0=coarse["z6"][ai]-coarse["z6"][0]
     z1=fine["z6"][ids]-fine["z6"][0]
-    return dict(delta_Z_relative_L2=float(
+    return dict(shared_until_s=until,shared_points=int(len(ai)),
+                prefix_only=bool(a[-1]!=b[-1]),
+                delta_Z_relative_L2=float(
                     np.linalg.norm(z0-z1)/max(np.linalg.norm(z1),1e-30)),
                 copper_abs_K=float(np.max(abs(
-                    coarse["Tcu_K"]-fine["Tcu_K"][ids]))),
+                    coarse["Tcu_K"][ai]-fine["Tcu_K"][ids]))),
                 package_abs_K=float(np.max(abs(
-                    coarse["Tpkg_K"]-fine["Tpkg_K"][ids]))))
+                    coarse["Tpkg_K"][ai]-fine["Tpkg_K"][ids]))))
 
 
 def main():
@@ -214,13 +219,11 @@ def main():
                 continue
             c=history.get(f"{grid}_dt{a.dt[0]:g}")
             f=history.get(f"{grid}_dt{a.dt[1]:g}")
-            if (c is not None and f is not None and
-                    rows[f"{grid}_dt{a.dt[0]:g}"]["status"]=="candidate" and
-                    rows[f"{grid}_dt{a.dt[1]:g}"]["status"]=="candidate"):
+            if c is not None and f is not None:
+                # Compare only valid shared history before any phase-limit
+                # crossing; this does not turn the full case into a pass.
                 checks[grid]=compare(c,f)
-        if (rows.get("medium_dt30",{}).get("status")=="candidate" and
-                rows.get("extra_dt30",{}).get("status")=="candidate"):
-            # Shared physical copper and package coordinates across grids.
+        if ("medium_dt30" in history and "extra_dt30" in history):
             checks["space_dt30"]=compare(
                 history["medium_dt30"],history["extra_dt30"])
         results[key]=dict(runs=rows,comparisons=checks)
