@@ -50,6 +50,10 @@ def measure(et, t, v):
         res=(et.cap*(state[k]-state[k-1])/dt+et.H@state[k]-heat)
         node=max(node,float(np.max(abs(res))))
         total=max(total,float(abs(np.sum(res))))
+    skin_power=np.array([
+        et.source_heat(hist[i].temp,hist[i].unit_j,hist[i].currents,
+                       hist[i].sea_q,hist[i].copper_power)[et.skin].sum()
+        for i in pick])
     mapped=0
     count=0
     if et._qmap:
@@ -66,6 +70,7 @@ def measure(et, t, v):
         max_port_weak_rel=float(np.max(abs(port-qpower)/
                                     np.maximum(abs(port),1e-12))),
         q_skin_samples=mapped,q_samples=count,
+        skin_power_W=skin_power,
         direct_sec=elapsed,et=et)
     return data
 
@@ -159,6 +164,7 @@ def main():
                     field_times_s=item["field_times_s"],
                     sea_xyz=item["sea_xyz"],sea_vol=item["sea_vol"],
                     Psea_W=item["Psea_W"],Pcu_W=item["Pcu_W"],
+                    skin_power_W=item["skin_power_W"],
                     nsea=et.count,n_pkg=et.pkg_n)
                 pkg,cu=view(item["temp_K"],et)
                 g["levels"][label]=dict(
@@ -175,9 +181,27 @@ def main():
                     max_pkg_T_K=float(np.max(pkg)),
                     max_copper_T_K=float(np.max(cu)),
                     sea_power_peak_W=float(np.max(item["Psea_W"])),
+                    skin_source_power_peak_W=float(np.max(item["skin_power_W"])),
+                    skin_source_power_fraction_max=float(np.max(
+                        item["skin_power_W"]/
+                        np.maximum(item["Psea_W"][np.searchsorted(
+                            t,item["field_times_s"])],1e-12))),
                     copper_power_peak_W=float(np.max(item["Pcu_W"])),
                     thermal_capacity_residual_J_K=et.skin_info[
                         "sea_cap_delta_J_K"])
+                if a.skin_heat=="source":
+                    with np.load(a.runs/f"{stem}_subcell_subcell_{label}.npz") as base:
+                        bT=base["temp_K"];bZ=base["z6"]
+                    bp,bc=view(bT,et)
+                    g["levels"][label]["vs_volume_heat"]=dict(
+                        dynamic_delta_Z_relative_L2=float(np.linalg.norm(
+                            (item["z6"]-item["z6"][0])-(bZ-bZ[0]))/
+                            max(np.linalg.norm(bZ-bZ[0]),1e-30)),
+                        pkg_max_abs_K=float(np.max(abs(pkg-bp))),
+                        copper_max_abs_K=float(np.max(abs(cu-bc))),
+                        sea_mean_max_abs_K=float(np.max(abs(
+                            (item["sea_T_K"]@em.vol)/em.vol.sum()-
+                            (base["sea_T_K"]@em.vol)/em.vol.sum()))))
                 print(name,mask,label,"wet",et.count,
                       "qskin",item["q_skin_samples"],"energy",
                       round(item["max_node_budget_W"],8),
