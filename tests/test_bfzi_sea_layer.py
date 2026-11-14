@@ -82,3 +82,31 @@ def test_skin_em_temperature_and_heat_injection_conserve_each_original_FV():
         et.bulk_vol+np.asarray(et.skin_mix.sum(axis=1)).ravel(),
         m.vol)
     assert et.skin_info["map_order"]==2
+
+
+def test_finite_skin_shorttime_fractional_diffusion():
+    # Independent unit-area surface heat flux into the physical 8-layer
+    # water RC chain, Dirichlet water at 2 mm. For t << L^2/alpha
+    # the surface temperature follows the 1/sqrt(t) thermal impedance.
+    depth=.002
+    ratio=1.4**np.arange(8)
+    dx=depth*ratio/ratio.sum()
+    k=.6
+    rhoc=4e6
+    C=rhoc*dx
+    H=np.zeros((8,8))
+    for j in range(7):
+        g=k/(.5*(dx[j]+dx[j+1]))
+        H[j,j]+=g;H[j+1,j+1]+=g
+        H[j,j+1]-=g;H[j+1,j]-=g
+    H[-1,-1]+=k/(.5*dx[-1])
+    dt=.02
+    A=np.diag(C/dt)+H
+    x=np.zeros(8)
+    for j in range(1,101):
+        force=np.zeros(8)
+        force[0]=100.
+        x=np.linalg.solve(A,C*x/dt+force)
+    surface=x[0]+100.*dx[0]/(2*k)
+    exact=2*100.*np.sqrt(2./(np.pi*k*rhoc))
+    assert abs(surface/exact-1)<.025
