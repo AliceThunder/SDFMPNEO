@@ -77,6 +77,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--bfzi-root",type=Path,required=True)
     p.add_argument("--runs",type=Path,default=Path("runs"))
+    p.add_argument("--source-mask",choices=("legacy","oriented",
+                    "physical","all"),default="legacy")
     p.add_argument("--poses",nargs="+",choices=("P03","P07"),
                    default=["P03","P07"])
     p.add_argument("--out",type=Path,
@@ -86,6 +88,7 @@ def main():
     study=json.loads((a.runs/"bfzi_obb_physical_study.json").read_text())
     out=dict(method="original BFZI V150 fixed analytic T sea impedance mesh experiment",
              no_thermal_solver=True,reference="1312 true OBB water FV",
+             source_mask=a.source_mask,
              geometries={})
     for name in a.poses:
         meta=json.loads((a.runs/
@@ -102,7 +105,7 @@ def main():
                           sea_void="oriented",physical_box_only=True,
                           grid_xz=xz,grid_y=y)
             em=BFZIV148Adapter(data,bf,heat_mode="port-weak",
-                               fv_faces="exact",source_mask="legacy")
+                               fv_faces="exact",source_mask=a.source_mask)
             vals=calc(em,head.amb,head)
             run[level]=dict(nodes=len(em.vol),fields=vals)
             print(name,level,"nodes",len(em.vol),flush=True)
