@@ -18,3 +18,9 @@
 4. 已通过的数值收敛门槛保持有效，材料参数变化后的物理参考标签须重新生成。
 
 实机证据：[`runs/bfzi_F16P_ins015.json`](../../../../runs/bfzi_F16P_ins015.json)、[`runs/bfzi_F16P_ins040.json`](../../../../runs/bfzi_F16P_ins040.json)、基准 [`runs/bfzi_physical_new_probe.json`](../../../../runs/bfzi_physical_new_probe.json)。计算在 XEnergy 的 `D:\\work\\bfzi-et-v2.1\\SDFMPNEO` 执行。代码已将材料扰动的 NPZ 文件与固定材料基准区分命名。
+
+## 第二轮：封装体与封装—海水界面热传参数
+
+物理求解器的 `pkg_k`（封装体导热系数）和 `pkg_sea_h`（封装—海水界面换热系数）现已开放为独立命令行参数，基准仍固定为 `pkg_k=0.25 W/(m·K)`、`pkg_sea_h=20 W/(m²·K)`。敏感性试算分别使用 `pkg_k=0.15/0.40 W/(m·K)` 与 `pkg_sea_h=10/40 W/(m²·K)`，其他参数与 F16P 基准一致。每个试算采用 2668 湿 FV、实际 1.875 s 热步、600 s 全时程，并输出单独 JSON/NPZ；不会覆盖 F16P 时空收敛的基准轨迹。相关物理单元测试 **22 passed**。
+
+四组试算正在 XEnergy 执行，待全部结束后填入铜/封装/海水峰值温度、动态阻抗与热收支结果，按相同扰动幅度确定优先标定的热传参数。单参数敏感性用于确定标定优先级，尚未形成经实验验证的材料参数。
