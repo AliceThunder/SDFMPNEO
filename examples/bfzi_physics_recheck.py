@@ -46,7 +46,7 @@ def drive(spec,now):
     return np.array([voltage,0.],complex)
 
 
-def march(et,spec,dt,method="be"):
+def march(et,spec,dt):
     t=np.arange(0.,float(spec["duration"])+dt*.5,dt)
     if abs(t[-1]-spec["duration"])>1e-8:
         raise ValueError("time step must exactly divide experiment duration")
@@ -62,21 +62,13 @@ def march(et,spec,dt,method="be"):
         try:
             if k:
                 # Preserve the actual on/off duration at a switching time.
-                theta=et.advance(prev,prev_v,dt,method=method)
+                theta=et.advance(prev,prev_v,dt)
             z,I,heat,q,cu=et.em(theta,v)
             # Source used by the implicit step and the endpoint source
             # differ exactly at a voltage transition. Keep the stored
             # energy/heat-budget check on the previous interval.
             step_heat=(heat if np.array_equal(prev_v,v)
                        else et.em(theta,prev_v)[2])
-            if k:
-                if method=="cn":
-                    old_heat=et.em(prev,prev_v)[2]
-                    used_heat=.5*(old_heat+step_heat)
-                    avg_theta=.5*(prev+theta)
-                else:
-                    used_heat=step_heat
-                    avg_theta=theta
         except (ValueError,RuntimeError) as exc:
             err=dict(time_s=float(now),reason=str(exc),
                      kind=("material" if "model exceeded" in str(exc)
@@ -90,12 +82,12 @@ def march(et,spec,dt,method="be"):
         port_sea=float(.5*np.vdot(I,z.sea_z@I).real)
         qrel.append(abs(port_sea-sea)/max(abs(port_sea),1e-12))
         if k:
-            bal=et.cap*(theta-prev)/dt+et.H@avg_theta-used_heat
+            bal=et.cap*(theta-prev)/dt+et.H@theta-step_heat
             residual.append(float(np.max(abs(bal))))
             stored=float(et.cap@(theta-prev)/dt)
-            ambient_loss=float(et.amb_g@avg_theta)
-            therm.append([stored,ambient_loss,float(used_heat.sum()),
-                          stored+ambient_loss-float(used_heat.sum())])
+            ambient_loss=float(et.amb_g@theta)
+            therm.append([stored,ambient_loss,float(step_heat.sum()),
+                          stored+ambient_loss-float(step_heat.sum())])
         else:
             residual.append(0.)
             therm.append([0.,0.,0.,0.])
@@ -117,7 +109,7 @@ def march(et,spec,dt,method="be"):
                                   port_rel>1e-10 or qmax>1e-10 else
             "candidate")
     out=dict(status=status,
-             failed_at=err,dt_s=float(dt),integrator=method,
+             failed_at=err,dt_s=float(dt),
              completed_s=float(t[len(zs)-1]) if len(zs) else None,
              elapsed_s=float(time.perf_counter()-start),
              copper_to_package_G_W_K=list(map(float,et.cu_pkg_total)),
@@ -188,8 +180,6 @@ def main():
     p.add_argument("--grids",nargs="+",choices=tuple(GRIDS),
                    default=["medium","extra"])
     p.add_argument("--grid-max-nodes",type=int,default=4000)
-    p.add_argument("--integrator",choices=("be","cn"),default="be",
-                   help="Implicit Euler or energy-conserving trapezoidal thermal step")
     p.add_argument("--sea-max-K",type=float,default=373.15)
     p.add_argument("--cu-max-K",type=float,default=1357.77)
     p.add_argument("--pkg-max-K",type=float,default=None)
@@ -233,14 +223,12 @@ def main():
                 continue
             for dt in a.dt:
                 tag=f"{grid}_dt{dt:g}"
-                rec,raw=march(et,spec,dt,method=a.integrator)
+                rec,raw=march(et,spec,dt)
                 rows[tag]=rec
                 history[tag]=raw
                 if len(raw["time_s"]):
                     np.savez_compressed(
-                        a.runs/(f"bfzi_phys_{key}_{tag}"+
-                                ("_cn.npz" if a.integrator=="cn" else ".npz")),
-                        **raw)
+                        a.runs/f"bfzi_phys_{key}_{tag}.npz",**raw)
                 print("PHYS",key,tag,rec["status"],
                       rec["completed_s"],rec.get("max_copper_K"),
                       flush=True)
@@ -290,7 +278,6 @@ def main():
         dest.write_text(json.dumps(dict(
             method="BFZI V150 corrected copper geometry; fixed skin depth",
             settings=dict(spec_file=str(a.spec_file) if a.spec_file else None,
-                          integrator=a.integrator,
                           dt=a.dt,grids=a.grids,
                           grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
                           grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,
