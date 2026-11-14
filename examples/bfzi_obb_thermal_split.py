@@ -59,6 +59,8 @@ def main():
     p.add_argument("--source-mask",choices=("legacy","oriented","physical"),
                    default="legacy")
     p.add_argument("--source-radius",type=float,default=.06)
+    p.add_argument("--pkg-sea-model",choices=("face-resistance","face-normal"),
+                   default="face-resistance")
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_obb_thermal_split.json"))
     a=p.parse_args()
@@ -66,6 +68,7 @@ def main():
     study=json.loads((a.runs/"bfzi_obb_physical_study.json").read_text())
     out=dict(experiment="Original BFZI constant unit-power thermal forcing",
              source_mask=a.source_mask,source_radius_m=a.source_radius,
+             pkg_sea_model=a.pkg_sea_model,
              material_sea_k_W_mK=.6,material_sea_rhoc_J_m3K=4e6,
              diffusion_length_600s_m=float(np.sqrt(.6/4e6*600)),
              geometries={})
@@ -87,7 +90,7 @@ def main():
                 source_mask=a.source_mask,source_radius=a.source_radius)
             et=BFZIV148Pkg3D(
                 em,external=prev.ext,pkg_shape=(4,2,4),pkg_k=.25,
-                pkg_sea_model="face-resistance",
+                pkg_sea_model=a.pkg_sea_model,
                 pkg_sea_h=20.,pkg_sea_quad=2,pkg_sea_near=4)
             head=GeomHeat.from_original(em,et,prev.ext)
             sea,_,I=head.circuit(np.zeros(len(head.cap)),
