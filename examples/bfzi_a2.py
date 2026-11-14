@@ -26,10 +26,10 @@ from sdfmpneo_bfzi.sea_layer import BFZIV148Skin3D
 CASES = (
     ("G1", "P03", "medium", 20., 1., 1.),
     ("G1", "P03", "extra", 20., 1., 1.),
-    ("G2", "P07", "medium", 25., 1., 1.),
-    ("G2", "P07", "extra", 25., 1., 1.),
+    ("G2", "P07", "medium", 25., .5, 1.),
+    ("G2", "P07", "extra", 25., .5, 1.),
     ("G1_drive", "P03", "extra", 20., .65, 1.),
-    ("G2_mat", "P07", "extra", 25., 1., .8),
+    ("G2_mat", "P07", "extra", 25., .5, .8),
 )
 
 
@@ -38,12 +38,14 @@ def main():
     p.add_argument("--bfzi-root", type=Path, required=True)
     p.add_argument("--runs", type=Path, default=Path("runs"))
     p.add_argument("--out", type=Path, default=Path("runs/bfzi_a2.json"))
-    a = p.parse_args()
+    p.add_argument("--cases", nargs="+", default=None)\n    a = p.parse_args()
     bf, v150 = originals(a.bfzi_root)
     old = json.loads((a.runs / "bfzi_obb_physical_study.json").read_text())
-    out = dict(method="BFZI V150 A2 independent physics", cases={}, cross_grid={})
+    out = (json.loads(a.out.read_text()) if a.out.exists()\n           else dict(method="BFZI V150 A2 independent physics", cases={}, cross_grid={}))
     saved = {}
     for name, pose, level, dy, gain, sig in CASES:
+        if a.cases is not None and name not in a.cases:
+            continue
         stem = f"bfzi_pose_{pose.lower()}"
         meta = json.loads((a.runs / f"{stem}_anchor.json").read_text())
         geo = build_args(meta)
