@@ -128,8 +128,7 @@ def test_native_wet_quadrature_maps_rotated_skin_and_bulk():
 def test_wire_insulation_radial_heat_path():
     m=demo()
     et=BFZIV148Skin3D(m,skin_depth=.002,skin_layers=6,skin_quad=1)
-    length=sum(np.linalg.norm(x.line_elements,axis=1).sum()
-               for x in m.copper.lines)/2
+    length=float(np.linalg.norm(m.base['families'][0].active.dl,axis=1).sum())
     expected=2*np.pi*.25*length/np.log1p(.0005/.001)
     assert np.allclose(et.cu_pkg_total,expected)
     assert np.allclose([sum(g for _,g in links)
