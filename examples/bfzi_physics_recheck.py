@@ -49,6 +49,7 @@ def march(et,spec,dt):
     theta=et.zeros()
     prev=theta.copy()
     zs=[];temps=[];ps=[];cs=[];power=[];curr=[];residual=[]
+    therm=[];qrel=[]
     err=None
     start=time.perf_counter()
     for k,now in enumerate(t):
@@ -66,11 +67,18 @@ def march(et,spec,dt):
         pext=float(.5*np.vdot(I,et.external@I).real)
         pin=float(.5*np.vdot(v,I).real)
         pbal=pin-(sea+float(cu.sum())+pext)
+        port_sea=float(.5*np.vdot(I,z.sea_z@I).real)
+        qrel.append(abs(port_sea-sea)/max(abs(port_sea),1e-12))
         if k:
             bal=et.cap*(theta-prev)/dt+et.H@theta-heat
             residual.append(float(np.max(abs(bal))))
+            stored=float(et.cap@(theta-prev)/dt)
+            ambient_loss=float(et.amb_g@theta)
+            therm.append([stored,ambient_loss,float(heat.sum()),
+                          stored+ambient_loss-float(heat.sum())])
         else:
             residual.append(0.)
+            therm.append([0.,0.,0.,0.])
         zs.append(pack(z.total_z))
         temps.append(et.amb+theta.copy())
         ps.append(sea)
@@ -81,9 +89,11 @@ def march(et,spec,dt):
     node=max(residual,default=0.)
     port_rel=max((abs(p[-1])/max(abs(p[0]),1e-12)
                   for p in power),default=0.)
+    qmax=max(qrel,default=0.)
     status=("outside_material_domain" if err is not None and
             err["kind"]=="material" else "solver_error" if err is not None else
-            "numerical_error" if node>1e-4 or port_rel>1e-10 else
+            "numerical_error" if node>1e-4 or port_rel>1e-10 or
+                                  qmax>1e-10 else
             "candidate")
     out=dict(status=status,
              failed_at=err,dt_s=float(dt),
@@ -93,7 +103,11 @@ def march(et,spec,dt):
              skin_depth_m=float(et.skin_depth),
              peak_thermal_residual_W=node,
              max_port_power_residual_W=max((abs(p[-1]) for p in power),default=0.),
-             max_rel_port_power=port_rel)
+             max_rel_port_power=port_rel,max_rel_q_power=qmax,
+             heat_cap_J_K=dict(
+                 seawater=float(et.cap[:et.count].sum()+et.cap[et.skin].sum()),
+                 package=float(et.cap[et.pkg].sum()),
+                 copper=float(et.cap[et.cu].sum())))
     if len(zs):
         temp=np.asarray(temps)
         out.update(max_copper_K=float(temp[:,et.cu].max()),
@@ -102,13 +116,15 @@ def march(et,spec,dt):
                                          temp[:,et.skin].max())),
                    max_copper_loss_W=float(np.max(np.sum(cs,axis=1))),
                    max_sea_loss_W=float(np.max(ps)),
-                   max_source_power_W=float(np.max(np.asarray(power)[:,0])))
+                   max_source_power_W=float(np.max(np.asarray(power)[:,0])),
+                   peak_ambient_loss_W=float(np.max(np.asarray(therm)[:,1])),
+                   max_storage_rate_W=float(np.max(np.asarray(therm)[:,0])))
     return out,dict(time_s=t[:len(zs)],temp_K=np.asarray(temps),
                     Tcu_K=np.asarray(temps)[:,et.cu],
                     Tpkg_K=np.asarray(temps)[:,et.pkg],
                     z6=np.asarray(zs),Psea_W=np.asarray(ps),
                     Pcu_W=np.asarray(cs),power_W=np.asarray(power),
-                    currents_A=np.asarray(curr))
+                    thermal_W=np.asarray(therm),currents_A=np.asarray(curr))
 
 
 def compare(coarse,fine):
