@@ -181,9 +181,12 @@ def main():
                 continue
             c=history.get(f"{grid}_dt{a.dt[0]:g}")
             f=history.get(f"{grid}_dt{a.dt[1]:g}")
-            if c is not None and f is not None:
+            if (c is not None and f is not None and
+                    rows[f"{grid}_dt{a.dt[0]:g}"]["status"]=="valid" and
+                    rows[f"{grid}_dt{a.dt[1]:g}"]["status"]=="valid"):
                 checks[grid]=compare(c,f)
-        if "medium_dt30" in history and "extra_dt30" in history:
+        if (rows.get("medium_dt30",{}).get("status")=="valid" and
+                rows.get("extra_dt30",{}).get("status")=="valid"):
             # Shared physical copper and package coordinates across grids.
             checks["space_dt30"]=compare(
                 history["medium_dt30"],history["extra_dt30"])
