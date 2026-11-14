@@ -117,12 +117,24 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                  skin_ratio=1.4, skin_quad=2, skin_near=4, skin_map=2,
                  gap_bridge=False, gap_max=.012, gap_quad=4, gap_align=.5,
                  sea_rhoc=4e6, sea_k=.6, pkg_k=.25,
-                 pkg_sea_h=20., skin_heat="volume", **kwargs):
+                 pkg_sea_h=20., skin_heat="volume",
+                 sea_min_K=271.15, sea_max_K=373.15,
+                 cu_max_K=1357.77, pkg_max_K=None, **kwargs):
         if skin_heat not in ("volume","source"):
             raise ValueError("skin heat must be volume or source")
         if skin_heat=="source" and getattr(model,"subcells",None) is None:
             raise ValueError("source-resolved skin heating needs BFZI subcell source")
         self.skin_heat=skin_heat
+        self.sea_range=(float(sea_min_K),float(sea_max_K))
+        self.cu_max_K=float(cu_max_K)
+        self.pkg_max_K=(None if pkg_max_K is None else float(pkg_max_K))
+        if (not np.isfinite(self.sea_range).all() or
+                self.sea_range[0]>=self.sea_range[1] or
+                not np.isfinite(self.cu_max_K) or
+                self.cu_max_K<=self.sea_range[0] or
+                (self.pkg_max_K is not None and
+                 (not np.isfinite(self.pkg_max_K) or self.pkg_max_K<=0))):
+            raise ValueError("invalid solid-copper/liquid-seawater material range")
         if (skin_depth<=0 or skin_layers<2 or skin_ratio<1 or
                 skin_quad<1 or skin_near<1 or skin_map not in (1,2) or
                 min(sea_k,sea_rhoc,pkg_k,pkg_sea_h)<=0 or
@@ -346,11 +358,29 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         heat[self.cu]=cu
         return heat
 
+    def check_domain(self,state):
+        """Require liquid water and solid copper for this single-phase model.
+
+        Sea boiling threshold is the 1-atm value; set sea_max_K for the
+        actual ambient pressure. Package maximum depends on encapsulant.
+        """
+        t=self.amb+np.asarray(state,float)
+        if t.shape!=(self.n,) or not np.all(np.isfinite(t)):
+            raise ValueError("invalid/nonfinite electrothermal state")
+        sea=np.r_[self.amb+self.sea_temp(np.asarray(state,float)),t[self.skin]]
+        if sea.min()<self.sea_range[0] or sea.max()>=self.sea_range[1]:
+            raise ValueError(f"liquid seawater model exceeded: {sea.min():.2f}..{sea.max():.2f} K; range {self.sea_range}")
+        if t[self.cu].max()>=self.cu_max_K:
+            raise ValueError(f"solid copper model exceeded: {t[self.cu].max():.2f} K >= {self.cu_max_K} K")
+        if self.pkg_max_K is not None and t[self.pkg].max()>=self.pkg_max_K:
+            raise ValueError(f"package material model exceeded: {t[self.pkg].max():.2f} K >= {self.pkg_max_K} K")
+
     def em(self,state,drive):
         theta=np.asarray(state,float)
         v=np.asarray(drive,complex)
         if theta.shape!=(self.n,) or v.shape!=(2,):
             raise ValueError("BFZI layered thermal state or voltage mismatch")
+        self.check_domain(theta)
         sea=self.amb+self.sea_temp(theta)
         copper=self.amb+theta[self.cu]
         if self._qmap:
