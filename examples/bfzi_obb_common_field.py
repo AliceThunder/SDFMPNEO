@@ -14,7 +14,7 @@ import numpy as np
 from examples.bfzi_param import create, originals
 from examples.bfzi_native_sea_study import build_args
 from examples.bfzi_obb_layer_study import GRIDS
-from sdfmpneo_bfzi.field_transfer import shared, compare, project
+from sdfmpneo_bfzi.field_transfer import (shared,compare,overlap,compare_exact,project_mat)
 
 
 def study(a):
@@ -36,7 +36,12 @@ def study(a):
             levels[label]=data
         xyz,w,im,ie=shared(levels["medium"]["records"],
                            levels["extra"]["records"])
-        data=dict(samples=len(w),volume_m3=float(w.sum()),modes={})
+        mat,erow,ecol=overlap(levels["medium"]["records"],
+                               levels["extra"]["records"],
+                               levels["medium"]["vol_meta"])
+        data=dict(samples=len(w),volume_m3=float(w.sum()),modes={},
+                  exact_overlap_pairs=int(mat.nnz),
+                  exact_overlap_row_err=erow,exact_overlap_col_err=ecol)
         for mask in a.source_masks:
             with np.load(a.runs/f"{pre}_subcell_{mask}_medium.npz") as m, \
                  np.load(a.runs/f"{pre}_subcell_{mask}_extra.npz") as e:
@@ -54,17 +59,13 @@ def study(a):
                     coarse=m[attr][:,im,...]
                     fine=e[attr][:,ie,...]
                     out[attr]=compare(coarse,fine,w)
+                    out[attr+"_exact"]=compare_exact(m[attr],e[attr],mat)
                     avg=[]
-                    row_vol=None
                     for snapshot in e[attr]:
-                        projected,row_vol=project(
-                            w,im,ie,len(m["sea_xyz"]),len(e["sea_xyz"]),snapshot)
+                        projected,row_vol=project_mat(mat,snapshot)
                         avg.append(projected)
                     out[attr+"_coarse_resolved"]=compare(
                         m[attr],np.asarray(avg),row_vol)
-                    if "row_vol_mismatch_rel" not in data:
-                        data["row_vol_mismatch_rel"]=float(np.max(
-                            abs(row_vol-m["sea_vol"])/m["sea_vol"]))
                 data["modes"][mask]=out
                 print(name,mask,"samples",len(w),"raw J",
                       out["sea_J"]["raw"],"q",out["sea_q"]["raw"],flush=True)

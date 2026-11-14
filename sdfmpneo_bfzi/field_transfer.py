@@ -73,6 +73,113 @@ def project(w, ia, ib, n_a, n_b, field):
     return dst.reshape((n_a,)+src.shape[1:]),vol
 
 
+def overlap(rec_a, rec_b, meta):
+    """Exact overlap volumes of two native OBB-cut BFZI wet-FV grids."""
+    from scipy.sparse import coo_matrix
+    from .sea_obb import _wet
+    mid=np.asarray(meta["physical_package_center_m"],float).reshape(-1,3)
+    half=np.asarray(meta["physical_package_half_m"],float).reshape(-1,3)
+    rot=np.asarray(meta["physical_package_rot"],float).reshape(-1,3,3)
+    boxes=list(zip(mid,half,rot))
+    limits=[(m-np.abs(r)@h,m+np.abs(r)@h)
+            for m,h,r in boxes]
+    lo_b=np.asarray([r["cell_min"] for r in rec_b],float)
+    hi_b=np.asarray([r["cell_max"] for r in rec_b],float)
+    ii=[];jj=[];vv=[]
+    for i,a in enumerate(rec_a):
+        lo_a=np.asarray(a["cell_min"],float)
+        hi_a=np.asarray(a["cell_max"],float)
+        js=np.flatnonzero(np.all((lo_b<hi_a)&(hi_b>lo_a),axis=1))
+        for j in js:
+            lo=np.maximum(lo_a,lo_b[j]);hi=np.minimum(hi_a,hi_b[j])
+            if not np.all(hi>lo):
+                continue
+            active=[box for box,(l,h) in zip(boxes,limits)
+                    if np.all(hi>l) and np.all(lo<h)]
+            if active:
+                _,w=_wet(lo,hi,active)
+                volume=float(w.sum())
+            else:
+                volume=float(np.prod(hi-lo))
+            if volume>1e-15:
+                ii.append(i);jj.append(j);vv.append(volume)
+    mat=coo_matrix((vv,(ii,jj)),shape=(len(rec_a),len(rec_b))).tocsr()
+    va=np.asarray([r["volume"] for r in rec_a],float)
+    vb=np.asarray([r["volume"] for r in rec_b],float)
+    row=np.asarray(mat.sum(axis=1)).ravel()
+    col=np.asarray(mat.sum(axis=0)).ravel()
+    erow=float(np.sum(abs(row-va))/va.sum())
+    ecol=float(np.sum(abs(col-vb))/vb.sum())
+    if max(erow,ecol)>1e-6:
+        raise ValueError(f"wet overlap volume inconsistency: {erow:.3g}, {ecol:.3g}")
+    return mat,erow,ecol
+
+
+def project_mat(mat, field):
+    """Exact passive volume average of fine field onto native coarse FV."""
+    n_a,n_b=mat.shape
+    val=np.asarray(field)
+    if val.shape[0]!=n_b:
+        raise ValueError("source wet FV field count mismatch")
+    vol=np.asarray(mat.sum(axis=1)).ravel()
+    if np.any(vol<=0):
+        raise ValueError("native coarse FV lacks positive wet overlap")
+    out=(mat@val.reshape(n_b,-1))/vol[:,None]
+    return out.reshape((n_a,)+val.shape[1:]),vol
+
+
+def pair_l2(a,b,mat):
+    """Exact integral of squared difference of piecewise constant fields."""
+    n_a,n_b=mat.shape
+    x=np.asarray(a).reshape(n_a,-1)
+    y=np.asarray(b).reshape(n_b,-1)
+    if x.shape[1]!=y.shape[1]:
+        raise ValueError("BFZI spatial field vector dimensions mismatch")
+    va=np.asarray(mat.sum(axis=1)).ravel()
+    vb=np.asarray(mat.sum(axis=0)).ravel()
+    power_a=float(va@np.sum(abs(x)**2,axis=1))
+    power_b=float(vb@np.sum(abs(y)**2,axis=1))
+    cross=np.sum(np.conj(x)*(mat@y)).real
+    err=np.sqrt(max(0.,power_a+power_b-2*cross))
+    return float(err),float(np.sqrt(power_b))
+
+
+def compare_exact(a,b,mat):
+    """Shared-volume raw, drive-normalized and thermal-shape errors."""
+    va=np.asarray(mat.sum(axis=1)).ravel()
+    vb=np.asarray(mat.sum(axis=0)).ravel()
+    out={k:[] for k in ("raw","shape","thermal",
+                         "delta_over_cold","delta_ref_over_cold")}
+    cold_a=cold_b=None
+    for k,(x,y) in enumerate(zip(a,b)):
+        err,den=pair_l2(x,y,mat)
+        out["raw"].append(err/den if den>1e-20 else None)
+        if x.ndim==2:
+            sx=shape_j(x,va,cold_a);sy=shape_j(y,vb,cold_b)
+        else:
+            sx=shape_q(x,va);sy=shape_q(y,vb)
+        if k==0:
+            cold_a,cold_b=sx,sy
+        if sx is None or sy is None:
+            out["shape"].append(None)
+            out["thermal"].append(None)
+            out["delta_over_cold"].append(None)
+            out["delta_ref_over_cold"].append(None)
+            continue
+        err,den=pair_l2(sx,sy,mat)
+        out["shape"].append(err/max(den,1e-30))
+        if k and cold_a is not None and cold_b is not None:
+            err,den=pair_l2(sx-cold_a,sy-cold_b,mat)
+            out["thermal"].append(err/den if den>1e-12 else None)
+            out["delta_over_cold"].append(err/max(norm(cold_b,vb),1e-30))
+            out["delta_ref_over_cold"].append(den/max(norm(cold_b,vb),1e-30))
+        else:
+            out["thermal"].append(None)
+            out["delta_over_cold"].append(None)
+            out["delta_ref_over_cold"].append(None)
+    return out
+
+
 def norm(x,w):
     """Weighted spatial L2 norm for scalar or vector fields."""
     vals = np.asarray(x)

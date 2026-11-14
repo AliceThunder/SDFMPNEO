@@ -58,3 +58,16 @@ def test_shared_overlap_projection_conserves_integrated_field():
     assert np.allclose(coarse,[3+1j,8-2j])
     assert np.allclose(vol,[.5,.5])
     assert np.allclose(vol@coarse,np.dot(w,fine[ib]))
+
+
+def test_exact_overlap_pair_l2_and_resolved_projection():
+    from scipy.sparse import csr_matrix
+    from sdfmpneo_bfzi.field_transfer import pair_l2,project_mat,compare_exact
+    mat=csr_matrix(np.array([[.25,.25,0],[0,0,.5]]))
+    coarse=np.array([[3+1j,0,0],[8-2j,0,0]])
+    fine=np.array([[3+1j,0,0],[3+1j,0,0],[8-2j,0,0]])
+    out,vol=project_mat(mat,fine)
+    assert np.allclose(out,coarse)
+    assert np.allclose(vol,[.5,.5])
+    assert pair_l2(coarse,fine,mat)[0]<1e-7
+    assert np.isclose(compare_exact(np.array([coarse]),np.array([fine]),mat)['raw'][0],0,atol=1e-7)
