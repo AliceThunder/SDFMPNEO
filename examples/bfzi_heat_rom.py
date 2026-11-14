@@ -29,6 +29,7 @@ def main():
                    default=("P03", "P07"))
     p.add_argument("--level", choices=tuple(GRIDS), default="extra")
     p.add_argument("--rank", type=int, default=32)
+    p.add_argument("--heldout", action="store_true")
     a = p.parse_args()
     bf, v150 = originals(a.bfzi_root)
     old = json.loads((a.runs / "bfzi_obb_physical_study.json").read_text())
@@ -77,6 +78,33 @@ def main():
             model_file=str(a.runs / f"bfzi_heat_rom_{pose.lower()}.npz"),
             reference_file=str(src))
         rom.save(result["model_file"])
+        if a.heldout:
+            from examples.bfzi_obb_refine import load
+            from examples.bfzi_obb_subcell_study import measure
+            prog = load(a.runs / f"{stem}_disjoint_oriented_medium.npz")
+            tv = np.asarray(prog["time_s"], float)
+            vv = np.asarray(prog["voltage_v"], float) * .65
+            vv = vv.copy()
+            vv[(tv >= 240.) & (tv < 330.)] = 0.
+            drive = np.column_stack((vv, np.zeros_like(vv)))
+            start = time.perf_counter()
+            phys = measure(et, tv, vv)
+            direct_sec = time.perf_counter() - start
+            start = time.perf_counter()
+            reduced = rom.rollout(et, tv, drive)
+            rom_sec = time.perf_counter() - start
+            diff = reduced["temp_K"] - phys["temp_K"]
+            dz = phys["z6"] - phys["z6"][0]
+            pred_dz = reduced["z6"] - reduced["z6"][0]
+            result["heldout"] = dict(
+                delta_Z_rel_L2=float(np.linalg.norm(pred_dz-dz) /
+                                      max(np.linalg.norm(dz), 1e-30)),
+                pkg_max_abs_K=float(np.max(abs(diff[:, pkg]))),
+                copper_max_abs_K=float(np.max(abs(diff[:, cu]))),
+                sea_mean_max_abs_K=float(np.max(abs(
+                    diff[:, sea] @ (em.vol / em.vol.sum())))),
+                direct_sec=direct_sec, rom_sec=rom_sec)
+            print("HELDOUT", pose, json.dumps(result["heldout"]), flush=True)
         report[pose] = result
         print(pose, json.dumps(result), flush=True)
     out = a.runs / "bfzi_heat_rom.json"
