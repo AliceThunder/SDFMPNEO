@@ -42,7 +42,7 @@ def main():
     p.add_argument("--pkg-sea-model",choices=("face-resistance","face-normal"),
                    default="face-resistance")
     p.add_argument("--source-radius",type=float,default=.06)
-    p.add_argument("--source-mask",choices=("legacy","oriented","physical"),
+    p.add_argument("--source-mask",choices=("legacy","oriented","physical","all"),
                    default="legacy")
     p.add_argument("--out",type=Path,
                    default=Path("runs/bfzi_obb_exact_faces.json"))
@@ -72,7 +72,7 @@ def main():
         prefix=("normal" if a.pkg_sea_model=="face-normal" and
                 a.source_mask=="legacy" else
                 {"legacy":"exact","oriented":"source",
-                 "physical":"fixed"}[a.source_mask])
+                 "physical":"fixed","all":"full"}[a.source_mask])
         for key in a.levels:
             xz,y=GRIDS[key]
             t0=time.perf_counter()
