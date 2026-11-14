@@ -69,3 +69,16 @@ def test_oriented_water_grid_rejects_collision_and_node_budget():
     coils,records,meta,sample,cfg=data(distance=.14)
     with pytest.raises(ValueError,match="budget"):
         build(FS,records,meta,coils,sample,cfg,max_nodes=10)
+
+
+def test_cut_tetra_quadrature_second_order():
+    from sdfmpneo_bfzi.sea_obb import _tetra
+    verts=np.array([[0.,0.,0.],[1.,0.,0.],
+                    [0.,2.,0.],[0.,0.,3.]])
+    q,w=_tetra(verts)
+    assert np.all(w>0)
+    assert np.isclose(w.sum(),1.,atol=1e-12)
+    assert np.isclose(w@q[:,0],.25,atol=1e-12)
+    assert np.isclose(w@(q[:,0]**2),.1,atol=1e-12)
+    assert np.isclose(w@(q[:,2]**2),.9,atol=1e-12)
+    assert np.isclose(w@(q[:,0]*q[:,1]),.1,atol=1e-12)

@@ -43,6 +43,7 @@ def _clip(v,n,b):
 
 
 def _tetra(v):
+    """Positive degree-two volume quadrature for an oriented cut polyhedron."""
     if len(v)<4:
         return np.empty((0,3)),np.empty(0)
     tris=v[ConvexHull(v).simplices]
@@ -51,7 +52,15 @@ def _tetra(v):
         "ij,ij->i",tris[:,0]-cen,
         np.cross(tris[:,1]-cen,tris[:,2]-cen)))/6.
     keep=vol>1e-16
-    return ((cen+tris.sum(axis=1))*.25)[keep],vol[keep]
+    tet=np.concatenate((
+        np.broadcast_to(cen,(int(np.sum(keep)),1,3)),
+        tris[keep]),axis=1)
+    a=(5.+3.*np.sqrt(5.))/20.
+    b=(5.-np.sqrt(5.))/20.
+    bary=np.full((4,4),b)
+    np.fill_diagonal(bary,a)
+    pts=np.einsum("ij,tjc->tic",bary,tet,optimize=True)
+    return pts.reshape(-1,3),np.repeat(vol[keep]/4.,4)
 
 
 def _wet(mn,mx,boxes):
