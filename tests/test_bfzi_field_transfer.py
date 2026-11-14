@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from sdfmpneo_bfzi.field_transfer import owner,shared,norm,compare
+from sdfmpneo_bfzi.field_transfer import owner,shared,norm,compare,project
 
 
 def cells(bounds):
@@ -47,3 +47,14 @@ def test_original_wet_fv_face_tie_uses_deterministic_owner():
     r=cells([([0,0,0],[.5,1,1]),([.5,0,0],[1,1,1])])
     q=np.array([[.5,.2,.3],[1.5,.2,.3]])
     assert owner(r,q,allow_face=True,allow_outside=True).tolist()==[0,-1]
+
+
+def test_shared_overlap_projection_conserves_integrated_field():
+    a=cells([([0,0,0],[.5,1,1]),([.5,0,0],[1,1,1])])
+    b=cells([([0,0,0],[.25,1,1]),([.25,0,0],[.5,1,1]),([.5,0,0],[1,1,1])])
+    _,w,ia,ib=shared(a,b)
+    fine=np.array([3+1j,3+1j,8-2j])
+    coarse,vol=project(w,ia,ib,2,3,fine)
+    assert np.allclose(coarse,[3+1j,8-2j])
+    assert np.allclose(vol,[.5,.5])
+    assert np.allclose(vol@coarse,np.dot(w,fine[ib]))
