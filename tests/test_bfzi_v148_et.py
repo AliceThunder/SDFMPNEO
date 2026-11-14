@@ -429,3 +429,34 @@ def test_heat_step_returns_source_and_passive_cooling_needs_no_em():
     assert np.all(q==0.)
     assert np.max(abs(bal))<1e-4
     assert np.all(np.isfinite(end))
+
+def test_source_mass_uses_real_third_order_full_cell():
+    """C=x² must produce exact ∫C and ∫C², not fixed 8-point moments."""
+    from itertools import product
+    from sdfmpneo_bfzi.bfzi_v148_adapter import _mass
+    x,w=np.polynomial.legendre.leggauss(2)
+    ids=np.array(list(product(range(2),repeat=3)))
+    q=.5+.5*x[ids]
+    wt=np.prod(w[ids],axis=1)/8.
+    coil=SimpleNamespace(center=(0.,0.,0.))
+    fam=SimpleNamespace(coil=coil)
+    geo=SimpleNamespace(pos=np.empty((0,3)),dl=np.empty((0,3)))
+    base=SimpleNamespace(
+        _record_quadrature=lambda rec,order:(q,wt),
+        _source_line_for_family=lambda fam,cfg:(np.zeros((1,3)),None),
+        _nearest_dist_xz=lambda pts,line,chunk:np.zeros(len(pts)))
+    fs=SimpleNamespace(
+        air_projection_to_points_centerline_family_quadratic=lambda pts,fam,point_chunk:
+            np.stack((pts[:,0]**2,np.zeros(len(pts)),np.zeros(len(pts))),axis=1))
+    calc=SimpleNamespace(base=base,fs=fs,
+        zlead_line_geom_for_coil=lambda coil,cfg:(geo,None))
+    rec=dict(cell_min=np.zeros(3),cell_max=np.ones(3),
+             volume=1.,volume_fraction=1.)
+    data=dict(records=[rec],points=np.array([[.5]*3]),volumes=np.ones(1),
+              families=[fam,fam],cfg={},sample={},
+              C=[np.zeros((1,3)),np.zeros((1,3))])
+    mass,sub=_mass(data,calc,order=3,mask="subcell")
+    assert len(sub[0][0])==27
+    c=np.einsum("q,qpc->pc",sub[0][1],sub[0][3])
+    assert np.allclose(c[:,0],1./3.,atol=1e-13)
+    assert np.allclose(mass[0],4./45.,atol=1e-13)

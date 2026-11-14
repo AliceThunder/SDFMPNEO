@@ -66,3 +66,9 @@ python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-f
 新方案的两级网格最大热节点残差 ≤4.144e-6 W，全局热预算残差 ≤1.247e-6 W，端口功率相对误差 ≤4.19e-15，海水热容量偏差 ≤5.82e-11 J/K；峰值海水 ≤300.546 K，铜 ≤345.080 K。**U01 空间 h2 验收通过**。完整样本最终验收继续等待 1 s 实际热步对照，状态保持 OPEN。
 
 正式验收聚合器 `examples/bfzi_unseen_accept.py` 增加独立 `--run-tag s3` 数据源筛选，原冻结记录复聚合仍为 **6/12 PASS、6/12 FAIL、0 PENDING**；新运行的 NPZ 不覆盖原始文件。
+
+## 完整闭环 U01（2026-11-15）
+
+保持冻结几何、激励与热材料参数，BFZI V150 ultra/superfine 原始两网格、真实 1.875 s 热步、每 15 s 输出阻抗，分别完成 600 s 的电磁热直接法。修复后的动态复阻抗空间相对 L2 为 **0.277465%**（原始 2.57138%，固定旧热轨迹电磁重放 0.29598%）；铜/封装空间最大温差为 **0.05149/0.08263 K**。最大热节点残差 **4.1431e-6 W**，全局热预算最大 **1.2466e-6 W**，最大相对端口功率失衡 **4.19e-15**，热容量相对原 FV 保持守恒。两组均 `candidate`，空间门槛通过。
+
+证据文件：`runs/bfzi_unseen_u01_u11_s3_h2.json`，`runs/bfzi_phys_U01_{ultra,superfine}_dt15_h2_*_s3.npz`。原 `runs/bfzi_physical_unseen12_final.json` 及其 NPZ 不覆盖。原样本总验收仍 OPEN；U01 1 s 热步及 U11 空间对照另行验收。
