@@ -128,8 +128,8 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
     sizes = np.median(mx-mn,axis=0)
     rad = .5*np.hypot(sizes[0],sizes[2])
     y_extra = .5*sizes[1]
-    if mask not in ("legacy","oriented","physical"):
-        raise ValueError("BFZI weak-source mask must be legacy, oriented or physical")
+    if mask not in ("legacy","oriented","physical","all"):
+        raise ValueError("BFZI weak-source mask invalid")
     masks = []
     for i,fam in enumerate(fams):
         lp,ldl = calc.base._source_line_for_family(fam,cfg)
@@ -154,6 +154,11 @@ def _mass(data, calc, order=3,mask="legacy",source_radius=.06):
             dist = calc.base._nearest_dist_xz(pts,lp,chunk=4096)
             masks.append((abs(pts[:,0])<=hx)&(pts[:,2]<=zp)
                          &(pts[:,2]>=-zn)&face&(dist<=rad))
+    # Exact original BFZI local source mass correction over every wet
+    # FV, without abrupt whole-cell support selection. Same formula,
+    # just complete spatial integration rather than heuristic masking.
+    if mask=="all":
+        masks=[np.ones(n,dtype=bool) for _ in fams]
     out = np.zeros((n,len(fams),len(fams)),float)
     union = np.any(masks,axis=0)
     lead = []
@@ -195,7 +200,7 @@ class BFZIV148Adapter:
             raise ValueError("sea heat mode must be 'j2' or 'port-weak'")
         if fv_faces not in ("approx","exact"):
             raise ValueError("BFZI FV face area mode must be approx or exact")
-        if source_mask not in ("legacy","oriented","physical"):
+        if source_mask not in ("legacy","oriented","physical","all"):
             raise ValueError("BFZI weak-source mask must be legacy or oriented")
         if source_radius<=0 or not np.isfinite(source_radius):
             raise ValueError("BFZI physical source support radius must be positive")
