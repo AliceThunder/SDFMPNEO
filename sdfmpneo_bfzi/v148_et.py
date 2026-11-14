@@ -174,7 +174,8 @@ class BFZIV148ET:
                 # implicit residual using the Joule source at the final state.
                 _,_,heat_new,_,_=self.em(nxt,drive)
                 bal=self.cap*(nxt-old)/dt+self.H@nxt-heat_new
-                budget=float(np.max(abs(bal)))
+                budget=max(float(np.max(abs(bal))),
+                           float(abs(np.sum(bal))))
                 if budget<=budget_tol:
                     return nxt
             theta=nxt
