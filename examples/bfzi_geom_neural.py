@@ -28,7 +28,7 @@ from sdfmpneo_bfzi.s5_bridge import feature, teacher_temp
 
 def read(path, rom):
     """Read one complete history; use file.npz#i for batched BFZI teachers."""
-    spec = str(path)
+    spec = str(path).replace("\\", "/")
     name, sep, tail = spec.rpartition("#")
     idx = int(tail) if sep and tail.isdigit() else None
     file = Path(name) if idx is not None else Path(spec)
@@ -185,9 +185,20 @@ def _heat_balance(row, rom, old, pred, y, sy, dt, voltage):
         a=torch.cat((a[:,:5],a[:,5:]*fac[:,None]),dim=-1)
     return a
 
+def _hist_mean(vals, spans, mode):
+    """Average history losses equally or by observed interval count."""
+    v=torch.stack(vals)
+    if mode=="equal":
+        return v.mean()
+    if mode!="step":
+        raise ValueError("history weighting must be equal or step")
+    w=v.new_tensor(spans)
+    return (v*w).sum()/w.sum()
+
+
 def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
-          therm_w=0., src_mix=0., zrel_w=0.):
-    total = []
+          therm_w=0., src_mix=0., zrel_w=0., hist_weight="equal"):
+    total, spans = [], []
     for row in rows:
         t = row["time"]
         u = torch.as_tensor(row["src"]/sx, dtype=torch.float32)
@@ -271,9 +282,10 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             zrel=zd.square().sum()/ref.square().sum().clamp_min(1e-12)
         total.append(zerr+0.45*zextra+heat+therm_w*phy
                      +temp_loss+zrel_w*zrel)
+        spans.append(len(t)-1)
     if not total:
         raise ValueError("teacher histories need at least two times")
-    return torch.stack(total).mean()
+    return _hist_mean(total, spans, hist_weight)
 
 
 def eval_rollout(rom, net, ck, rows):
