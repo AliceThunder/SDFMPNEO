@@ -1,0 +1,69 @@
+{
+  "train": [
+    {
+      "anchor": "runs/bfzi_s5_T01_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T01_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T01_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T01_ultra_long600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_T02_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T02_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T02_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T02_ultra_train600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_T03_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T03_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T03_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T03_ultra_train600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N01_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N01_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N01_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N01_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N02_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N02_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N02_ultra_v4_drive3.npz"
+      ]
+    }
+  ],
+  "val": [
+    {
+      "anchor": "runs/bfzi_s5_T04_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T04_ultra_long600_drive1.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 600.0,
+  "geometry_split": {
+    "train": [
+      "T01",
+      "T02",
+      "T03",
+      "N01",
+      "N02"
+    ],
+    "val": [
+      "T04"
+    ]
+  }
+}
