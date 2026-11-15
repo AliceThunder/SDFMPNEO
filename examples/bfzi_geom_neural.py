@@ -23,6 +23,7 @@ from sdfmpneo_bfzi.geom_heat import GeomHeat
 from sdfmpneo_bfzi.geom_memory import G_SCALE, geom_feat, heat_drive, thermal_summary
 from sdfmpneo_bfzi.geom_neural import GeomFracET, rollout
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+from sdfmpneo_bfzi.s5_bridge import feature, teacher_temp
 
 
 def read(path, rom):
@@ -59,6 +60,7 @@ def read(path, rom):
                 currents = currents[idx]
             volts = np.array([((zmat(zz)+rom.ext)@ii)[0].real
                               for zz, ii in zip(z6, currents)])
+    temp = teacher_temp(temp, rom)
     if (t.ndim != 1 or t[0] != 0 or np.any(np.diff(t) <= 0)
             or temp.shape != (len(t), len(rom.cap))
             or z6.shape != (len(t), 6) or volts.shape != t.shape):
@@ -202,8 +204,9 @@ def main():
     train = [read(f, rom) for f in a0.train]
     val = [read(f, rom) for f in a0.val]
     sx, sy, sa = scales(train)
-    pose = rom.pose if rom.pose is not None else None
-    g = torch.tensor(geom_feat(rom.geom, rom.z0, pose)[None], dtype=torch.float32)
+    ng = 45 if hasattr(rom,"thermal") else (
+        40 if rom.pose is not None else len(G_SCALE))
+    g = torch.tensor(feature(rom, ng)[None], dtype=torch.float32)
     net = GeomFracET(ng=g.shape[-1], rank=rom.rank)
     if a0.init_model:
         old = torch.load(a0.init_model, map_location="cpu", weights_only=True)

@@ -158,6 +158,9 @@ class GeomHeat:
         m=self.H.tocsr()
         extra=({f"sea_proj_{k}":v for k,v in self.sea_proj.items()}
                if self.sea_proj is not None else {})
+        for name in ("state_order","thermal","nwet","nskin"):
+            if hasattr(self,name):
+                extra[name]=getattr(self,name)
         np.savez_compressed(Path(path),geometry=self.geom,z0=self.z0,
             external=self.ext,vol=self.vol,sea_xyz=self.xyz,
             pkg_xyz=self.pkg_xyz,cap=self.cap,
@@ -178,7 +181,7 @@ class GeomHeat:
                   if k.startswith("sea_proj_")}
             if not proj:
                 proj=None
-            return cls(d["geometry"],d["z0"],d["external"],
+            head=cls(d["geometry"],d["z0"],d["external"],
                        d["vol"],d["sea_xyz"],d["pkg_xyz"],
                        d["cap"],mat,d["unit_j"],d["weak_q"],
                        ambient=float(d["ambient"]),alpha=float(d["alpha"]),
@@ -187,6 +190,12 @@ class GeomHeat:
                        pkg_mid=d["pkg_mid"] if "pkg_mid" in d else None,
                        pkg_half=d["pkg_half"] if "pkg_half" in d else None,
                        sea_proj=proj)
+            for name in ("state_order","thermal","nwet","nskin"):
+                if name in d.files:
+                    item=d[name].copy()
+                    setattr(head,name,int(item) if name in ("nwet","nskin")
+                            else item)
+            return head
 
     def corrected_J(self,theta,I):
         """Temperature-weighted FV projection perturbation of original J.

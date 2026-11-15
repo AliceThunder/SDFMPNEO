@@ -17,6 +17,7 @@ from .geom_heat import pack
 from .geom_memory import G_SCALE, GeomFrac, geom_feat, heat_drive
 from .geom_rom import GeomHeatROM, groups
 from .pose import default_desc
+from .s5_bridge import feature
 
 
 class GeomFracET(GeomFrac):
@@ -92,8 +93,7 @@ def rollout(rom, net, ck, voltage, times, correct_J=False):
     t, v = np.asarray(times, float), np.asarray(voltage, float)
     if t.ndim != 1 or t.size == 0 or t[0] != 0 or v.shape != t.shape or np.any(np.diff(t) <= 0):
         raise ValueError("invalid BFZI time/voltage history")
-    pose = rom.pose if rom.pose is not None else default_desc(rom.geom)
-    g = geom_feat(rom.geom, rom.z0, pose if net.ng > len(G_SCALE) else None)
+    g = feature(rom, net.ng)
     g = torch.tensor(g[None], dtype=net.rates.dtype)
     sc = np.asarray(ck["src_scale"], float)
     ys = np.asarray(ck["y_scale"], float)

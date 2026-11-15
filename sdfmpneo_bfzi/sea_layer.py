@@ -167,6 +167,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
         edges=[]
         owner=[]
         shell_vol=[]
+        skin_xyz=[]
         share_i=[];share_j=[];share_v=[];share_pt=[]
         # Tensor Gauss sampling conservatively distributes every shell
         # prism to its original wet FV, avoiding centroid ownership jumps.
@@ -189,6 +190,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
                 mid=center+(x+.5*width)*n
                 cell=_owner(mid,lo,hi)
                 owner.append(cell)
+                skin_xyz.append(mid)
                 shell_vol.append(area*width)
                 j=start+l-orig_n
                 for u,v,t in product(frac_pts,repeat=3):
@@ -266,6 +268,7 @@ class BFZIV148Skin3D(BFZIV148Pkg3D):
             raise ValueError("nonpositive native BFZI wet-FV bulk volume")
         self.bulk_vol=bulk
         self.skin_owner=owner
+        self.skin_xyz=np.asarray(skin_xyz,float)
         self.skin_vol=shell_vol
         self.skin_mix=mix
         self._qmap=_qmap(getattr(model,"subcells",None),faces,dx)
