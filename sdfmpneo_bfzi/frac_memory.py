@@ -34,10 +34,14 @@ def sources(volt,z,ext):
 class FracNet(nn.Module):
     """Three thermal source channels with learnable fractional memory orders."""
 
-    def __init__(self, nout=20, mode="frac", hidden=96, nrate=14):
+    def __init__(self, nout=20, mode="frac", hidden=96, nrate=14,
+                 soe_quad="legacy"):
         super().__init__()
         if mode not in ("frac","exp","hybrid"):
             raise ValueError("mode must be frac, exp or hybrid")
+        if soe_quad not in ("legacy","trap"):
+            raise ValueError("SOE quadrature must be legacy or trap")
+        self.soe_quad=soe_quad
         self.mode=mode
         self.nout=int(nout)
         self.register_buffer("rates",torch.tensor(
@@ -62,8 +66,18 @@ class FracNet(nn.Module):
         return torch.exp(np.log(1/2400.)+
                          torch.sigmoid(self.raw)*np.log(2400/12.))
 
+    def soe_weights(self):
+        logw=-self.orders()[:,None]*torch.log(self.rates)
+        if self.soe_quad=="trap":
+            quad=torch.ones_like(self.rates)
+            quad[0]=quad[-1]=.5
+            logw=logw+torch.log(quad)
+        return torch.softmax(logw,dim=-1)
+
     def step(self,h,u,dt):
         """Advance only the newly elapsed interval; no full-history storage."""
+        if dt<=0:
+            raise ValueError("positive fractional memory step required")
         if self.mode in ("frac","hybrid"):
             if self.mode=="hybrid":
                 hf,he=h[...,:-1],h[...,-1:]
@@ -73,8 +87,7 @@ class FracNet(nn.Module):
             hf=hf*dec+(1-dec)*u[...,None]
             alpha=self.orders()
             # Log-lambda quadrature of t^(alpha-1) / Gamma(alpha).
-            w=torch.softmax(
-                -alpha[:,None]*torch.log(self.rates[None,:]),dim=-1)
+            w=self.soe_weights()
             mem=torch.sum(hf*w[None,:,:],dim=-1)
             if self.mode=="hybrid":
                 lam=torch.exp(
@@ -118,7 +131,7 @@ def build_sources(volt,z6,ext):
     out=np.zeros(v.shape+(3,))
     for i in range(len(v)):
         for k in range(1,len(v[i])):
-            out[i,k]=sources(float(v[i,k]),zmat(z[i,k-1]),ext)
+            out[i,k]=sources(float(v[i,k-1]),zmat(z[i,k-1]),ext)
     return out
 
 
@@ -149,7 +162,8 @@ def predict(model, ckpt, volts, times, *, field=None, port=None):
                          x[1,1].real,x[1,1].imag])
     for k,tm in enumerate(t):
         if k:
-            inp=sources(float(v[k]),last,ex)
+            sv=float(v[k-1] if ckpt.get("drive_rule","right")=="left" else v[k])
+            inp=sources(sv,last,ex)
             state,y=model.step(
                 state,torch.tensor((inp/src_scale)[None,:],
                                    dtype=torch.float32),

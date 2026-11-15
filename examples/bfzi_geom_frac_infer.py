@@ -30,7 +30,7 @@ def main():
     a=p.parse_args()
     torch.set_num_threads(2)
     ck=torch.load(a.model,map_location="cpu",weights_only=True)
-    net=GeomFrac(ng=int(ck["ng"]))
+    net=GeomFrac(ng=int(ck["ng"]),soe_quad=ck.get("soe_quad","legacy"))
     net.load_state_dict(ck["state"])
     net.eval()
     with np.load(a.geometry) as d:

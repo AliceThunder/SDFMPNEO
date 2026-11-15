@@ -43,7 +43,8 @@ def main():
     if a.mode!="physics":
         ck=torch.load(a.runs/f"bfzi_frac_rom_{key}_{a.mode}.pt",
                       map_location="cpu",weights_only=False)
-        net=FracNet(nout=6,mode=a.mode,hidden=ck["hidden"])
+        net=FracNet(nout=6,mode=a.mode,hidden=ck["hidden"],
+                    soe_quad=ck.get("soe_quad","legacy"))
         net.load_state_dict(ck["state"])
         net.eval()
     torch.set_num_threads(1)

@@ -111,7 +111,68 @@ def scales(rows):
     return sscale, yscale, ascale
 
 
-def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
+def _port_src(row, rom, a, y, sy, voltage):
+    """Differentiable causal circuit source from previous predicted Z and Tcu."""
+    if "port_t" not in row:
+        from sdfmpneo_bfzi.geom_canon import mode_scale
+        from sdfmpneo_bfzi.geom_train import zmat as ztorch
+        cap=rom.cap[rom.cu]
+        amb=rom.amb
+        copper=np.asarray(rom.port.copper(np.full(2,amb)),complex)
+        tangent=(rom.port.copper(np.full(2,amb+.1))
+                 -rom.port.copper(np.full(2,amb-.1)))/.2
+        sc=mode_scale(rom,rom.rank) if 'K' in row else np.ones(rom.rank)
+        from sdfmpneo_bfzi.geom_rom import groups
+        cap_phi=rom.cap[:,None]*rom.phi
+        h_phi=rom.H@rom.phi
+        b=np.stack([cap_phi[sl].sum(axis=0) for sl in groups(rom)])*sc[None,:]
+        d=np.stack([h_phi[sl].sum(axis=0) for sl in groups(rom)])*sc[None,:]
+        row["port_t"]=dict(
+            B=torch.as_tensor(b,dtype=torch.float32),
+            D=torch.as_tensor(d,dtype=torch.float32),
+            cold=ztorch(torch.tensor(rom.z0[None],dtype=torch.float32)),
+            cu=torch.as_tensor(copper,dtype=torch.complex64),
+            deriv=torch.as_tensor(tangent,dtype=torch.complex64),
+            cu_map=torch.as_tensor(rom.phi[rom.cu]*sc[None,:],
+                                   dtype=torch.float32),
+            sea_air=torch.as_tensor(1j*rom.port.omega*rom.port.air,
+                                    dtype=torch.complex64),
+            ext=torch.as_tensor(rom.ext,dtype=torch.complex64),
+            cap=torch.as_tensor(cap,dtype=torch.float32))
+    from sdfmpneo_bfzi.geom_train import zmat as ztorch
+    p=row["port_t"]
+    tc=a@p["cu_map"].T
+    cu=p["cu"][None]+p["deriv"][None]*tc
+    dz=ztorch(y[:,:6]*torch.as_tensor(sy[:6],dtype=y.dtype))
+    z=p["cold"]+dz+torch.diag_embed(cu-p["cu"])
+    sea=p["cold"]+dz-p["sea_air"]-torch.diag_embed(p["cu"])
+    v=torch.as_tensor(voltage,dtype=a.dtype).reshape(1)
+    drive=torch.stack((v,torch.zeros_like(v)),dim=-1).to(torch.complex64)
+    current=torch.linalg.solve(z+p["ext"],drive)
+    qsea=(.5*torch.einsum("bi,bij,bj->b",
+                         current.conj(),sea,current).real).clamp_min(0)
+    qcu=.5*cu.real*current.abs().square()/p["cap"]
+    return torch.cat((qsea[:,None],qcu),dim=-1)
+
+
+def _heat_balance(row, rom, old, pred, y, sy, dt, voltage):
+    """Differentiable five-material correction matching the inference solver."""
+    a=pred
+    for _ in range(6):
+        q=_port_src(row,rom,a,y,sy,voltage)
+        p=row["port_t"]
+        qg=torch.stack((q[:,0],torch.zeros_like(q[:,0]),
+                        torch.zeros_like(q[:,0]),
+                        q[:,1]*p["cap"][0],q[:,2]*p["cap"][1]),dim=-1)
+        err=((a-old)@p["B"].T)/dt+a@p["D"].T-qg
+        jac=p["B"][:,:5]/dt+p["D"][:,:5]
+        corr=torch.linalg.solve(jac,-err.T).T
+        a=torch.cat((a[:,:5]+corr,a[:,5:]),dim=-1)
+    return a
+
+
+def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
+          therm_w=0., src_mix=0.):
     total = []
     for row in rows:
         t = row["time"]
@@ -121,8 +182,20 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
         asc = torch.as_tensor(sa, dtype=torch.float32)
         h = net.init_state(1)
         pr_z, pr_a = [], []
-        pr_phys = []
+        pr_phys,pr_pkg,pr_cu = [],[],[]
         cur = a[0:1]
+        zy = torch.zeros((1,14),dtype=a.dtype)
+        rr=row.get("rom",rom)
+        if rr is not None:
+            from sdfmpneo_bfzi.geom_canon import mode_scale
+            sc=mode_scale(rr,rr.rank) if 'K' in row else np.ones(rr.rank)
+            decoder=torch.as_tensor(rr.phi[rr.ns:rr.cu.stop]*sc[None,:],
+                                    dtype=a.dtype)
+            actual=torch.as_tensor(
+                row["temp_K"][:,rr.ns:rr.cu.stop]-rr.amb,dtype=a.dtype)
+            n_pkg=2*rr.npkg
+        if src_mix and (not closed or rr is None):
+            raise ValueError("autonomous source needs closed heat and geometry ROM")
         if therm_w:
             if rom is None and 'K' not in row:
                 raise ValueError("thermal physics loss requires a heat ROM")
@@ -133,11 +206,24 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
 
         gg = torch.as_tensor(row['geom'][None],dtype=torch.float32) if 'geom' in row else g
         for k in range(1, len(t)):
+            dt=float(t[k]-t[k-1])
             prev = cur if closed else a[k-1:k]
-            h, zhat, nxt = net.step_et(h, u[k:k+1], float(t[k]-t[k-1]), gg,
-                                       prev, asc)
+            input_u=u[k:k+1]
+            if src_mix:
+                live=_port_src(row,rr,prev,zy,sy,float(row["voltage"][k-1]))
+                input_u=(1-src_mix)*input_u+src_mix*(
+                    live/torch.as_tensor(sx,dtype=a.dtype))
+            h, zhat, nxt = net.step_et(h,input_u,float(t[k]-t[k-1]),gg,
+                                       prev,asc)
+            zy=zhat
             pr_z.append(zhat[0])
             pr_a.append((nxt[0]-a[k])/asc)
+            if rr is not None:
+                pred_temp=nxt[0]@decoder.T
+                pr_pkg.append((pred_temp[:n_pkg]-actual[k,:n_pkg])
+                              .square().mean())
+                pr_cu.append((pred_temp[n_pkg:]-actual[k,n_pkg:])
+                             .square().mean())
             if therm_w:
                 dt = float(t[k]-t[k-1])
                 delta = nxt[0]-a[k]
@@ -146,7 +232,12 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
                 scale = (asc*(1/dt+K.abs().sum(dim=1))).clamp_min(1e-6)
                 pr_phys.append((res/scale).square().mean())
             if closed:
-                cur = nxt
+                if src_mix:
+                    physical=_heat_balance(row,rr,prev,nxt,zhat,sy,dt,
+                                           float(row["voltage"][k-1]))
+                    cur=(1-src_mix)*nxt+src_mix*physical
+                else:
+                    cur=nxt
         if not pr_z:
             continue
         pz = torch.stack(pr_z)
@@ -155,7 +246,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
         zextra = ((pz[:, :6]-y[1:, :6])**2).mean()
         heat = pa.square().mean()
         phy = torch.stack(pr_phys).mean() if therm_w else 0.
-        total.append(zerr+0.45*zextra+heat+therm_w*phy)
+        temp_loss=(.15*torch.stack(pr_pkg).mean()
+                   +.15*torch.stack(pr_cu).mean()) if pr_pkg else 0.
+        total.append(zerr+0.45*zextra+heat+therm_w*phy+temp_loss)
     if not total:
         raise ValueError("teacher histories need at least two times")
     return torch.stack(total).mean()

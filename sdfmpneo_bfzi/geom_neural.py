@@ -24,8 +24,12 @@ from .s5_bridge import feature
 class GeomFracET(GeomFrac):
     """One shared SOE/MLP trunk and two outputs: sea Z and thermal ROM state."""
 
-    def __init__(self, ng=40, rank=32, hidden=128, nrate=14):
-        super().__init__(ng=ng, hidden=hidden, nrate=nrate)
+    def __init__(self, ng=40, rank=32, hidden=128, nrate=14,
+                 soe_quad="legacy", heat_dt=0.):
+        super().__init__(ng=ng, hidden=hidden, nrate=nrate,soe_quad=soe_quad)
+        if heat_dt<0:
+            raise ValueError("heat internal step must be nonnegative")
+        self.heat_dt=float(heat_dt)
         if rank < 5:
             raise ValueError("heat rank must include five material modes")
         self.rank = int(rank)
@@ -44,16 +48,17 @@ class GeomFracET(GeomFrac):
         scale = torch.as_tensor(scale, dtype=a.dtype, device=a.device)
         if scale.shape != (self.rank,) or torch.any(scale <= 0):
             raise ValueError("invalid heat normalization")
-        h, y = super().step(h, u, dt, geom)
-        w = torch.softmax(-self.orders()[:, None] *
-                          torch.log(self.rates), dim=-1)
-        mf = torch.sum(h[..., :-1] * w[None], dim=-1)
-        x = torch.cat((u, mf, h[..., -1], geom), dim=-1)
-        latent = self.net[:-1](x)
-        clock = a.new_full((len(a), 1), np.log1p(dt)/np.log1p(600.))
-        f = torch.cat((latent, a/scale, clock), dim=-1)
-        da = self.heat_head(f)
-        return h, y, a + (dt/30.) * scale * da
+        n=max(1,int(np.ceil(dt/self.heat_dt-1e-12))) if self.heat_dt else 1
+        hdt=dt/n
+        for _ in range(n):
+            h,y=super().step(h,u,hdt,geom)
+            mf=torch.sum(h[...,:-1]*self.soe_weights()[None],dim=-1)
+            x=torch.cat((u,mf,h[...,-1],geom),dim=-1)
+            latent=self.net[:-1](x)
+            clock=a.new_full((len(a),1),np.log1p(hdt)/np.log1p(600.))
+            f=torch.cat((latent,a/scale,clock),dim=-1)
+            a=a+(hdt/30.)*scale*self.heat_head(f)
+        return h,y,a
 
 
 def _balance(rom, old, pred, dt, voltage, dsea, B, D):

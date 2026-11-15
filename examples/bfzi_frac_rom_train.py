@@ -14,6 +14,7 @@ def main():
     p.add_argument("--poses", nargs="+", default=("P03", "P07"))
     p.add_argument("--epochs", type=int, default=1200)
     p.add_argument("--seed", type=int, default=13)
+    p.add_argument("--soe-quad",choices=("legacy","trap"),default="trap")
     a = p.parse_args()
     torch.manual_seed(a.seed)
     torch.set_num_threads(1)
@@ -27,15 +28,17 @@ def main():
         # Causal source is the known drive; two additional channels encode
         # switching and accumulated electrical exposure.
         vref = max(float(np.max(abs(v))), 1e-12)
-        u = np.column_stack((v/vref, (v/vref)**2,
-                             np.r_[0., np.diff(v)]/vref))
+        prev=np.r_[0.,v[:-1]]
+        u = np.column_stack((prev/vref, (prev/vref)**2,
+                             np.r_[0.,np.diff(prev)]/vref))
         scale = np.maximum(np.max(abs(y), axis=0), 1e-9)
         target = torch.tensor(y/scale, dtype=torch.float32)[None]
         src = torch.tensor(u, dtype=torch.float32)[None]
         results = {}
         for mode in ("frac", "exp"):
             torch.manual_seed(a.seed)
-            net = FracNet(nout=y.shape[1], mode=mode, hidden=96)
+            net = FracNet(nout=y.shape[1], mode=mode, hidden=96,
+                          soe_quad=a.soe_quad)
             opt = torch.optim.Adam(net.parameters(), lr=2e-3)
             best = float("inf")
             best_state = None
@@ -61,6 +64,7 @@ def main():
             path = a.runs / f"bfzi_frac_net_{key}_{mode}.pt"
             torch.save(dict(state=net.state_dict(), mode=mode,
                             nout=y.shape[1], scale=scale, vref=vref,
+                            soe_quad=a.soe_quad,drive_rule="left",
                             geometry=pose), path)
             results[mode] = dict(train_loss=best, delta_Z_rel_L2=dz_err,
                                  thermal_state_rel_L2=state_err,

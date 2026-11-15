@@ -114,15 +114,20 @@ class FracROM:
             if k:
                 dt = float(now-t[k-1])
                 if net is not None:
-                    u = np.array([v[k]/vref, (v[k]/vref)**2,
-                                  (v[k]-last_v)/vref], np.float32)
+                    left=ck.get("drive_rule","right")=="left"
+                    before=float(v[k-1] if left else v[k])
+                    earlier=float((v[k-2] if k>1 else 0.)
+                                  if left else last_v)
+                    u=np.array([before/vref,(before/vref)**2,
+                                (before-earlier)/vref],np.float32)
                     h, y = net.step(h, torch.from_numpy(u[None]), dt)
                     res = y[0].cpu().numpy()*yscale
                 old = state.copy()
                 guess = old.copy()
                 fac = cho_factor(rom.m + dt*rom.k, check_finite=False)
                 for _ in range(niter):
-                    heat = self.power(rom, guess, v[k], res)[-1]
+                    heat = self.power(rom, guess, v[k-1] if net is None or ck.get(
+                        "drive_rule","right")=="left" else v[k], res)[-1]
                     nxt = cho_solve(fac, rom.m @ old + dt*(rom.basis.T@heat),
                                     check_finite=False)
                     if np.max(abs(rom.basis@(nxt-guess))) < 1e-7:
@@ -130,7 +135,8 @@ class FracROM:
                         break
                     guess = nxt
                 state = guess
-                heat = self.power(rom, state, v[k], res)[-1]
+                heat = self.power(rom, state, v[k-1] if net is None or ck.get(
+                    "drive_rule","right")=="left" else v[k], res)[-1]
                 r = rom.m@(state-old)/dt + rom.k@state - rom.basis.T@heat
                 budget = float(abs(r[0])*np.sqrt(np.sum(rom.cap)))
             else:

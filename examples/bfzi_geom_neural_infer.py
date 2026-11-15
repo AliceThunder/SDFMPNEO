@@ -37,7 +37,9 @@ def main():
         if a.rom_file is None:
             p.error('--rom-file is required for the original POD model')
         rom = GeomHeatROM.load(head, a.rom_file)
-    net = GeomFracET(ng=int(ck["ng"]), rank=int(ck["rank"]))
+    net = GeomFracET(ng=int(ck["ng"]), rank=int(ck["rank"]),
+                     soe_quad=ck.get("soe_quad","legacy"),
+                     heat_dt=float(ck.get("heat_dt",0.)))
     net.load_state_dict(ck["state"])
     net.eval()
     t = np.linspace(0., a.horizon, int(round(a.horizon/a.step))+1)

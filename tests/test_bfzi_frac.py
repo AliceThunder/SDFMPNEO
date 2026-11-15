@@ -37,8 +37,8 @@ def test_single_exponential_memory_and_circuit():
     zz=np.broadcast_to(zr,(1,3,6))
     src=build_sources(v,zz,ex)
     assert np.all(src>=0)
-    assert np.all(src[:,1]==0)
-    assert np.all(src[:,2]>0)
+    assert np.all(src[:,1]>0)
+    assert np.all(src[:,2]==0)
 
 
 def test_fractional_predict_is_cold_exact():

@@ -1,0 +1,41 @@
+{
+  "architecture": "GeomFracET-cross-geometry",
+  "mode": "canonical-material-32",
+  "rank": 32,
+  "soe_quad": "trap",
+  "heat_dt": 1.875,
+  "autonomous_src": true,
+  "ntrain_geometries": 3,
+  "nval_geometries": 1,
+  "train_histories": 6,
+  "val_histories": 2,
+  "best_epoch": 107,
+  "val_loss": 0.6090987801551819,
+  "train_loss_at_best": 1.3107197284698486,
+  "epochs_trained": 177,
+  "closed_source_warmup": 80,
+  "train_projection_max_K": 2.0372563507174277,
+  "val_projection_max_K": 0.34783501977398146,
+  "autonomous_validation": [
+    {
+      "file": "runs\\bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "dynamic_Z_rel_L2": 0.08479839363513093,
+      "full_Z_rel_L2": 3.0234166757606637e-06,
+      "temperature_max_K": 1.3138044045288098,
+      "copper_max_K": 0.34647681522210405,
+      "package_max_K": 1.3138044045288098,
+      "material_budget_max_W": 1.9119497096653504e-09,
+      "fv_residual_max_W": 0.9648684899102236
+    },
+    {
+      "file": "runs\\bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "dynamic_Z_rel_L2": 0.06338943582079469,
+      "full_Z_rel_L2": 4.851140208709689e-06,
+      "temperature_max_K": 1.6106345233532124,
+      "copper_max_K": 0.4882891050780245,
+      "package_max_K": 1.6106345233532124,
+      "material_budget_max_W": 1.7459882428738638e-09,
+      "fv_residual_max_W": 1.4215204681102434
+    }
+  ]
+}

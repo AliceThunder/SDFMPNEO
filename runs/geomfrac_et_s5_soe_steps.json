@@ -1,0 +1,40 @@
+{
+  "model": "runs\\geomfrac_et_s5_soe.pt",
+  "anchor": "runs\\bfzi_s5_T04_ultra_pilot60_anchor.npz",
+  "soe_quad": "trap",
+  "heat_dt": 1.875,
+  "grid": {
+    "15": {
+      "online_seconds": 0.05378,
+      "temperature_error_vs_truth_K": 1.3138044045288098,
+      "dynamic_Z_relative_L2_vs_truth": 0.08479839363513093,
+      "temperature_diff_vs_15s_K": 0.0,
+      "dynamic_Z_diff_vs_15s": 0.0,
+      "budget_max_W": 1.9119497096653504e-09
+    },
+    "7.5": {
+      "online_seconds": 0.06728,
+      "temperature_error_vs_truth_K": 1.3273950208484848,
+      "dynamic_Z_relative_L2_vs_truth": 0.08165543929778044,
+      "temperature_diff_vs_15s_K": 0.12150903590202233,
+      "dynamic_Z_diff_vs_15s": 0.029747478089133007,
+      "budget_max_W": 1.13192299977527e-09
+    },
+    "3.75": {
+      "online_seconds": 0.11028,
+      "temperature_error_vs_truth_K": 1.3344147546561658,
+      "dynamic_Z_relative_L2_vs_truth": 0.08275444363990392,
+      "temperature_diff_vs_15s_K": 0.1597031198639911,
+      "dynamic_Z_diff_vs_15s": 0.038728492673025895,
+      "budget_max_W": 6.036060540282051e-09
+    },
+    "1.875": {
+      "online_seconds": 0.2063,
+      "temperature_error_vs_truth_K": 1.3380017317701345,
+      "dynamic_Z_relative_L2_vs_truth": 0.08318651153062871,
+      "temperature_diff_vs_15s_K": 0.16866244761098415,
+      "dynamic_Z_diff_vs_15s": 0.040620110730221995,
+      "budget_max_W": 9.931653721650946e-09
+    }
+  }
+}

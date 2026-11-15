@@ -85,8 +85,11 @@ def thermal_summary(t,nsea,npkg,vol,amb):
 class GeomFrac(nn.Module):
     """Shared SOE fractional/exponential memory plus geometry conditioning."""
 
-    def __init__(self,ng=len(G_SCALE),hidden=128,nrate=14):
+    def __init__(self,ng=len(G_SCALE),hidden=128,nrate=14,soe_quad="legacy"):
         super().__init__()
+        if soe_quad not in ("legacy","trap"):
+            raise ValueError("SOE quadrature must be legacy or trap")
+        self.soe_quad=soe_quad
         self.ng=ng
         self.register_buffer("rates",torch.tensor(
             np.geomspace(1/2400.,1/12.,nrate),dtype=torch.float32))
@@ -103,14 +106,23 @@ class GeomFrac(nn.Module):
     def orders(self):
         return .12+.83*torch.sigmoid(self.raw)
 
+    def soe_weights(self):
+        logw=-self.orders()[:,None]*torch.log(self.rates)
+        if self.soe_quad=="trap":
+            q=torch.ones_like(self.rates)
+            q[0]=q[-1]=.5
+            logw=logw+torch.log(q)
+        return torch.softmax(logw,dim=-1)
+
     def step(self,h,u,dt,geom):
+        if dt<=0:
+            raise ValueError("SOE step must be positive")
         if geom.shape!=(len(u),self.ng):
             raise ValueError("one BFZI geometry feature vector per history")
         hf,he=h[...,:-1],h[...,-1:]
         df=torch.exp(-self.rates*dt)
         hf=hf*df+(1-df)*u[...,None]
-        w=torch.softmax(
-            -self.orders()[:,None]*torch.log(self.rates),dim=-1)
+        w=self.soe_weights()
         mf=torch.sum(hf*w[None,:,:],dim=-1)
         lam=torch.exp(np.log(1/2400.)+
               torch.sigmoid(self.raw_tau)*np.log(2400/12.))
@@ -165,7 +177,8 @@ def rollout(net,ck,voltage,times,geometry,z0,external,pose=None):
                          mat[1,1].real,mat[1,1].imag])
     for k in range(1,len(t)):
         tc=np.array([293.15,293.15])+out[k-1,-2:]
-        u=heat_drive(float(v[k]),z,ex,port,tc,
+        source_v=float(v[k-1] if ck.get("drive_rule","right")=="left" else v[k])
+        u=heat_drive(source_v,z,ex,port,tc,
                      np.asarray(geometry)[14:16])
         src[k]=u
         h,y=net.step(h,torch.tensor((u/us)[None,:],

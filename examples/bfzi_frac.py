@@ -130,6 +130,7 @@ def dataset(path,rank=20,basis_mode="joint"):
 def checkpoint(model,d):
     return dict(
         state=model.state_dict(),mode=model.mode,nout=model.nout,
+        soe_quad=model.soe_quad,drive_rule="left",
         basis=torch.tensor(d["basis"],dtype=torch.float32),
         t_scale=torch.tensor(d["t_scale"],dtype=torch.float32),
         y_scale=torch.tensor(d["scale"],dtype=torch.float32),
@@ -141,16 +142,16 @@ def checkpoint(model,d):
 
 def load(path):
     ck=torch.load(path,map_location="cpu",weights_only=True)
-    model=FracNet(ck["nout"],ck["mode"])
+    model=FracNet(ck["nout"],ck["mode"],soe_quad=ck.get("soe_quad","legacy"))
     model.load_state_dict(ck["state"])
     model.eval()
     return model,ck
 
 
 def fit_one(d,mode,epochs=900,patience=180,
-            material_loss=0.,hotspot_loss=0.):
+            material_loss=0.,hotspot_loss=0.,soe_quad="legacy"):
     torch.manual_seed(41)
-    model=FracNet(d["rank"]+6,mode)
+    model=FracNet(d["rank"]+6,mode,soe_quad=soe_quad)
     train=np.asarray(d["train"],int)
     val=np.asarray(d["val"],int)
     grids=[dict(t=g["times"],src=torch.tensor(g["src"],dtype=torch.float32),
@@ -306,7 +307,7 @@ def train(args):
         net,train_info=fit_one(
             d,mode,epochs=args.epochs,patience=args.patience,
             material_loss=args.material_loss,
-            hotspot_loss=args.hotspot_loss)
+            hotspot_loss=args.hotspot_loss,soe_quad=args.soe_quad)
         ck=checkpoint(net,d)
         path=(args.model if mode=="frac" else args.model.with_name(
             args.model.stem+"_"+mode+args.model.suffix))
@@ -425,6 +426,7 @@ def main():
     p.add_argument("task",choices=("train","infer"))
     p.add_argument("--data",type=Path,nargs="+",
                    default=[Path("runs/m4_frac_teacher.npz")])
+    p.add_argument("--soe-quad",choices=("legacy","trap"),default="trap")
     p.add_argument("--modes",nargs="+",
                    choices=("frac","exp","hybrid"),
                    default=["frac","exp","hybrid"])

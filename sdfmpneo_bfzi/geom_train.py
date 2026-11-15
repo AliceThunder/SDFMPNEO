@@ -66,7 +66,7 @@ def closed(net,geom,t,teacher,src_scale,y_scale,p,mix=1.,detach=False):
     tc=torch.zeros((len(geom),2),dtype=torch.float32,device=geom.device)
     out=[torch.zeros((len(geom),14),device=geom.device)]
     for k in range(1,len(t)):
-        physical=source(z,tc,p["volts"][:,k],p)
+        physical=source(z,tc,p["volts"][:,k-1],p)
         u=(1-mix)*(teacher[:,k]*sc)+mix*physical
         if detach:
             u=u.detach()

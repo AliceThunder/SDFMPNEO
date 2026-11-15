@@ -57,6 +57,8 @@ def main():
     p.add_argument('--epochs',type=int,default=500)
     p.add_argument('--patience',type=int,default=90)
     p.add_argument('--lr',type=float,default=.001)
+    p.add_argument('--soe-quad',choices=('legacy','trap'),default='trap')
+    p.add_argument('--heat-dt',type=float,default=1.875)
     p.add_argument('--closed-weight',type=float,default=.2)
     p.add_argument('--therm-weight',type=float,default=.03)
     a=p.parse_args()
@@ -79,7 +81,8 @@ def main():
     if len(dims)!=1:
         p.error('geometry and thermal feature dimensions must match')
     sx,sy,sa=scales(train)
-    net=GeomFracET(ng=dims.pop(),rank=a.rank)
+    net=GeomFracET(ng=dims.pop(),rank=a.rank,
+                   soe_quad=a.soe_quad,heat_dt=a.heat_dt)
     if a.init_model:
         old=torch.load(a.init_model,map_location='cpu',weights_only=True)
         load_init(net,old)
@@ -87,13 +90,18 @@ def main():
     best=float('inf')
     best_epoch=0
     saved=None
+    best_train=None
+    warmup=80 if a.closed_weight else 0
     for ep in range(a.epochs):
         net.train()
         opt.zero_grad(set_to_none=True)
         loss=score(net,train,None,sx,sy,sa,therm_w=a.therm_weight)
         if a.closed_weight and ep>=20:
+            mix=min(1.,(ep-19)/60.)
             loss+=a.closed_weight*score(net,train,None,sx,sy,sa,
-                        closed=True,therm_w=a.therm_weight)
+                        closed=True,therm_w=a.therm_weight,src_mix=mix)
+        if not torch.isfinite(loss):
+            raise RuntimeError(f"training diverged at epoch {ep+1}")
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(),3.)
         opt.step()
@@ -102,18 +110,27 @@ def main():
             v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight))
             if a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
-                        closed=True,therm_w=a.therm_weight))
-        if v<best-1e-8:
+                        closed=True,therm_w=a.therm_weight,src_mix=1.))
+        if not np.isfinite(v):
+            raise RuntimeError(f"validation diverged at epoch {ep+1}")
+        if ep+1>=warmup and v<best-1e-8:
             best,best_epoch=v,ep+1
+            best_train=float(loss.detach())
             saved={k:vv.detach().clone() for k,vv in net.state_dict().items()}
-        if ep+1-best_epoch>=a.patience:
+        if (ep+1)%50==0:
+            print("TRAIN",ep+1,"train",round(float(loss.detach()),6),
+                  "val",round(v,6),"best",best_epoch,flush=True)
+        if saved is not None and ep+1-best_epoch>=a.patience:
             break
+    if saved is None:
+        raise RuntimeError("training requires enough epochs for closed-loop source warmup")
     net.load_state_dict(saved)
     ck=dict(state=net.state_dict(),ng=net.ng,rank=net.rank,
             src_scale=torch.as_tensor(sx,dtype=torch.float32),
             y_scale=torch.as_tensor(sy,dtype=torch.float32),
             a_scale=torch.as_tensor(sa,dtype=torch.float32),
             canonical=True,port_sea=True,architecture='GeomFracET',
+            soe_quad=a.soe_quad,heat_dt=a.heat_dt,drive_rule="left",
             train_files=[r['file'] for r in train],
             val_files=[r['file'] for r in val])
     a.out.parent.mkdir(parents=True,exist_ok=True)
@@ -121,9 +138,13 @@ def main():
     autonomous=eval_rollout(None,net,ck,val)
     metrics=dict(architecture='GeomFracET-cross-geometry',
                  mode='canonical-material-32',rank=net.rank,
+                 soe_quad=a.soe_quad,heat_dt=a.heat_dt,
+                 autonomous_src=True,
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best,
+                 train_loss_at_best=best_train,epochs_trained=ep+1,
+                 closed_source_warmup=warmup,
                  train_projection_max_K=max(r['basis_max_K'] for r in train),
                  val_projection_max_K=max(r['basis_max_K'] for r in val),
                  autonomous_validation=autonomous)

@@ -79,7 +79,7 @@ def data_file(path,probe=None):
     for i in range(len(vin)):
         for k in range(1,len(times)):
             src[i,k]=heat_drive(
-                float(vin[i,k]),zmat(z[i,k-1]),ext,port,
+                float(vin[i,k-1]),zmat(z[i,k-1]),ext,port,
                 temp[i,k-1,-2:],geom[14:16])
     return dict(sample=sample,geom=geom,pose=pose,z0=z0,ext=ext,
                 times=times,v=vin,z=z,train=train,
@@ -189,6 +189,7 @@ def main():
                    help="Train with differentiable autonomous BFZI port/thermal-source rollout")
     p.add_argument("--closed-warmup",type=int,default=50)
     p.add_argument("--closed-ramp",type=int,default=150)
+    p.add_argument("--soe-quad",choices=("legacy","trap"),default="trap")
     p.add_argument("--lr",type=float,default=.003)
     args=p.parse_args()
     torch.set_num_threads(2)
@@ -254,7 +255,7 @@ def main():
         if args.sea_loss>0:
             loss=loss+args.sea_loss*(pred[:,:,6:8]-target[:,:,6:8]).square().mean()
         return loss
-    model=GeomFrac(ng=g.shape[-1])
+    model=GeomFrac(ng=g.shape[-1],soe_quad=args.soe_quad)
     if init is not None:
         state=init["state"]
         if model.ng==int(init["ng"]):
@@ -327,7 +328,8 @@ def main():
         y_scale=torch.tensor(yscale,dtype=torch.float32),
         ng=model.ng,with_pose=bool(args.with_pose),
         port_sea=bool(args.port_sea),
-        history="fractional SOE + exponential",
+        history="fractional SOE + exponential",soe_quad=args.soe_quad,
+        drive_rule="left",
         validation_geometries=sorted(set(d["sample"] for d,i in val)),
         geo_val=args.geo_val,closed_loss=float(args.closed_loss),
         balanced=bool(args.balanced),
