@@ -57,9 +57,13 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
     bf, v150 = originals(bfzi_root)
     runs=Path(runs)
     runs.mkdir(parents=True,exist_ok=True)
-    manifest={"train":[],"val":[],"test":[]}
-    report={"cases":{},"teacher":"BFZI V150 five-point-order S5"}
     suffix=f"_{tag}" if tag else ""
+    mf=runs/f"geomfrac_s5{suffix}_manifest.json"
+    rf=runs/f"geomfrac_s5{suffix}_build_report.json"
+    manifest=json.loads(mf.read_text(encoding="utf-8")) if mf.exists() else {
+        "train":[],"val":[],"test":[]}
+    report=json.loads(rf.read_text(encoding="utf-8")) if rf.exists() else {
+        "cases":{},"teacher":"BFZI V150 five-point-order S5"}
     for key in tr+val+plan.get("test",[]):
         start=time.perf_counter()
         c=plan["cases"][key]
@@ -116,18 +120,17 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
             checks.append(dict(teacher=str(teacher),physics=status,
                                basis=metric))
         role="train" if key in tr else ("val" if key in val else "test")
+        for section in ("train","val","test"):
+            manifest[section]=[v for v in manifest.get(section,[])
+                               if v["anchor"]!=str(anchor)]
         manifest[role].append(dict(anchor=str(anchor),teacher=traces))
+        manifest.update(canonical=True,rank=32,duration_s=float(duration))
         report["cases"][key]=dict(split=role,anchor=str(anchor),
                                    traces=checks,
                                    seconds=time.perf_counter()-start)
+        mf.write_text(json.dumps(manifest,indent=2),encoding="utf-8")
+        rf.write_text(json.dumps(report,indent=2),encoding="utf-8")
         print("S5DATA",key,len(traces),"histories",flush=True)
-    manifest["canonical"]=True
-    manifest["rank"]=32
-    manifest["duration_s"]=float(duration)
-    (runs/f"geomfrac_s5{suffix}_manifest.json").write_text(
-        json.dumps(manifest,indent=2),encoding="utf-8")
-    (runs/f"geomfrac_s5{suffix}_build_report.json").write_text(
-        json.dumps(report,indent=2),encoding="utf-8")
     return manifest,report
 
 
