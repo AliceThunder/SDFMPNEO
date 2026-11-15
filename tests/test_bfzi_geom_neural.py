@@ -67,3 +67,28 @@ def test_teacher_training_data_and_loss(tmp_path):
     assert torch.isfinite(loss)
     loss.backward()
     assert net.heat_head[-1].weight.grad.abs().sum() > 0
+
+
+def test_autonomous_validation_reports_real_error(tmp_path):
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    base = GeomFrac()
+    for p in base.net.parameters():
+        torch.nn.init.zeros_(p)
+    ck0 = dict(src_scale=np.ones(3), y_scale=np.ones(14), port_sea=True)
+    t = np.array([0., 15., 30., 45.])
+    v = np.array([0., 60., 60., 0.])
+    truth = rom.rollout(base, ck0, v, t)
+    path = tmp_path / "history.npz"
+    np.savez_compressed(path, time_s=t, voltage_v=v,
+                        z6=truth["z6"], temp_K=truth["temp_K"])
+    from examples.bfzi_geom_neural import eval_rollout
+    row = read(path, rom)
+    net = GeomFracET(ng=22, rank=rom.rank)
+    ck = dict(src_scale=np.ones(3), y_scale=np.ones(14),
+              a_scale=np.ones(rom.rank), port_sea=True)
+    err = eval_rollout(rom, net, ck, [row])
+    assert len(err) == 1
+    assert np.isfinite(err[0]["dynamic_Z_rel_L2"])
+    assert np.isfinite(err[0]["temperature_max_K"])
+    assert err[0]["material_budget_max_W"] < 1e-6

@@ -21,7 +21,7 @@ import torch
 from sdfmpneo_bfzi.frac_memory import zmat
 from sdfmpneo_bfzi.geom_heat import GeomHeat
 from sdfmpneo_bfzi.geom_memory import G_SCALE, geom_feat, heat_drive, thermal_summary
-from sdfmpneo_bfzi.geom_neural import GeomFracET
+from sdfmpneo_bfzi.geom_neural import GeomFracET, rollout
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
 
 
@@ -60,7 +60,7 @@ def read(path, rom):
     temp_sum = thermal_summary(temp, rom.ns, rom.npkg, rom.vol, rom.amb)
     y = np.column_stack((np.asarray(dz), temp_sum))
     return dict(time=t, voltage=volts, src=np.asarray(src), y=y, a=a,
-                file=str(path))
+                z6=z6, temp_K=temp, file=str(path))
 
 
 def scales(rows):
@@ -105,6 +105,33 @@ def score(net, rows, g, sx, sy, sa, closed=False):
     return torch.stack(total).mean()
 
 
+def eval_rollout(rom, net, ck, rows):
+    """Evaluate a genuinely autonomous physics-coupled held-out history."""
+    result = []
+    net.eval()
+    with torch.no_grad():
+        for row in rows:
+            pred = rollout(rom, net, ck, row["voltage"], row["time"])
+            real_z = row["z6"]
+            real_t = row["temp_K"]
+            dz = np.linalg.norm(real_z-real_z[0])
+            result.append(dict(
+                file=row["file"],
+                dynamic_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
+                                       / max(dz, 1e-12)),
+                full_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
+                                    / max(np.linalg.norm(real_z), 1e-12)),
+                temperature_max_K=float(np.max(abs(pred["temp_K"]-real_t))),
+                copper_max_K=float(np.max(abs(pred["temp_K"][:, rom.cu]
+                                               -real_t[:, rom.cu]))),
+                package_max_K=float(np.max(abs(
+                    pred["temp_K"][:, rom.ns:rom.cu.start]
+                    -real_t[:, rom.ns:rom.cu.start]))),
+                material_budget_max_W=float(np.max(abs(pred["material_budget_W"]))),
+                fv_residual_max_W=float(np.max(abs(pred["fv_node_residual_W"])))))
+    return result
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--anchor", type=Path, required=True)
@@ -118,7 +145,7 @@ def main():
     p.add_argument("--lr", type=float, default=0.001)
     p.add_argument("--patience", type=int, default=70)
     p.add_argument("--closed-weight", type=float, default=0.2,
-                   help="unforced heat-state rollout loss, using true power inputs")
+                   help="free-running thermal-state loss, with teacher power inputs")
     a0 = p.parse_args()
     if set(a0.train) & set(a0.val):
         p.error("train and validation histories must be distinct")
@@ -166,11 +193,13 @@ def main():
               val_files=[r["file"] for r in val])
     a0.out.parent.mkdir(parents=True, exist_ok=True)
     torch.save(ck, a0.out)
+    free_val = eval_rollout(rom, net, ck, val)
     result = dict(architecture="GeomFracET", rank=net.rank, ng=net.ng,
                   best_epoch=best_ep, val_loss=best,
                   training_count=len(train), validation_count=len(val),
                   teacher="stored BFZI full-temperature and impedance trajectories",
                   physics="neural sea delta + neural 32-state step + five budgets",
+                  autonomous_validation=free_val,
                   status="experimental; held-out physical acceptance pending")
     a0.report.parent.mkdir(parents=True, exist_ok=True)
     a0.report.write_text(json.dumps(result, indent=2), encoding="utf-8")
