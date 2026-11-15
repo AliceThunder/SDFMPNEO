@@ -1,0 +1,24 @@
+{
+  "train": [
+    {
+      "anchor": "runs\\bfzi_s5_N01_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N01_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N01_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N01_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N02_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N02_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N02_ultra_v4_drive3.npz"
+      ]
+    }
+  ],
+  "val": [],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 600.0
+}

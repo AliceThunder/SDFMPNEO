@@ -28,33 +28,42 @@
   "autonomous_validation": [
     {
       "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "inference_cpu_s": 0.055285200010985136,
       "dynamic_Z_rel_L2": 0.19325363387429184,
       "full_Z_rel_L2": 6.890298675007178e-06,
       "temperature_max_K": 0.9227655877976986,
       "copper_max_K": 0.24453846256881207,
       "package_max_K": 0.9227655877976986,
       "material_budget_max_W": 4.5640291546078515e-10,
-      "fv_residual_max_W": 0.9600374188063503
+      "fv_residual_max_W": 0.9600374188063503,
+      "dynamic_Z_0_60_rel_L2": 0.19325363387429184
     },
     {
       "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "inference_cpu_s": 0.06073729999479838,
       "dynamic_Z_rel_L2": 0.12489359342400441,
       "full_Z_rel_L2": 9.558001661069717e-06,
       "temperature_max_K": 1.3838992794723026,
       "copper_max_K": 0.42311948205735916,
       "package_max_K": 1.3838992794723026,
       "material_budget_max_W": 4.426524924383557e-09,
-      "fv_residual_max_W": 1.5329947232937664
+      "fv_residual_max_W": 1.5329947232937664,
+      "dynamic_Z_0_60_rel_L2": 0.12489359342400441
     },
     {
       "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "inference_cpu_s": 0.3928872999968007,
       "dynamic_Z_rel_L2": 0.15508381978495073,
       "full_Z_rel_L2": 7.653393555361598e-06,
       "temperature_max_K": 1.667389009170904,
       "copper_max_K": 0.3949559290459774,
       "package_max_K": 1.667389009170904,
       "material_budget_max_W": 4.5640291546078515e-10,
-      "fv_residual_max_W": 1.1169781679023976
+      "fv_residual_max_W": 1.1169781679023976,
+      "dynamic_Z_0_60_rel_L2": 0.19325363387429184,
+      "dynamic_Z_60_300_rel_L2": 0.09867943697917286,
+      "dynamic_Z_300_600_rel_L2": 0.1680234015876739
     }
-  ]
+  ],
+  "post_eval_windows": true
 }
