@@ -192,3 +192,36 @@ def test_long_history_weighting_and_gradient():
     assert torch.allclose(val,expected*x)
     val.backward()
     assert torch.allclose(x.grad,torch.tensor(expected))
+
+
+def test_dynamic_z_loss_matches_full_copper_and_seawater():
+    """Training Z loss matches the full port quantity used in acceptance."""
+    from types import SimpleNamespace
+    from examples.bfzi_geom_neural import _zrel_full
+
+    amb=293.15
+    class Port:
+        def copper(self,temp):
+            t=np.asarray(temp)-amb
+            return np.array([.10+.003*t[0]+1j*.001*t[0],
+                             .12+.004*t[1]-1j*.002*t[1]])
+    rom=SimpleNamespace(amb=amb,port=Port())
+    sy=np.ones(14)
+    sea=torch.tensor([[.006,.002,.001,-.0001,.004,.001],
+                      [.008,.003,.002,-.0002,.006,.0015]],
+                     dtype=torch.float32)
+    tc=torch.tensor([[3.,6.],[5.,8.]],dtype=torch.float32)
+    d=np.asarray(sea)
+    dc=np.stack([.003*tc[:,0].numpy(),.001*tc[:,0].numpy(),
+                 np.zeros(2),np.zeros(2),
+                 .004*tc[:,1].numpy(),-.002*tc[:,1].numpy()],axis=1)
+    cold=np.array([.5,1.,.1,.2,.6,1.1])
+    row=dict(z6=np.vstack([cold,cold+d+dc]))
+    exact=_zrel_full(rom,row,sea,tc,sy)
+    assert float(exact)<1e-11
+    bad=torch.zeros_like(tc,requires_grad=True)
+    err=_zrel_full(rom,row,sea,bad,sy)
+    assert float(err)>.01
+    err.backward()
+    assert torch.isfinite(bad.grad).all()
+    assert bad.grad.abs().sum()>0.
