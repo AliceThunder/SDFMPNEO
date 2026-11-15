@@ -27,7 +27,7 @@ xelatex -interaction=nonstopmode -halt-on-error main.tex
 xelatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-需安装 XeLaTeX、ctex、TikZ，以及 Noto Serif CJK SC / Noto Sans CJK SC 字体。编译生成 `main.pdf`，不需要图片或外部数据文件。
+需安装 XeLaTeX、ctex、TikZ；中文使用 TeX Live 自带的 Fandol 字体，无需另外安装 Noto 字体。编译生成 `main.pdf`，不需要图片或外部数据文件。
 
 文中所说的分数阶神经网络存在两种具体实现：`GeomFrac`（40 维几何条件、14 维动态输出）和 C 阶段 `FracNet`（物理切线的六分量残差）。两者分开解释，不把实验结果混用。
 
