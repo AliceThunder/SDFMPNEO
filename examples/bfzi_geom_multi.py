@@ -63,7 +63,8 @@ def main():
     p.add_argument('--closed-warmup',type=int,default=20)
     p.add_argument('--closed-ramp',type=int,default=60)
     p.add_argument('--therm-weight',type=float,default=.03)
-    p.add_argument('--zrel-weight',type=float,default=0.)
+    p.add_argument('--zrel-weight',type=float,default=0.,
+                   help='full dynamic port-Z relative squared loss weight')
     p.add_argument('--history-weight',choices=('equal','step'),default='step')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
