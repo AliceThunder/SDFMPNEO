@@ -29,8 +29,9 @@ U04 从四阶到五阶误差继续下降，表明三阶近源 Gauss 规则尚未
 
 - `BFZIV148Adapter` 新增 `source_order`，用于控制完整湿 FV 的近源 Gauss 积分阶数，三阶保留作为 S3 已记录的默认基线。
 - `examples/bfzi_physics_recheck.py` 新增 `--source-order` 并写入运行 JSON 的 settings。
-- 局部测试 `tests/test_bfzi_v148_et.py tests/test_bfzi_sea_layer.py`：24 passed。
-- 启动五阶方案 U04/U10 的两网格、真实热步 1.875 s、600 s 全耦合计算，独立保存为 `_s5`，不覆盖 `_s3` 和原冻结基线。
+- 新增五阶 Gauss 125 点源项四次幂/八次矩解析回归，`tests/test_bfzi_v148_et.py`：18 passed（两组相关测试此前合计 24 passed）。
+- 已启动全部 **U01–U12** 五阶方案的两档网格、1.875/1 s 两档真实热步、600 s 全耦合计算（共 48 组合），独立保存为 `_s5`，不覆盖 `_s3` 和原冻结基线；U04/U10 与其余十组独立进程分开计算。
+- 最终正式验收采用统一五阶源积分的 48 组完整结果；不会混合三阶/五阶的通过记录。
 
 复现命令：
 
