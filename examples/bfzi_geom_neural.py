@@ -117,7 +117,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
                 raise ValueError("thermal physics loss requires a heat ROM")
             K = torch.as_tensor(rom.K, dtype=a.dtype)
             q = torch.as_tensor(row["q"], dtype=a.dtype)
-            qs = q[1:].abs().amax(dim=0).clamp_min(1e-4)
+            # Teacher FV trajectories include truncation and time-sampling
+            # error. Compare relative heat residual, not the absolute ROM
+            # residual that the teacher itself does not satisfy exactly.
 
         for k in range(1, len(t)):
             prev = cur if closed else a[k-1:k]
@@ -126,9 +128,11 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
             pr_z.append(zhat[0])
             pr_a.append((nxt[0]-a[k])/asc)
             if therm_w:
-                res = (nxt[0]-prev[0]) / float(t[k]-t[k-1])
-                res = res+K @ nxt[0]-q[k]
-                pr_phys.append((res/qs).square().mean())
+                dt = float(t[k]-t[k-1])
+                res = (nxt[0]-prev[0])/dt+K @ nxt[0]-q[k]
+                ref = (a[k]-a[k-1])/dt+K @ a[k]-q[k]
+                scale = (asc*(1/dt+K.abs().sum(dim=1))).clamp_min(1e-6)
+                pr_phys.append(((res-ref)/scale).square().mean())
             if closed:
                 cur = nxt
         if not pr_z:
