@@ -36,6 +36,8 @@ def read(path, rom):
         t = d["time_s"].copy()
         temp = d["temp_K"].copy()
         z6 = d["z6"].copy()
+        pkg_ref = d["Tpkg_K"].copy() if "Tpkg_K" in d.files else None
+        cu_ref = d["Tcu_K"].copy() if "Tcu_K" in d.files else None
         if temp.ndim == 3:
             if idx is None:
                 raise ValueError(f"batched teacher needs #history_index: {file}")
@@ -43,6 +45,8 @@ def read(path, rom):
                 raise ValueError(f"teacher history index out of range: {spec}")
             temp = temp[idx]
             z6 = z6[idx]
+            if pkg_ref is not None: pkg_ref = pkg_ref[idx]
+            if cu_ref is not None: cu_ref = cu_ref[idx]
         elif idx not in (None, 0):
             raise ValueError(f"single-history teacher has no case #{idx}: {file}")
         if "voltage_v" in d:
@@ -61,6 +65,12 @@ def read(path, rom):
             volts = np.array([((zmat(zz)+rom.ext)@ii)[0].real
                               for zz, ii in zip(z6, currents)])
     temp = teacher_temp(temp, rom)
+    if pkg_ref is not None and not np.allclose(
+            temp[:,rom.ns:rom.cu.start],pkg_ref,atol=1e-9,rtol=0):
+        raise ValueError(f"teacher package cells differ from S5 anchor: {spec}")
+    if cu_ref is not None and not np.allclose(
+            temp[:,rom.cu],cu_ref,atol=1e-9,rtol=0):
+        raise ValueError(f"teacher copper cells differ from S5 anchor: {spec}")
     if (t.ndim != 1 or t[0] != 0 or np.any(np.diff(t) <= 0)
             or temp.shape != (len(t), len(rom.cap))
             or z6.shape != (len(t), 6) or volts.shape != t.shape):

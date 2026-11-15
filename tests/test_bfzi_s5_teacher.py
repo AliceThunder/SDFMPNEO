@@ -26,7 +26,8 @@ def test_s5_teacher_reorders_without_losing_skin(tmp_path):
     z=np.tile(z0,(3,1))
     z[1:,0]+=.001
     file=tmp_path/'s5.npz'
-    np.savez(file,time_s=t,voltage_v=v,temp_K=T,z6=z)
+    np.savez(file,time_s=t,voltage_v=v,temp_K=T,z6=z,
+             Tpkg_K=T[:,4:8],Tcu_K=T[:,8:10])
     row=read(file,rom)
     assert row['a'].shape==(3,n)
     assert np.allclose(row['temp_K'],T[:,order])
@@ -55,3 +56,25 @@ def test_40d_geomfrac_weights_expand_to_45d():
     assert torch.allclose(orig,new,atol=1e-7)
     assert torch.allclose(dst.net[0].weight[:,-5:],
                           torch.zeros_like(dst.net[0].weight[:,-5:]))
+
+
+def test_s5_teacher_detects_bad_package_reorder(tmp_path):
+    from sdfmpneo_bfzi.s5_bridge import state_order
+    from types import SimpleNamespace as NS
+    n=13
+    z0=np.array([.13,.02,.04,.005,.15,.04])
+    port=NS(copper=lambda T: np.zeros(2,complex), omega=1.,
+            air=np.zeros((2,2)))
+    rom=NS(amb=293.15,cap=np.ones(n),phi=np.eye(n),ns=7,npkg=2,
+           cu=slice(11,13),vol=np.ones(7),port=port,z0=z0,ext=np.eye(2),
+           state_order=state_order(4,2,3),
+           source=lambda *args:(np.ones(n),None,None,None,None))
+    T=np.full((2,n),293.15)
+    T[1,4:8]=[300,301,302,303]
+    z=np.tile(z0,(2,1))
+    path=tmp_path/'wrong.npz'
+    np.savez(path,time_s=np.array([0.,15.]),voltage_v=np.array([0.,40.]),
+             temp_K=T,z6=z,Tpkg_K=T[:,4:8]+.1,Tcu_K=T[:,8:10])
+    import pytest
+    with pytest.raises(ValueError,match="package cells"):
+        read(path,rom)
