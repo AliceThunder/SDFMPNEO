@@ -11,7 +11,7 @@ from examples.bfzi_geom_neural import read, score, scales
 
 def test_neural_heat_head_trainable():
     torch.manual_seed(2)
-    net = GeomFracET(ng=22, rank=rom.rank)
+    net = GeomFracET(ng=22, rank=10)
     h = net.init_state(2)
     u = torch.full((2, 3), 0.2)
     g = torch.zeros(2, 22)
@@ -62,7 +62,7 @@ def test_teacher_training_data_and_loss(tmp_path):
     row = read(path, rom)
     sx, sy, sa = scales([row])
     g = torch.tensor(np.zeros((1, 22)), dtype=torch.float32)
-    net = GeomFracET(ng=22, rank=10)
+    net = GeomFracET(ng=22, rank=rom.rank)
     loss = score(net, [row], g, sx, sy, sa)
     assert torch.isfinite(loss)
     loss.backward()
