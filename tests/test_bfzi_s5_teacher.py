@@ -16,8 +16,8 @@ def test_s5_teacher_reorders_without_losing_skin(tmp_path):
              cu=slice(11,13),vol=np.ones(7),port=port,z0=z0,
              ext=np.eye(2),state_order=order,geom=np.ones(16),
              pose=np.ones(18),thermal=np.array([.02,.25,.001,.25,20.]),
-             source=lambda theta,I,sea:
-                 (np.ones(n),None,None,None,None))
+             source=lambda *args: (_ for _ in ()).throw(
+                 AssertionError("read must not compute teacher source")))
     t=np.array([0.,10.,20.])
     v=np.array([0.,45.,0.])
     T=np.ones((3,n))*rom.amb

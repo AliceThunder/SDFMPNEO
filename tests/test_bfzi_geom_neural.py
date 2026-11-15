@@ -141,3 +141,21 @@ def test_left_interval_voltage_right_time_observation():
     assert np.allclose(heat_drive(v[1], zmat(pred["z6"][1]), rom.ext,
                                   rom.port, pred["temp_K"][1, rom.cu],
                                   rom.cap[rom.cu]), 0)
+
+
+def test_relative_heat_loss_cancels_teacher_source_and_gradient():
+    """The exact residual subtraction needs no expensive teacher heat source."""
+    torch.manual_seed(41)
+    a = torch.randn(3,32,dtype=torch.float64)
+    K = torch.randn(32,32,dtype=torch.float64)
+    q = torch.randn(32,dtype=torch.float64)
+    prev = torch.randn(32,dtype=torch.float64)
+    x = torch.randn(32,dtype=torch.float64,requires_grad=True)
+    dt = 15.
+    old = ((x-prev)/dt+K@x-q)-((a[2]-a[1])/dt+K@a[2]-q)
+    delta = x-a[2]
+    new = (delta-(prev-a[1]))/dt+K@delta
+    assert torch.allclose(old,new,atol=1e-12,rtol=0)
+    grad_old = torch.autograd.grad(old.square().sum(),x,retain_graph=True)[0]
+    grad_new = torch.autograd.grad(new.square().sum(),x)[0]
+    assert torch.allclose(grad_old,grad_new,atol=1e-11,rtol=0)

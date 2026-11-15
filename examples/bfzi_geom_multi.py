@@ -40,7 +40,6 @@ def prepare(spec,rank=32):
     for file in files:
         row=read(file,rom)
         row['a']/=m
-        row['q']/=m
         row.update(geom=geom,K=K,rom=rom)
         reconstructed=rom.amb+(row['a']*m)@rom.phi.T
         row['basis_max_K']=float(np.max(abs(reconstructed-row['temp_K'])))

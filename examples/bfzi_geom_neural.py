@@ -82,7 +82,6 @@ def read(path, rom):
     cu0 = rom.port.copper(np.full(2, rom.amb))
     dz = []
     src = []
-    qproj = []
     for k in range(len(t)):
         z = zmat(z6[k])
         cu = rom.port.copper(temp[k, rom.cu])
@@ -96,14 +95,10 @@ def read(path, rom):
                                   temp[k-1,rom.cu], rom.cap[rom.cu]))
         else:
             src.append(np.zeros(3))
-        I = np.linalg.solve(z+rom.ext, np.array([volts[k], 0.], complex))
-        sea0 = z-1j*rom.port.omega*rom.port.air-np.diag(cu)
-        heat, *_ = rom.source(temp[k]-rom.amb, I, sea0)
-        qproj.append(rom.phi.T @ heat)
     temp_sum = thermal_summary(temp, rom.ns, rom.npkg, rom.vol, rom.amb)
     y = np.column_stack((np.asarray(dz), temp_sum))
     return dict(time=t, voltage=volts, src=np.asarray(src), y=y, a=a,
-                q=np.asarray(qproj), z6=z6, temp_K=temp, file=spec)
+                z6=z6, temp_K=temp, file=spec)
 
 
 def scales(rows):
@@ -132,10 +127,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
             if rom is None and 'K' not in row:
                 raise ValueError("thermal physics loss requires a heat ROM")
             K = torch.as_tensor(row['K'] if 'K' in row else rom.K, dtype=a.dtype)
-            q = torch.as_tensor(row["q"], dtype=a.dtype)
-            # Teacher FV trajectories include truncation and time-sampling
-            # error. Compare relative heat residual, not the absolute ROM
-            # residual that the teacher itself does not satisfy exactly.
+            # Both residuals contain the same physical teacher source q,
+            # which cancels exactly when subtracting them. Avoid per-time
+            # expensive warm-source reconstruction in teacher ingestion.
 
         gg = torch.as_tensor(row['geom'][None],dtype=torch.float32) if 'geom' in row else g
         for k in range(1, len(t)):
@@ -146,10 +140,11 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
             pr_a.append((nxt[0]-a[k])/asc)
             if therm_w:
                 dt = float(t[k]-t[k-1])
-                res = (nxt[0]-prev[0])/dt+K @ nxt[0]-q[k]
-                ref = (a[k]-a[k-1])/dt+K @ a[k]-q[k]
+                delta = nxt[0]-a[k]
+                prev_delta = prev[0]-a[k-1]
+                res = (delta-prev_delta)/dt + K @ delta
                 scale = (asc*(1/dt+K.abs().sum(dim=1))).clamp_min(1e-6)
-                pr_phys.append(((res-ref)/scale).square().mean())
+                pr_phys.append((res/scale).square().mean())
             if closed:
                 cur = nxt
         if not pr_z:

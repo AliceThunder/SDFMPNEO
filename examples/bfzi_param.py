@@ -16,9 +16,16 @@ import numpy as np
 
 
 def originals(root):
-    sys.path.insert(0,str(Path(root).resolve()))
+    folder=Path(root).resolve()
+    if not (folder/"run_v150.py").is_file():
+        raise FileNotFoundError(
+            f"BFZI V150 entry run_v150.py is missing in {folder}; "
+            "use the BFZI repository branch bfzi-v150-turn-scan")
+    sys.path.insert(0,str(folder))
     import bfzi_v148_results as bf
     import run_v150 as v150
+    if getattr(v150,"VERSION",None)!="BFZI_v150":
+        raise RuntimeError("BFZI root must contain the original V150 solver")
     return bf,v150
 
 
