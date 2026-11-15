@@ -60,6 +60,7 @@ def test_teacher_training_data_and_loss(tmp_path):
     np.savez_compressed(path, time_s=t, voltage_v=v,
                         z6=truth["z6"], temp_K=truth["temp_K"])
     row = read(path, rom)
+    assert np.allclose(read(str(path).replace("/", "\\\\"), rom)["a"],row["a"])
     sx, sy, sa = scales([row])
     g = torch.tensor(np.zeros((1, 22)), dtype=torch.float32)
     net = GeomFracET(ng=22, rank=rom.rank)
@@ -179,3 +180,15 @@ def test_closed_loss_uses_post_balance_state(monkeypatch):
                         pred+0.1)
     changed=mod.score(net,[row],None,sx,sy,sa,closed=True,src_mix=1.)
     assert changed>baseline+0.001
+
+
+def test_long_history_weighting_and_gradient():
+    from examples.bfzi_geom_neural import _hist_mean
+    x=torch.tensor(1.,requires_grad=True)
+    losses=[2*x,6*x]
+    assert torch.allclose(_hist_mean(losses,[4,40],"equal"),4*x)
+    expected=(4*2+40*6)/44
+    val=_hist_mean(losses,[4,40],"step")
+    assert torch.allclose(val,expected*x)
+    val.backward()
+    assert torch.allclose(x.grad,torch.tensor(expected))
