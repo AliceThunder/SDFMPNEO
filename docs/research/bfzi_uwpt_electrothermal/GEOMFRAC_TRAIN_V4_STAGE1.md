@@ -40,3 +40,5 @@ python -m examples.bfzi_s5_buildset --bfzi-root D:\work\geomfrac-s5-BFZI --plan 
 python -m examples.bfzi_geom_v4 --train 3 --val 1
 python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_v4_3g_manifest.json --init-model runs/geomfrac_et_s5_long_v3.pt --epochs 500 --patience 70 --lr .0002 --weight-decay .0001 --lr-patience 20 --lr-factor .5 --closed-warmup 10 --closed-ramp 40 --closed-weight .08 --therm-weight .05 --history-weight step --zrel-weight 1 --soe-quad trap --heat-dt 1.875 --out runs/geomfrac_et_v4_3g.pt --report runs/geomfrac_et_v4_3g.json
 ```
+
+[新增物理结果] N01 已完成 60/300/600s 三条 V150 S5 教师；600s 41 点全场最高温度 312.892 K。N02 已进入物理数据生成。数据位于 runs/bfzi_s5_N01_ultra_v4_*.npz。

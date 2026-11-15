@@ -13,6 +13,7 @@ Example:
 from __future__ import annotations
 import argparse
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -316,12 +317,22 @@ def eval_rollout(rom, net, ck, rows):
     with torch.no_grad():
         for row in rows:
             rr = row.get('rom',rom)
+            begin = time.perf_counter()
             pred = rollout(rr, net, ck, row["voltage"], row["time"])
+            cpu_s = time.perf_counter() - begin
             real_z = row["z6"]
             real_t = row["temp_K"]
             dz = np.linalg.norm(real_z-real_z[0])
+            seg = {}
+            for lo,hi in ((0,60),(60,300),(300,600)):
+                use=(row["time"]>lo)&(row["time"]<=hi)
+                if np.any(use):
+                    num=np.linalg.norm((pred["z6"]-real_z)[use])
+                    den=np.linalg.norm((real_z-real_z[0])[use])
+                    seg[f"dynamic_Z_{lo}_{hi}_rel_L2"]=float(num/max(den,1e-12))
             result.append(dict(
                 file=row["file"],
+                inference_cpu_s=float(cpu_s),
                 dynamic_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
                                        / max(dz, 1e-12)),
                 full_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
@@ -334,6 +345,7 @@ def eval_rollout(rom, net, ck, rows):
                     -real_t[:, rr.ns:rr.cu.start]))),
                 material_budget_max_W=float(np.max(abs(pred["material_budget_W"]))),
                 fv_residual_max_W=float(np.max(abs(pred["fv_node_residual_W"])))))
+            result[-1].update(seg)
     return result
 
 

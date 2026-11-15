@@ -16,6 +16,7 @@ def test_v4_split():
     assert len({str(g) for g in geo}) == 40
     check_plan({**plan, "train": ["N01"], "val": []})
     assert [v["duration"] for v in plan["cases"]["N01"]["drives"]] == [60, 300, 600]
+    assert check_plan({**plan,"train":[],"val":[],"test":["E01"]}) == ([], [])
 
 
 def test_v4_manifest(tmp_path):

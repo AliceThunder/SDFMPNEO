@@ -22,13 +22,15 @@ from sdfmpneo_bfzi.s5_bridge import from_skin, teacher_temp
 def check_plan(plan):
     cases = plan["cases"]
     tr, val = list(plan["train"]), list(plan["val"])
-    if not tr or len(set(tr+val)) != len(tr+val):
-        raise ValueError("training and validation must use disjoint geometries")
+    test=list(plan.get("test",[]))
+    keys=tr+val+test
+    if not keys or len(set(keys)) != len(keys):
+        raise ValueError("all geometry splits must be disjoint")
     frozen = {f"U{i:02d}" for i in range(1,13)}
-    if (set(tr+val) & frozen) or (set(tr+val)-set(cases)):
+    if (set(keys) & frozen) or (set(keys)-set(cases)):
         raise ValueError("training/validation keys must be non-frozen, defined cases")
     seen = {}
-    for key in tr+val:
+    for key in keys:
         c = cases[key]
         for field in ("geometry","thermal","donor","alpha_per_K","drives"):
             if field not in c:
@@ -55,10 +57,10 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
     bf, v150 = originals(bfzi_root)
     runs=Path(runs)
     runs.mkdir(parents=True,exist_ok=True)
-    manifest={"train":[],"val":[]}
+    manifest={"train":[],"val":[],"test":[]}
     report={"cases":{},"teacher":"BFZI V150 five-point-order S5"}
     suffix=f"_{tag}" if tag else ""
-    for key in tr+val:
+    for key in tr+val+plan.get("test",[]):
         start=time.perf_counter()
         c=plan["cases"][key]
         parent="p03" if c["donor"]=="g1" else "p07"
@@ -113,7 +115,7 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
             traces.append(str(teacher))
             checks.append(dict(teacher=str(teacher),physics=status,
                                basis=metric))
-        role="train" if key in tr else "val"
+        role="train" if key in tr else ("val" if key in val else "test")
         manifest[role].append(dict(anchor=str(anchor),teacher=traces))
         report["cases"][key]=dict(split=role,anchor=str(anchor),
                                    traces=checks,
@@ -146,11 +148,12 @@ def main():
     plan=json.loads(a.plan.read_text(encoding="utf-8"))
     if a.cases:
         sel=set(a.cases)
-        if sel-set(plan["train"]+plan["val"]):
-            raise ValueError("unknown or test-only geometry in --cases")
+        if sel-set(plan["train"]+plan["val"]+plan.get("test",[])):
+            raise ValueError("unknown geometry in --cases")
         plan={**plan,
               "train":[k for k in plan["train"] if k in sel],
-              "val":[k for k in plan["val"] if k in sel]}
+              "val":[k for k in plan["val"] if k in sel],
+              "test":[k for k in plan.get("test",[]) if k in sel]}
     generate(plan,bfzi_root=a.bfzi_root,runs=a.runs,grid=a.grid,
              heat_step=a.inner_step,limit_skin=a.max_skin_K,
              limit_pkg=a.max_pkg_K,duration=a.duration,tag=a.tag)

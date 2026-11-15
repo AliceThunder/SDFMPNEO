@@ -26,7 +26,7 @@ from sdfmpneo_bfzi.s5_bridge import feature
 
 def prepare(spec,rank=32):
     """Load a cold anchor and project its histories into common K-scale modes."""
-    head=GeomHeat.load(Path(str(spec['anchor']).replace('\\', '/')))
+    head=GeomHeat.load(str(spec['anchor']).replace('\\', '/'))
     rom=make_rom(head,rank)
     ng=45 if hasattr(head,'thermal') else (
         40 if getattr(head,'pose',None) is not None else 22)
@@ -69,6 +69,10 @@ def main():
     p.add_argument('--zrel-weight',type=float,default=0.,
                    help='full dynamic port-Z relative squared loss weight')
     p.add_argument('--history-weight',choices=('equal','step'),default='step')
+    p.add_argument('--batch-hist',type=int,default=0,
+                   help='histories per stochastic step; 0 uses full training set')
+    p.add_argument('--val-every',type=int,default=1,
+                   help='validate every N training epochs')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -97,22 +101,30 @@ def main():
     opt=torch.optim.AdamW(net.parameters(),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
-        opt,mode='min',factor=a.lr_factor,patience=a.lr_patience)
+        opt,mode='min',factor=a.lr_factor,
+        patience=max(1,(a.lr_patience+a.val_every-1)//a.val_every))
     best=float('inf')
     best_epoch=0
     saved=None
     best_train=None
+    if a.val_every<1 or a.batch_hist<0:
+        p.error('val-every must be positive, batch-hist must be nonnegative')
     if a.closed_warmup<0 or a.closed_ramp<=0:
         p.error('closed warmup/ramp must be nonnegative/positive')
     warmup=(a.closed_warmup+a.closed_ramp) if a.closed_weight else 0
     for ep in range(a.epochs):
+        if a.batch_hist and a.batch_hist<len(train):
+            ids=torch.randperm(len(train))[:a.batch_hist].tolist()
+            batch=[train[i] for i in ids]
+        else:
+            batch=train
         net.train()
         opt.zero_grad(set_to_none=True)
-        loss=score(net,train,None,sx,sy,sa,therm_w=a.therm_weight,
+        loss=score(net,batch,None,sx,sy,sa,therm_w=a.therm_weight,
                    zrel_w=a.zrel_weight,hist_weight=a.history_weight)
         if a.closed_weight and ep>=a.closed_warmup:
             mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
-            loss+=a.closed_weight*score(net,train,None,sx,sy,sa,
+            loss+=a.closed_weight*score(net,batch,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=mix,
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight)
         if not torch.isfinite(loss):
@@ -120,6 +132,8 @@ def main():
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(),3.)
         opt.step()
+        if (ep+1)%a.val_every and ep+1!=a.epochs:
+            continue
         net.eval()
         with torch.no_grad():
             v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
@@ -161,6 +175,7 @@ def main():
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
+                 batch_hist=a.batch_hist,val_every=a.val_every,
                  lr_factor=a.lr_factor,lr_patience=a.lr_patience,
                  final_lr=opt.param_groups[0]['lr'],
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
