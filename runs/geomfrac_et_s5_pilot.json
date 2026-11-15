@@ -1,0 +1,25 @@
+{
+  "architecture": "GeomFracET-cross-geometry",
+  "mode": "canonical-material-32",
+  "rank": 32,
+  "ntrain_geometries": 1,
+  "nval_geometries": 1,
+  "train_histories": 1,
+  "val_histories": 1,
+  "best_epoch": 4,
+  "val_loss": 3.1628798961639406,
+  "train_projection_max_K": 0.8469393286216018,
+  "val_projection_max_K": 0.1582056130556566,
+  "autonomous_validation": [
+    {
+      "file": "runs/bfzi_s5_T04_pilot_drive1.npz",
+      "dynamic_Z_rel_L2": 0.20400689121895102,
+      "full_Z_rel_L2": 7.273697182701542e-06,
+      "temperature_max_K": 0.7552410613931784,
+      "copper_max_K": 0.2668670738253809,
+      "package_max_K": 0.7552410613931784,
+      "material_budget_max_W": 2.1081092427266412e-10,
+      "fv_residual_max_W": 0.9574337633837453
+    }
+  ]
+}

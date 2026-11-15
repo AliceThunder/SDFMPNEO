@@ -1,0 +1,35 @@
+{
+  "architecture": "GeomFracET-cross-geometry",
+  "mode": "canonical-material-32",
+  "rank": 32,
+  "ntrain_geometries": 3,
+  "nval_geometries": 1,
+  "train_histories": 6,
+  "val_histories": 2,
+  "best_epoch": 34,
+  "val_loss": 0.2745065689086914,
+  "train_projection_max_K": 2.0372563507174277,
+  "val_projection_max_K": 0.34783501977398146,
+  "autonomous_validation": [
+    {
+      "file": "runs\\bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "dynamic_Z_rel_L2": 0.1559009285410671,
+      "full_Z_rel_L2": 5.558518822252288e-06,
+      "temperature_max_K": 1.0268627762566211,
+      "copper_max_K": 0.2879830185056562,
+      "package_max_K": 1.0268627762566211,
+      "material_budget_max_W": 7.722107397967193e-09,
+      "fv_residual_max_W": 1.3280057809653267
+    },
+    {
+      "file": "runs\\bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "dynamic_Z_rel_L2": 0.1540393903708493,
+      "full_Z_rel_L2": 1.1788504987892902e-05,
+      "temperature_max_K": 0.6580206924152776,
+      "copper_max_K": 0.2796495944326125,
+      "package_max_K": 0.6580206924152776,
+      "material_budget_max_W": 9.826948144109338e-10,
+      "fv_residual_max_W": 1.461509704915539
+    }
+  ]
+}

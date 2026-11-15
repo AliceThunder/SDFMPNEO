@@ -1,0 +1,4 @@
+﻿{
+  "train": [{"anchor": "runs/bfzi_s5_T01_pilot_anchor.npz", "teacher": "runs/bfzi_s5_T01_pilot_drive1.npz"}],
+  "val": [{"anchor": "runs/bfzi_s5_T04_pilot_anchor.npz", "teacher": "runs/bfzi_s5_T04_pilot_drive1.npz"}]
+}
