@@ -159,3 +159,23 @@ def test_relative_heat_loss_cancels_teacher_source_and_gradient():
     grad_old = torch.autograd.grad(old.square().sum(),x,retain_graph=True)[0]
     grad_new = torch.autograd.grad(new.square().sum(),x)[0]
     assert torch.allclose(grad_old,grad_new,atol=1e-11,rtol=0)
+
+
+def test_closed_loss_uses_post_balance_state(monkeypatch):
+    """On a single interval the training loss must see corrected heat, not raw head."""
+    import examples.bfzi_geom_neural as mod
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    net = GeomFracET(ng=22, rank=rom.rank)
+    row = dict(
+        time=np.array([0.,15.]),voltage=np.array([0.,0.]),
+        src=np.zeros((2,3)), y=np.zeros((2,14)),
+        a=np.zeros((2,rom.rank)),geom=np.zeros(22),rom=rom,
+        temp_K=np.full((2,len(rom.cap)),rom.amb))
+    sx,sy,sa=np.ones(3),np.ones(14),np.ones(rom.rank)
+    baseline=mod.score(net,[row],None,sx,sy,sa,closed=True,src_mix=1.)
+    monkeypatch.setattr(mod,"_heat_balance",
+                        lambda row,rom,old,pred,y,sy,dt,voltage:
+                        pred+0.1)
+    changed=mod.score(net,[row],None,sx,sy,sa,closed=True,src_mix=1.)
+    assert changed>baseline+0.001

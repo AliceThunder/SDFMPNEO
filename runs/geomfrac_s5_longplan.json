@@ -1,0 +1,103 @@
+{
+  "description": "GeomFracET S5 V150 non-frozen cross-geometry first teacher cohort; 600s, 15s samples, source order 5. All cases distinct from frozen U01-U12.",
+  "train": [
+    "T01"
+  ],
+  "val": [
+    "T04"
+  ],
+  "cases": {
+    "T01": {
+      "family": "round",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 1,
+        "alpha2": 1,
+        "core1_mm": 0,
+        "core2_mm": 0,
+        "shift_mm": [
+          3,
+          83,
+          -4
+        ],
+        "tilt_deg": 9,
+        "yaw_deg": -6,
+        "pitch_deg": 4,
+        "box1_mm": 217,
+        "box2_mm": 221
+      },
+      "alpha_per_K": 0.018,
+      "thermal": {
+        "ins_k": 0.25,
+        "pkg_k": 0.25,
+        "pkg_sea_h": 20,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 65,
+          "off": [
+            [
+              30,
+              180
+            ],
+            [
+              210,
+              360
+            ],
+            [
+              390,
+              630
+            ]
+          ]
+        }
+      ]
+    },
+    "T04": {
+      "family": "roundedsquare",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.67,
+        "alpha2": 0.9,
+        "core1_mm": 24,
+        "core2_mm": 13,
+        "shift_mm": [
+          -3,
+          106,
+          0
+        ],
+        "tilt_deg": 17,
+        "yaw_deg": 7,
+        "pitch_deg": 9,
+        "box1_mm": 236,
+        "box2_mm": 226
+      },
+      "alpha_per_K": 0.015,
+      "thermal": {
+        "ins_k": 0.3,
+        "pkg_k": 0.35,
+        "pkg_sea_h": 25,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 75,
+          "off": [
+            [
+              30,
+              180
+            ],
+            [
+              210,
+              360
+            ],
+            [
+              390,
+              630
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

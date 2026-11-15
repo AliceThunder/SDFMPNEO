@@ -130,6 +130,7 @@ def _port_src(row, rom, a, y, sy, voltage):
         row["port_t"]=dict(
             B=torch.as_tensor(b,dtype=torch.float32),
             D=torch.as_tensor(d,dtype=torch.float32),
+            phi=torch.as_tensor(rom.phi*sc[None,:],dtype=torch.float32),
             cold=ztorch(torch.tensor(rom.z0[None],dtype=torch.float32)),
             cu=torch.as_tensor(copper,dtype=torch.complex64),
             deriv=torch.as_tensor(tangent,dtype=torch.complex64),
@@ -156,23 +157,36 @@ def _port_src(row, rom, a, y, sy, voltage):
 
 
 def _heat_balance(row, rom, old, pred, y, sy, dt, voltage):
-    """Differentiable five-material correction matching the inference solver."""
+    """Differentiable matching budgets plus nonnegative spatial projection."""
     a=pred
-    for _ in range(6):
-        q=_port_src(row,rom,a,y,sy,voltage)
-        p=row["port_t"]
-        qg=torch.stack((q[:,0],torch.zeros_like(q[:,0]),
-                        torch.zeros_like(q[:,0]),
-                        q[:,1]*p["cap"][0],q[:,2]*p["cap"][1]),dim=-1)
-        err=((a-old)@p["B"].T)/dt+a@p["D"].T-qg
-        jac=p["B"][:,:5]/dt+p["D"][:,:5]
-        corr=torch.linalg.solve(jac,-err.T).T
-        a=torch.cat((a[:,:5]+corr,a[:,5:]),dim=-1)
+    # Each adjustment to zero-mean modes requires a new material budget step.
+    for stage in range(6):
+        for _ in range(6):
+            q=_port_src(row,rom,a,y,sy,voltage)
+            p=row["port_t"]
+            qg=torch.stack((q[:,0],torch.zeros_like(q[:,0]),
+                            torch.zeros_like(q[:,0]),
+                            q[:,1]*p["cap"][0],q[:,2]*p["cap"][1]),dim=-1)
+            err=((a-old)@p["B"].T)/dt+a@p["D"].T-qg
+            jac=p["B"][:,:5]/dt+p["D"][:,:5]
+            corr=torch.linalg.solve(jac,-err.T).T
+            a=torch.cat((a[:,:5]+corr,a[:,5:]),dim=-1)
+        if stage==5 or rom.rank<=5:
+            break
+        base=a[:,:5]@p["phi"][:,:5].T
+        diff=a[:,5:]@p["phi"][:,5:].T
+        ratio=torch.where(diff<0,
+                          base.clamp_min(0)/(-diff).clamp_min(1e-12),
+                          torch.full_like(diff,float("inf")))
+        beta=ratio.min(dim=1).values.clamp(max=1.)
+        if bool(torch.all(beta>=1.-1e-9)):
+            break
+        fac=torch.where(beta<1.-1e-9,beta*.999,torch.ones_like(beta))
+        a=torch.cat((a[:,:5],a[:,5:]*fac[:,None]),dim=-1)
     return a
 
-
 def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
-          therm_w=0., src_mix=0.):
+          therm_w=0., src_mix=0., zrel_w=0.):
     total = []
     for row in rows:
         t = row["time"]
@@ -216,28 +230,29 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             h, zhat, nxt = net.step_et(h,input_u,float(t[k]-t[k-1]),gg,
                                        prev,asc)
             zy=zhat
+            state=nxt
+            if closed and src_mix:
+                physical=_heat_balance(row,rr,prev,nxt,zhat,sy,dt,
+                                       float(row["voltage"][k-1]))
+                state=(1-src_mix)*nxt+src_mix*physical
+            if closed:
+                cur=state
+            # The training target must describe the same corrected state
+            # that autonomous inference returns at the sampling instant.
             pr_z.append(zhat[0])
-            pr_a.append((nxt[0]-a[k])/asc)
+            pr_a.append((state[0]-a[k])/asc)
             if rr is not None:
-                pred_temp=nxt[0]@decoder.T
+                pred_temp=state[0]@decoder.T
                 pr_pkg.append((pred_temp[:n_pkg]-actual[k,:n_pkg])
                               .square().mean())
                 pr_cu.append((pred_temp[n_pkg:]-actual[k,n_pkg:])
                              .square().mean())
             if therm_w:
-                dt = float(t[k]-t[k-1])
-                delta = nxt[0]-a[k]
-                prev_delta = prev[0]-a[k-1]
-                res = (delta-prev_delta)/dt + K @ delta
-                scale = (asc*(1/dt+K.abs().sum(dim=1))).clamp_min(1e-6)
+                delta=state[0]-a[k]
+                prev_delta=prev[0]-a[k-1]
+                res=(delta-prev_delta)/dt+K@delta
+                scale=(asc*(1/dt+K.abs().sum(dim=1))).clamp_min(1e-6)
                 pr_phys.append((res/scale).square().mean())
-            if closed:
-                if src_mix:
-                    physical=_heat_balance(row,rr,prev,nxt,zhat,sy,dt,
-                                           float(row["voltage"][k-1]))
-                    cur=(1-src_mix)*nxt+src_mix*physical
-                else:
-                    cur=nxt
         if not pr_z:
             continue
         pz = torch.stack(pr_z)
@@ -248,7 +263,14 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
         phy = torch.stack(pr_phys).mean() if therm_w else 0.
         temp_loss=(.15*torch.stack(pr_pkg).mean()
                    +.15*torch.stack(pr_cu).mean()) if pr_pkg else 0.
-        total.append(zerr+0.45*zextra+heat+therm_w*phy+temp_loss)
+        zrel=0.
+        if zrel_w:
+            zscale=torch.as_tensor(sy[:6],dtype=pz.dtype)
+            zd=(pz[:,:6]-y[1:,:6])*zscale
+            ref=y[1:,:6]*zscale
+            zrel=zd.square().sum()/ref.square().sum().clamp_min(1e-12)
+        total.append(zerr+0.45*zextra+heat+therm_w*phy
+                     +temp_loss+zrel_w*zrel)
     if not total:
         raise ValueError("teacher histories need at least two times")
     return torch.stack(total).mean()

@@ -1,0 +1,21 @@
+{
+  "train": [
+    {
+      "anchor": "runs\\bfzi_s5_T01_ultra_long600_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_T01_ultra_long600_drive1.npz"
+      ]
+    }
+  ],
+  "val": [
+    {
+      "anchor": "runs\\bfzi_s5_T04_ultra_long600_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_T04_ultra_long600_drive1.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 600.0
+}

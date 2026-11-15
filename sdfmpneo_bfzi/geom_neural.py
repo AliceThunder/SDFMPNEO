@@ -61,7 +61,7 @@ class GeomFracET(GeomFrac):
         return h,y,a
 
 
-def _balance(rom, old, pred, dt, voltage, dsea, B, D):
+def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D):
     """Correct five material energy budgets without a ROM implicit solve."""
     if dt <= 0:
         raise ValueError("positive time step required")
@@ -82,6 +82,32 @@ def _balance(rom, old, pred, dt, voltage, dsea, B, D):
     res = rom.cap * (theta - rom.phi @ old)/dt + rom.H @ theta - heat
     budget = np.array([res[sl].sum() for sl in groups(rom)])
     return a, theta, z, I, q, J, ps, pc, res, budget
+
+
+def _pos_beta(rom, a):
+    """Largest admissible scale of zero-mean spatial thermal modes."""
+    if rom.rank <= 5:
+        return 1.
+    base=rom.phi[:,:5]@a[:5]
+    fluct=rom.phi[:,5:]@a[5:]
+    neg=fluct<0.
+    if not np.any(neg):
+        return 1.
+    return min(1.,float(np.min(np.maximum(base[neg],0.)/(-fluct[neg]))))
+
+
+def _balance(rom, old, pred, dt, voltage, dsea, B, D):
+    """Enforce five energy budgets and nonnegative FV temperature rises."""
+    out=_balance_raw(rom,old,pred,dt,voltage,dsea,B,D)
+    for _ in range(5):
+        a=out[0]
+        beta=_pos_beta(rom,a)
+        if beta>=1.-1e-9:
+            break
+        a=a.copy()
+        a[5:]*=max(beta*.999,0.)
+        out=_balance_raw(rom,old,a,dt,voltage,dsea,B,D)
+    return out
 
 
 @torch.no_grad()

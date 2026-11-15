@@ -178,3 +178,25 @@ def test_s5_skin_labels_must_match_two_packages():
     h.cap=np.r_[h.cap[:h.nwet],np.ones(4),h.cap[h.nwet:]]
     with pytest.raises(ValueError,match="package labels"):
         basis(h)
+
+
+def test_positive_spatial_projection_keeps_material_means():
+    from sdfmpneo_bfzi.geom_neural import _pos_beta
+    h=Head()
+    rom=GeomHeatROM(h,basis(h))
+    a=(np.ones(len(h.cap))*h.cap)@rom.phi
+    a*=.5
+    a[5:]=0.
+    a[5]=100.
+    pre=rom.phi@a
+    assert pre.min()<0.
+    beta=_pos_beta(rom,a)
+    assert 0<=beta<1.
+    projected=a.copy()
+    projected[5:]*=beta*.999
+    temp=rom.phi@projected
+    assert temp.min()>=-1e-10
+    for sl in groups(rom):
+        before=float(pre[sl]@rom.cap[sl]/rom.cap[sl].sum())
+        after=float(temp[sl]@rom.cap[sl]/rom.cap[sl].sum())
+        assert abs(after-before)<1e-10

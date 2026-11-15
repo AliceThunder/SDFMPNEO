@@ -60,7 +60,10 @@ def main():
     p.add_argument('--soe-quad',choices=('legacy','trap'),default='trap')
     p.add_argument('--heat-dt',type=float,default=1.875)
     p.add_argument('--closed-weight',type=float,default=.2)
+    p.add_argument('--closed-warmup',type=int,default=20)
+    p.add_argument('--closed-ramp',type=int,default=60)
     p.add_argument('--therm-weight',type=float,default=.03)
+    p.add_argument('--zrel-weight',type=float,default=0.)
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -91,15 +94,19 @@ def main():
     best_epoch=0
     saved=None
     best_train=None
-    warmup=80 if a.closed_weight else 0
+    if a.closed_warmup<0 or a.closed_ramp<=0:
+        p.error('closed warmup/ramp must be nonnegative/positive')
+    warmup=(a.closed_warmup+a.closed_ramp) if a.closed_weight else 0
     for ep in range(a.epochs):
         net.train()
         opt.zero_grad(set_to_none=True)
-        loss=score(net,train,None,sx,sy,sa,therm_w=a.therm_weight)
-        if a.closed_weight and ep>=20:
-            mix=min(1.,(ep-19)/60.)
+        loss=score(net,train,None,sx,sy,sa,therm_w=a.therm_weight,
+                   zrel_w=a.zrel_weight)
+        if a.closed_weight and ep>=a.closed_warmup:
+            mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
             loss+=a.closed_weight*score(net,train,None,sx,sy,sa,
-                        closed=True,therm_w=a.therm_weight,src_mix=mix)
+                        closed=True,therm_w=a.therm_weight,src_mix=mix,
+                        zrel_w=a.zrel_weight)
         if not torch.isfinite(loss):
             raise RuntimeError(f"training diverged at epoch {ep+1}")
         loss.backward()
@@ -107,10 +114,12 @@ def main():
         opt.step()
         net.eval()
         with torch.no_grad():
-            v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight))
+            v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
+                          zrel_w=a.zrel_weight))
             if a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
-                        closed=True,therm_w=a.therm_weight,src_mix=1.))
+                        closed=True,therm_w=a.therm_weight,src_mix=1.,
+                        zrel_w=a.zrel_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if ep+1>=warmup and v<best-1e-8:
@@ -139,12 +148,14 @@ def main():
     metrics=dict(architecture='GeomFracET-cross-geometry',
                  mode='canonical-material-32',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
-                 autonomous_src=True,
+                 autonomous_src=True,zrel_weight=a.zrel_weight,
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best,
                  train_loss_at_best=best_train,epochs_trained=ep+1,
                  closed_source_warmup=warmup,
+                 closed_warmup=a.closed_warmup,
+                 closed_ramp=a.closed_ramp,
                  train_projection_max_K=max(r['basis_max_K'] for r in train),
                  val_projection_max_K=max(r['basis_max_K'] for r in val),
                  autonomous_validation=autonomous)
