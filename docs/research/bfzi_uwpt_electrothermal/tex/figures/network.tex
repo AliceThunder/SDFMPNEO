@@ -1,0 +1,14 @@
+\begin{tikzpicture}[node distance=7mm and 8mm]
+\node[drive,text width=3.6cm] (geom) {静态条件 40 维\\线圈 16 + 冷态阻抗 6\\位姿/封装 18};
+\node[drive,below=of geom,text width=3.6cm] (src) {动态功率输入 3 维\\海水功率 + 双铜加热率};
+\node[nerve,right=16mm of src,text width=3.5cm] (soe) {三路 SOE 记忆\\每路 14 速率 + 1 指数\\合计 45 个状态};
+\node[nerve,right=15mm of soe,text width=3.4cm] (mlp) {合并特征 49 维\\MLP: 128 $\to$ 128\\SiLU 激活};
+\node[nerve,right=of mlp,text width=3.2cm] (out) {14 维输出\\海水复阻抗 6\\海水温度 2\\双封装温度 4\\双铜温度 2};
+\draw[arr] (src)--(soe);
+\draw[arr] (soe)--node[above,font=\footnotesize] {当前输入和记忆} (mlp);
+\draw[arr] (geom.east) -| (mlp.north);
+\draw[arr] (mlp)--(out);
+\node[phys,below=13mm of mlp,text width=4.4cm] (port) {与铜阻抗、空气电感组装\\完整双端口复阻抗};
+\draw[arr] (out.south) |- (port.east);
+\draw[fb] (port.west) -| (src.south);
+\end{tikzpicture}

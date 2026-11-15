@@ -1,0 +1,14 @@
+\begin{tikzpicture}[node distance=8mm and 10mm]
+\node[phys,text width=4.2cm] (teacher) {原 BFZI V150 完整时程\\几何、激励、$T/J/q/Z/I$};
+\node[drive,right=of teacher,text width=4.2cm] (split) {按完整几何和完整历史划分\\训练 / 验证 / 独立测试};
+\node[nerve,right=of split,text width=4.2cm] (net) {归一化数据\\SOE + MLP 监督训练};
+\node[nerve,below=of net,text width=4.2cm] (free) {可选自主闭环训练\\预测 $Z$ 求电流、功率、下一步输入};
+\node[phys,left=of free,text width=4.2cm] (loss) {综合损失\\六分量阻抗、温度、铜物理一致性、热点};
+\node[therm,left=of loss,text width=4.2cm] (valid) {固定独立几何 / 激励\\整条时程评估、保存权重};
+\draw[arr] (teacher)--(split);
+\draw[arr] (split)--(net);
+\draw[arr] (net)--(free);
+\draw[arr] (free)--(loss);
+\draw[arr] (loss)--(valid);
+\draw[fb] (loss.north) -| (net.south);
+\end{tikzpicture}

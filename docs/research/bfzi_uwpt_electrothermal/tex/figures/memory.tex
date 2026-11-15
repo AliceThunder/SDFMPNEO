@@ -1,0 +1,13 @@
+\begin{tikzpicture}[node distance=7mm and 9mm]
+\node[drive,text width=2.8cm] (u) {一条热源历史\\$u(t)$};
+\node[nerve,right=of u,text width=3.5cm] (rate) {14 个不同衰减速度\\$h_j^+=e^{-\lambda_j\Delta t}h_j+(1-e^{-\lambda_j\Delta t})u$};
+\node[nerve,right=of rate,text width=3.2cm] (sum) {学习分数阶权重\\$m_\alpha=\sum_j w_j(\alpha)h_j$};
+\node[nerve,below=of rate,text width=3.5cm] (one) {再增加一个普通指数记忆\\$h_{\rm exp}$};
+\node[drive,right=of sum,text width=2.6cm] (out) {共同进入网络\\短期 + 长期历史};
+\draw[arr] (u)--(rate);
+\draw[arr] (rate)--(sum);
+\draw[arr] (u.south) |- (one.west);
+\draw[arr] (sum)--(out);
+\draw[arr] (one.east) -| (out.south);
+\node[font=\footnotesize,text=BFink] at ([yshift=-13mm]one.south) {上述结构同时用于海水、发射铜和接收铜三路输入};
+\end{tikzpicture}

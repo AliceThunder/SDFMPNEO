@@ -1,0 +1,18 @@
+\begin{tikzpicture}[node distance=6mm and 12mm]
+\node[phys,text width=5.8cm] (off1) {离线：构建新几何与物理网格};
+\node[phys,below=of off1,text width=5.8cm] (off2) {原 BFZI 冷态电磁场与热算子};
+\node[phys,below=of off2,text width=5.8cm] (off3) {32 阶热基 + 可选 8 模态温度切线};
+\node[drive,below=of off3,text width=5.8cm] (save) {保存冷态锚、热 ROM、切线和神经权重};
+\node[nerve,right=18mm of off1,text width=5.8cm] (in) {在线：输入电压/负载历史与模型文件};
+\node[nerve,below=of in,text width=5.8cm] (mem) {SOE 记忆 + 阻抗先验 + 物理校正};
+\node[drive,below=of mem,text width=5.8cm] (circ) {双端口电路 + 三维热源};
+\node[therm,below=of circ,text width=5.8cm] (step) {32 阶热时间步 + 温度反馈};
+\draw[arr] (off1)--(off2);
+\draw[arr] (off2)--(off3);
+\draw[arr] (off3)--(save);
+\draw[arr] (in)--(mem);
+\draw[arr] (mem)--(circ);
+\draw[arr] (circ)--(step);
+\draw[fb] (step.east) -- ++(.55,0) |- (mem.east);
+\draw[arr] (save.east) -- (step.west);
+\end{tikzpicture}

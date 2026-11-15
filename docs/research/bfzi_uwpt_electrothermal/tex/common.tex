@@ -1,0 +1,59 @@
+% 用 XeLaTeX 编译；公式、中文、图均在此处统一配置。
+\usepackage[margin=25mm,headheight=14pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{BFblue}{HTML}{356A9A}
+\definecolor{BFgreen}{HTML}{287C70}
+\definecolor{BFviolet}{HTML}{7955A3}
+\definecolor{BFamber}{HTML}{A97822}
+\definecolor{BFink}{HTML}{243246}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\tikzset{
+  phys/.style={draw=BFblue,fill=BFblue!8,rounded corners=3pt,
+  align=center,minimum height=9mm,inner sep=5pt,font=\small},
+  nerve/.style={draw=BFviolet,fill=BFviolet!8,rounded corners=3pt,
+  align=center,minimum height=9mm,inner sep=5pt,font=\small},
+  therm/.style={draw=BFgreen,fill=BFgreen!8,rounded corners=3pt,
+  align=center,minimum height=9mm,inner sep=5pt,font=\small},
+  drive/.style={draw=BFamber,fill=BFamber!10,rounded corners=3pt,
+  align=center,minimum height=9mm,inner sep=5pt,font=\small},
+  arr/.style={-{Latex[length=2mm]},thick,draw=BFink},
+  fb/.style={-{Latex[length=2mm]},semithick,dashed,draw=BFgreen}
+}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=2em,itemsep=3pt}
+\usepackage{caption}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,frame=single,breaklines=true,
+columns=fullflexible,keepspaces=true,showstringspaces=false,
+numbers=left,numberstyle=\tiny,numbersep=6pt}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{plainbox}{enhanced,breakable,colback=BFblue!4,
+colframe=BFblue!35,boxrule=.5pt,arc=2pt}
+\newtcolorbox{examplebox}{enhanced,breakable,colback=BFgreen!4,
+colframe=BFgreen!40,boxrule=.5pt,arc=2pt}
+\usepackage{hyperref}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=BFblue,
+urlcolor=BFblue,pdftitle={BFZI 电磁热神经代理模型完整技术说明}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{3pt}
+\linespread{1.18}
+\newcommand{\zsea}{\mathbf Z_{\mathrm{sea}}}
+\newcommand{\zcu}{\mathbf Z_{\mathrm{cu}}}
+\newcommand{\ztot}{\mathbf Z_{\mathrm{EM}}}
+\newcommand{\zext}{\mathbf Z_{\mathrm{ext}}}
+\newcommand{\jj}{\mathrm j}
+\newcommand{\R}{\mathbb R}
+\newcommand{\C}{\mathbb C}
+\newcommand{\dd}{\mathrm d}
+\newcommand{\code}[1]{\texttt{#1}}

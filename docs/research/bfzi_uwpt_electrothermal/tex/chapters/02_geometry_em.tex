@@ -1,0 +1,101 @@
+\chapter{几何与电磁模型：从线圈到复阻抗}
+\label{ch:em}
+
+\section{为什么先讲几何}
+水下无线电能传输通过磁场把能量从发射线圈送到接收线圈。线圈的位置、绕行方向和尺寸决定磁场分布，也影响海水感应电流、热源和自感互感。为了让不同部分计算的是同一个装置，本项目直接复用原 BFZI V150 的连续圆形—圆角方形螺旋线圈。
+
+第 $p$ 只线圈的主要参数记为
+\[
+g_p=(N_p,A_{0,p},\rho_{0,p},s_p,\alpha_p,\sigma_{w,p}).
+\]
+分别表示匝数、外形尺寸、圆角尺度、匝间距、收缩分配参数和绕制方向。直观地说，$A_0$ 控制线圈有多大，$\rho_0,\alpha$ 控制它有多圆，$N,s$ 决定连续导线向内盘绕的方式。圆形是 $\rho_0=A_0,\alpha=1$ 的自然极限，圆角方形与圆形无需切换到两个不同的数学模型。
+
+原 BFZI 把曲线分成直线段和圆角段，并利用相邻匝之间的几何规律加速积分。端口引线和回流路径也属于电磁源，计算时不能只留下没有引线的同心圆环。
+
+\section{双线圈的三维位置和独立封装}
+在局部坐标中构建线圈后，用
+\[
+\mathbf r_{\rm world}=R_p\mathbf r_{\rm local}+\mathbf c_p,\quad
+R_p^\mathsf T R_p=I
+\]
+放置到三维世界。平移 $\mathbf c_p$ 表示两线圈间距和错位，旋转矩阵 $R_p$ 表示倾斜、偏航与滚转。每只线圈都有独立的位置与旋转，两只封装也具有独立尺寸和真实旋转边界。
+
+例如，接收线圈向右平移几毫米，又倾斜二十度时，磁耦合与封装表面的海水分布都会改变。最新物理模型采用真实旋转长方体（OBB）作为封装边界，海水只占据两只封装以外的有效体积。温度模型和电磁模型使用同一真实空间区域。
+
+\section{双端口复阻抗到底是什么}
+把系统看作两个交流电端口。对于峰值相量和时间因子 $e^{\jj\omega t}$，有
+\begin{equation}
+\label{eq:port}
+\begin{bmatrix}V_1\\V_2\end{bmatrix}
+=\underbrace{\begin{bmatrix}Z_{11}&Z_{12}\\Z_{12}&Z_{22}\end{bmatrix}}_{\ztot}
+\begin{bmatrix}I_1\\I_2\end{bmatrix}.
+\end{equation}
+$Z_{11}$ 和 $Z_{22}$ 描述各自端口的响应，$Z_{12}$ 表示一个端口的电流对另一个端口电压的影响。在线性互易和统一端口方向约定下，$Z_{12}=Z_{21}$。因此三个独立复数就足够描述完整的 $2\times2$ 阻抗矩阵，也就是六个实数。
+
+每个复阻抗包含实部和虚部。实部与电流造成的耗散相关，虚部与磁场的储能和相位延迟相关。在给定频率时，阻抗的虚部可以用于定义有效电感：
+\[
+L_{11}^{\rm eff}=\frac{\operatorname{Im}Z_{11}}{\omega},
+\quad L_{22}^{\rm eff}=\frac{\operatorname{Im}Z_{22}}{\omega},
+\quad M_{12}^{\rm eff}=\frac{\operatorname{Im}Z_{12}}{\omega}.
+\]
+\begin{plainbox}
+\textbf{例子。} 若海水的温度升高，海水电导率发生变化，感应电流的位置、幅值和相位都可能改变。感应电流产生的次级磁场进而改变 $Z_{11},Z_{12},Z_{22}$。热反馈也可能改变有效自感与互感，而不仅是某个电阻。
+\end{plainbox}
+
+\section{完整阻抗的三部分}
+我们采用的物理分账是
+\begin{equation}
+\label{eq:Ztotal}
+\ztot(T)=
+\underbrace{\zsea[\sigma_{\rm sea}(T_{\rm sea})]}_{\text{海水感应反作用}}
++\underbrace{\jj\omega\mathbf L_{\rm air}}_{\text{直接磁耦合}}
++\underbrace{\operatorname{diag}\!\bigl(
+Z_{{\rm cu},1}(T_{{\rm cu},1}),Z_{{\rm cu},2}(T_{{\rm cu},2})\bigr)}_{\text{两铜线圈内部复阻抗}}.
+\end{equation}
+其中 $\mathbf L_{\rm air}$ 由 BFZI 的 Neumann/GMD 积分确定。几何与磁性环境固定时，它保持不变；铜线内部复阻抗使用温度相关的圆导线 Bessel 集肤模型；海水项要随着空间电导率重新计算。
+
+\section{电磁场怎样与空间温度耦合}
+设第 $i$ 个海水有限体积的温度为 $T_i$，海水的温度相关电导率可写成
+\[
+\sigma_i(T_i)=\sigma_{0,i}
+[1+\alpha_{\sigma,i}(T_i-T_0)].
+\]
+在磁准静态近似下，
+\[
+\mathbf J_{\rm sea}
+=\sigma_{\rm sea}(-\jj\omega\mathbf A-\nabla\phi),
+\qquad
+\nabla\cdot\mathbf J_{\rm sea}=0.
+\]
+绝缘封装表面没有穿透界面的海水导电电流。BFZI 在空间离散之后，使用电导率加权的有限体积电势投影和原始 Green/resolvent 核，求出海水的响应场与完整海水复阻抗。
+
+这里的“有限体积”可以想象为将海水划分成许多小块，每块具有中心坐标、体积、邻居和界面面积。热模型同样基于这些物理体积来记录温度与热容量，保证温度反馈给电磁模型时具有实际空间位置。
+
+\section{为什么要高阶近源积分}
+靠近线圈时，源磁场可能在一个海水单元内部迅速变化。用单元中心值近似整块海水的场，容易漏掉场的空间变化。原 BFZI 的复阻抗还包含近源质量修正；相关平均源场与二次矩需要保持一致。
+
+最新 S5 物理参考将完整湿 FV 的源积分改成五阶 Gauss 张量积。每个完整单元采用 $5^3=125$ 个求积点，建立更准确的源场平均及局部矩。经过这一改进，冻结独立样本在 1.875\,s 热步下的空间阻抗收敛都达到原 2\% 门槛。
+
+高阶积分是\textbf{物理参考生成时的空间精度措施}。在线代理通过保存的冷态场和温度灵敏度加速，不在每一个时间步重新做高阶 Green 求解。
+
+\section{如何计算空间电流与焦耳热}
+对发射端和接收端分别注入单位复电流，得到两个单位端口海水场 $\mathbf J_1(\mathbf x)$、$\mathbf J_2(\mathbf x)$。实际电路给出两个电流 $I_1(t),I_2(t)$ 后，
+\[
+\mathbf J(\mathbf x,t)
+=I_1(t)\mathbf J_1(\mathbf x,T(t))
++I_2(t)\mathbf J_2(\mathbf x,T(t)).
+\]
+海水局部焦耳热密度为
+\[
+q_{\rm sea}(\mathbf x,t)=
+\frac{\left|\mathbf J(\mathbf x,t)\right|^2}
+{2\sigma_{\rm sea}(\mathbf x,T(t))}.
+\]
+先叠加两个\emph{复向量场}、再计算模平方，才能保留两端口之间的相位交叉项。
+
+实际离散中，BFZI 还提供与端口复阻抗相对应的弱形式空间热源。物理直接法采用同源积分读出；在线代理使用非负空间热源形状，并依据端口海水功率归一化，使热模型收到的海水总功率与电路一致。
+
+\section{这一模块输出什么}
+冷态电磁计算保存：完整复阻抗、空气自感互感、铜内部模型参数、两个单位端口的三维海水场、空间弱形式热源、海水体积与坐标。这些数据作为后续热 ROM、神经网络与空间查询共同使用的冷态物理参考。
+
+代码入口可从 \code{sdfmpneo\_bfzi/bfzi\_v148\_adapter.py}、\code{source.py}、\code{sea\_obb.py}、\code{near\_source.py}、\code{sea\_layer.py} 开始。V150 继续复用原 V148 Green/resolvent 电磁计算核心，因此适配器名称保留了 v148。

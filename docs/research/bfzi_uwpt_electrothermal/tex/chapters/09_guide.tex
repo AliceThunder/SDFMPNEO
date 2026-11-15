@@ -1,0 +1,132 @@
+\chapter{入门实践、术语解释与源码导航}
+\label{ch:guide}
+
+\section{第一次接触项目时先运行哪条路径}
+建议先选择一个仓库已经保存冷态物理锚、神经权重、热 ROM 和海水温度切线的几何，例如 P07。这样可以只通过已存文件完成在线推理，在观察到正确的输入输出之后，再研究 BFZI 的离线物理计算、网络训练和新几何部署。
+
+如果只是想了解某个电压通断程序下的复阻抗和温度曲线，首先使用在线推理；如果要为从未出现过的几何建立参考数据，使用物理直接法；如果要提升跨几何泛化，使用训练入口和独立整几何测试。
+
+\section{一个完整的推理实例}
+以下命令使用仓库历史保存的 P07 冷态锚、40 维分数阶网络、32 阶热 ROM 和八模态物理切线。它定义一个 150\,V、带通电和冷却阶段、15\,s 采样的 600\,s 时程：
+
+\begin{lstlisting}[language=bash,caption={不执行在线 BFZI Green 电磁求解的 P07 推理}]
+python -m examples.bfzi_geom_heat \
+  --standalone --voltage 150 \
+  --heat 210 --cool 210 --step 15 --horizon 600 \
+  --anchor runs/bfzi_pose_p07_anchor.npz \
+  --model runs/bfzi_geom_diverse.pt \
+  --rom-rank 32 \
+  --rom-file runs/bfzi_pose_p07_rom.npz \
+  --sea-tangent runs/bfzi_pose_p07_tangent_anchor_sea_tangent.npz \
+  --tangent-weight 1 \
+  --out runs/bfzi_pose_p07_user.json
+\end{lstlisting}
+
+阅读参数时，先只看三件事：\code{--anchor} 是已经生成的几何冷态数据；\code{--model} 是神经网络；\code{--rom-file} 和 \code{--sea-tangent} 分别对应热降阶与电磁物理校正。电压、通电/冷却时间和时间步告诉模型要计算哪条新的运行历史。
+
+计算输出包含完整的 $Z/I/T/J/q$ 时间演化。实际仓库中还支持使用 \code{--query} 指定空间采样点，在某个时刻查询海水与两只封装的温度。
+
+\section{想研究一种新的线圈形状怎么办}
+首先确定原 BFZI 的连续圆角参数、匝数和两个线圈的相对位置，确认两只封装不发生非法穿透。使用 \code{examples/bfzi\_param.py} 接口构建该几何的冷态场和物理参数；随后根据目的选择：
+\begin{itemize}
+\item 高精度方案：为该几何构建自己的三维热 ROM 和八模态单侧温度切线；
+\item 降低准备成本：从 G1/G2 等供体使用共享 ROM，仅对新几何做冷态计算；
+\item 产生训练教师：使用原 BFZI 完整动态直接法，在不同电压、热参数和启停程序下生成时程。
+\end{itemize}
+
+新几何部署需要的离线工作应单独计时。当前共享 ROM 降本实验报告的是供体库已经准备完毕之后每个新几何的计算成本，而不是第一次为整个系统准备所有物理数据的成本。
+
+\section{从源码读懂网络的一条时间步}
+读网络代码时，可以按照如下顺序查找：
+\begin{enumerate}
+\item \code{geom\_memory.py} 中的 \code{geom\_feat}：原 BFZI 16 维、冷态阻抗 6 维、位姿封装 18 维如何组成 40 维条件；
+\item 同文件的 \code{heat\_drive}：如何由电路电流计算三个实际发热输入；
+\item \code{GeomFrac.step}：三路 SOE 状态怎样使用 $\Delta t$ 更新，49 维输入怎样进入 MLP，如何得到 14 维输出；
+\item \code{geom\_heat.py} 的 \code{rollout}：网络输出怎样进入真实三维温度预测和物理切线修正；
+\item \code{geom\_rom.py} 的 \code{advance}：32 维温度系数怎样被隐式推进；
+\item \code{geom\_heat.py} 的 \code{source} 与 \code{circuit}：阻抗、电流、海水热源和铜热源怎样使用同一个端口功率定义。
+\end{enumerate}
+这样阅读可以先理解主数据流，再逐步深入具体数值计算。
+
+\section{从源码读懂训练的一轮迭代}
+训练入口为 \code{examples/bfzi\_geom\_frac.py}。首先阅读 \code{data\_all} 与 \code{tensors}，弄清楚训练、验证、测试怎样划分，标签怎样组成。接着阅读 \code{physical\_loss}、\code{temp\_loss} 与 \code{geom\_train.py} 中的 \code{loss}，对应本书第~\ref{ch:training} 章的公式。
+
+最后看主循环的 Adam、\code{backward}、梯度裁剪、验证损失选择和保存权重。自主闭环训练主要在 \code{geom\_train.py} 的 \code{closed} 函数中，里面会根据网络上一步的预测阻抗，重新计算电流、热源与下一步输入。
+
+分数阶残差 C 阶段的入口为 \code{examples/bfzi\_frac\_rom\_eval.py}，核心模型则在 \code{frac\_memory.py} 和 \code{frac\_rom.py}。这条路线先计算物理阻抗预测，然后用六维残差网络进行校正。
+
+\section{初学者常遇到的概念}
+\begin{longtable}{p{3.7cm}p{10.2cm}}
+\caption{术语对照表：从物理含义到代码概念}\\
+\toprule
+术语 & 通俗解释\\
+\midrule
+\endfirsthead
+\toprule 术语 & 通俗解释\\ \midrule
+\endhead
+复阻抗 $Z$ & 交流端口中电压相量与电流相量的关系，包含实部和虚部。\\
+双端口 & 两只线圈分别作为一个电端口，互相影响的关系由 $2\times2$ 阻抗矩阵表示。\\
+相量 & 交流正弦信号在固定频率下的复数表示，复数幅值和角度分别记录振幅与相位。\\
+冷态 & 系统刚开始时，各材料处于设定初始温度的状态。\\
+冷态物理锚 & 针对某个几何预先算好并保存的冷态阻抗、单位端口场及相关物理矩阵。\\
+温变阻抗增量 $\Delta Z$ & 当前阻抗减去该工况的冷态阻抗，用于单独观察热反馈。\\
+Green/resolvent & 原 BFZI 计算海水电磁反作用的积分算子及方程求解结构。\\
+有限体积（FV） & 把三维物理区域分成有体积和共同面的许多小区域，在每块上记录温度、材料与热源。\\
+湿 FV & 在封装排水后仍包含有效海水体积的 FV 单元。\\
+OBB & 可以随线圈旋转的长方体封装边界。\\
+弱形式热源 & 从电磁端口与空间积分的一致双线性表达中得到的分布式焦耳热。\\
+热层 & 封装外侧很薄的海水区域，用较细节点记录快速空间热梯度。\\
+温度模式 & 一种有代表性的空间温度分布。多个模式相加可表示复杂温度场。\\
+热 ROM & 用少量温度模式系数代替所有热节点，同时保留降阶传热动力学。\\
+POD & 从多个空间响应中提取最有代表性的模式的一种降维方法。\\
+Galerkin 投影 & 把原物理方程投影到选定的小空间，使低维状态服从相应物理关系。\\
+SOE & 指数函数之和；以多个快慢不同的衰减状态近似长期记忆。\\
+分数阶记忆 & 用幂律特性的历史权重描述长期与多时间尺度影响，在本项目中由 SOE 近似。\\
+MLP & 多层感知机，由线性层和非线性激活函数组成的神经网络。\\
+SiLU & 当前 MLP 使用的平滑激活函数。\\
+温度灵敏度 / 切线 & 当前温度沿某种空间模式变化一点时，海水复阻抗大约变化多少。\\
+端口功率守恒 & 从双端口电路计算的耗散功率与对应各项损耗之和一致。\\
+热能量预算 & 输入热量等于储存热量的增加和传向外部的热量。\\
+教师时程 & 用完整 BFZI 物理直接法算出的参考运行历史，用来训练和评价代理。\\
+整几何留出 & 某种完整线圈/位姿/封装几何不参与训练，只在最后检验泛化时使用。\\
+自主闭环 & 网络每一步都使用自己上一时刻的预测来计算电流与热源，而非依赖未来参考真值。\\
+离线成本 & 首次建立几何冷态数据、ROM、切线和网络等准备工作需要的时间。\\
+在线推理 & 模型准备好后，针对新的电压/时间程序生成整条结果所需的计算。\\
+\bottomrule
+\end{longtable}
+
+\section{主要源码与本文对应章节}
+\begin{table}[htbp]\centering\small
+\caption{阅读代码的推荐入口}
+\begin{tabularx}{\textwidth}{p{4.7cm}X}
+\toprule
+源码位置 & 对应内容\\
+\midrule
+\code{bfzi\_v148\_adapter.py} & 原 BFZI V150 电磁后端的温变适配，第~\ref{ch:em} 章。\\
+\code{sea\_obb.py}, \code{sea\_layer.py} & 真实旋转封装海水区域、近表面热层，第~\ref{ch:em}、\ref{ch:heat} 章。\\
+\code{geom\_memory.py} & 40 维条件、三路热源和 SOE 神经网络，第~\ref{ch:neural} 章。\\
+\code{frac\_memory.py}, \code{frac\_rom.py} & C 阶段六维阻抗残差网络，第~\ref{ch:neural}、\ref{ch:training} 章。\\
+\code{geom\_rom.py}, \code{heat\_rom.py} & 五分区 32 阶温度降阶，第~\ref{ch:heat} 章。\\
+\code{geom\_tangent.py} & 八模态海水阻抗温度切线，第~\ref{ch:tangent} 章。\\
+\code{geom\_shared\_rom.py} & 跨几何共享热 ROM 与温度灵敏度，第~\ref{ch:tangent} 章。\\
+\code{geom\_heat.py} & 电路、热源、三维温度、J/q 和完整在线闭环，第~\ref{ch:coupling} 章。\\
+\code{examples/bfzi\_geom\_frac.py} & 几何条件 SOE 训练、损失、早停、保存，第~\ref{ch:training} 章。\\
+\code{examples/bfzi\_geom\_heat.py} & 三维代理推理、物理校正和独立对比，第~\ref{ch:coupling} 章。\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{文献与权威项目记录从哪里看}
+本书是一套基于当前 SDFMPNEO 仓库代码的\textbf{教学说明与实现导航}。具体算法版本、数值精度及最新验收决议，继续以仓库中的如下文件为准：
+\begin{itemize}
+\item \code{UMFC\_BFZI\_DYNAMIC\_ETNS\_V2\_1\_EXECUTION\_PLAN.md}：电磁热双向反馈最初的完整 V2.1 系统方案；
+\item \code{BFZI\_MAINLINE\_CLOSURE\_V1.md}：A--E 阶段及原验收关口；
+\item \code{PROJECT\_PROGRESS.md}：最新代码、实验和物理教师验收进度；
+\item \code{evidence/c\_frac\_rom\_causal.md}：C 阶段独立历史残差网络；
+\item \code{evidence/d\_shared\_geometry\_rom.md}：跨几何共享与离线成本实验；
+\item \code{evidence/physical\_unseen12\_s5.md}：最新 S5 五阶源积分独立物理验收；
+\item \code{runs/bfzi\_physical\_unseen12\_s5.json}：S5 的逐样本数值结果。
+\end{itemize}
+
+\section{读完后如何继续研究}
+完成前三章应能解释为什么海水温度影响复阻抗，为什么需要空间温度，以及热 ROM 为什么保留物理传热。读完神经两章应能手绘 40 维输入、三路 45 状态 SOE、两层 128 宽 MLP、14 维输出，并准确说出各项损失的物理意义。读完最后三章应能沿着一次时间步追踪从电压到新温度的全部计算路径，并能够区分模型已完成的模块实验和仍待最终关闭的广域验收。

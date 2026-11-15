@@ -1,0 +1,223 @@
+\chapter{神经网络训练：数据、损失函数和完整流程}
+\label{ch:training}
+
+\section{训练的目的是什么}
+训练就是让网络学会一件事：给定线圈几何和过去的电路发热，它输出的动态海水复阻抗和温度摘要应接近高精度物理直接法，而且把自己的输出重新带回电路后，能够持续预测之后的时刻。
+
+我们使用\textbf{原 BFZI V150 完整电磁热时程}作为教师。一条教师时程不是一张图片或一个静态参数表，而是同一套几何在某条电压、负载和启停程序下，从 $t=0$ 到 $t=600$\,s 的连续计算结果。
+
+\begin{figure}[htbp]
+\centering\resizebox{\textwidth}{!}{\input{figures/training}}
+\caption{从 BFZI 物理教师、数据隔离、监督训练到自主闭环训练的流程。}
+\label{fig:training}
+\end{figure}
+
+\section{一条样本具体包含什么}
+假设一条数据在 $t_0,t_1,\dots,t_{N-1}$ 上采样。文件记录：
+\begin{itemize}
+\item 几何：双线圈尺寸、形状、相对姿态、封装尺寸、物理常量；
+\item 输入历史：每个时刻的电压和外部电路参数；
+\item 电磁教师：冷态 $\mathbf Z_0$、每个时刻的完整复阻抗和实际端口电流；
+\item 热教师：海水、两封装、两铜的温度场，以及它们的平均、最高等摘要；
+\item 可用于物理组装的数据：原 BFZI 铜阻抗、铜温度导数、空气电感、海水阻抗变化。
+\end{itemize}
+
+在训练 \code{GeomFrac} 时，将标签整理成 $14$ 个实数：
+\[
+\mathbf y_n^{*}=
+[\Delta\mathbf z_{\rm sea,n}^{*},
+ \mathbf t_{\rm sea,n}^{*},
+ \mathbf t_{\rm pkg,n}^{*},
+ \mathbf t_{\rm cu,n}^{*}]
+\in\R^{14}.
+\]
+前六项是海水动态复阻抗增量，后八项是第~\ref{sec:output14} 节定义的温度摘要。星号 $*$ 表示 BFZI 参考值，不表示复数共轭。
+
+训练中使用的热源输入也从真实参考端口电流、复阻抗和铜温度计算。这样训练起点的三路输入有准确物理定义。
+
+\section{必须按完整几何和完整历史划分数据}
+\label{sec:split}
+神经网络容易记住某条时程中相邻的采样点。如果将同一条 600\,s 时程的前半段放在训练集、后半段放在测试集，测试并没有真正检验它能否处理新运行程序。对于跨几何问题，如果新几何的动态数据出现在训练中，测试结果同样难以说明跨几何能力。
+
+因此评估采取两层隔离：
+\begin{enumerate}
+\item \textbf{整条时程隔离}：一条电压/启停程序的全部时刻只能属于训练、验证或测试中的一个集合；
+\item \textbf{整种几何隔离}：用于测试外推的几何，例如历史 P03/P07，完整动态真值不参与训练、早停或超参数选择。
+\end{enumerate}
+训练几何内还可以保留未见启停程序，测试网络对新运行历史的泛化。
+
+从实际数据生成看，M1/M2/M4 是早期几何，随后加入 P01/P02/P04/P05/P06 等不同圆角、姿态和封装配置。P03/P07 作为完整新几何留出，检查网络是否能迁移到训练中从未见过的空间布置。
+
+\section{输入输出为什么必须先归一化}
+复阻抗变化可能以很小的欧姆值计量，铜温升可能以几十开尔文计量，几何尺寸又是毫米。如果直接把所有数字一起训练，大量级输出容易主导平方误差，较小但重要的阻抗增量可能被忽略。
+
+令每类输出的正尺度为 $s_j$，定义
+\[
+\widetilde y_{n,j}=y_{n,j}/s_j,\qquad
+\widetilde u_{n,k}=u_{n,k}/r_k.
+\]
+实际实现通过训练集的输出标准差、功率最大值及最小稳定尺度构造这些尺度。测试集只读取训练阶段保存的尺度，不能重新用测试值估计归一化系数。
+
+冷态阻抗已单独以 $\mathbf z_0$ 输入。网络主要学习增量 $\Delta\mathbf z$，能够避免较大的冷态电抗掩盖真正需要拟合的温变变化。
+
+\section{最基础的监督损失}
+记网络输出为 $\widehat{\widetilde{\mathbf y}}_n$，参考标签为 $\widetilde{\mathbf y}_n^*$。第一项是所有 14 个量的均方误差：
+\begin{equation}
+\mathcal L_{\rm all}
+=\frac1{14N}\sum_n\sum_{j=1}^{14}
+(\widehat{\widetilde y}_{n,j}-\widetilde y_{n,j}^{*})^2.
+\end{equation}
+由于我们最重视动态复阻抗，再对前六维单独增加权重：
+\[
+\mathcal L_{Z}
+=\frac1{6N}\sum_n\sum_{j=1}^{6}
+(\widehat{\widetilde y}_{n,j}-\widetilde y_{n,j}^{*})^2.
+\]
+当前相关实验中的基础损失使用 $\mathcal L_{\rm all}+0.45\mathcal L_Z$。
+
+这并不意味着其它温度不重要；后面还对封装和海水分别加权，避免只提高阻抗而忽略热点。
+
+\section{铜温度和总阻抗的物理一致性损失}
+\label{sec:physloss}
+这是项目训练设计中一个非常重要的细节。
+
+网络预测的是海水阻抗变化；真实完整阻抗还包括铜阻抗随铜温度变化的部分。假设网络对海水阻抗和铜温度都有误差，不能只把它们当作两个无关输出。因为铜温度误差会通过铜阻抗公式，转变成完整端口阻抗误差。
+
+对两个铜端口，预先从原 BFZI 铜趋肤公式计算局部导数
+\[
+d_p=\left.\frac{\partial Z_{{\rm cu},p}}{\partial T_p}\right|_{T_p^*}.
+\]
+定义预测误差 $\mathbf e_{\rm sea}=\Delta\widehat{\mathbf z}_{\rm sea}-\Delta\mathbf z_{\rm sea}^*$，
+$e_{T,p}=\widehat T_{{\rm cu},p}-T_{{\rm cu},p}^*$。则完整阻抗的近似误差为
+\begin{equation}
+\label{eq:phys_error}
+\mathbf E_{\rm full}\approx
+\mathbf E_{\rm sea}
++\operatorname{diag}(d_1e_{T,1},d_2e_{T,2}).
+\end{equation}
+这里 $\mathbf E_{\rm sea}$ 是对称的 $2\times2$ 复矩阵，式~\eqref{eq:phys_error} 再按六个实数分量拆开、归一化并平方求平均，得到 $\mathcal L_{\rm phys}$。
+
+这一项使网络训练时就知道：如果铜温度预测高了，可能造成完整 $Z_{11}$ 或 $Z_{22}$ 的实部、虚部误差。训练中的局部铜阻抗导数只是为了便于反向传播；\textbf{正式在线推理仍使用原 BFZI 的完整 Bessel 铜趋肤公式}。
+
+\section{为什么还对海水和封装热点单独加权}
+六个海水阻抗分量和两只铜温度预测好，并不自动保证每只封装的热点准确。封装导热与界面热阻引入明显的时间滞后，局部最大温度可能与平均温度相差较大。
+
+因此，增加两个温度损失：
+\[
+\mathcal L_{\rm pkg}
+=\operatorname{MSE}(\widehat{\mathbf y}_{8:12},
+\mathbf y_{8:12}^{*}),\qquad
+\mathcal L_{\rm sea}
+=\operatorname{MSE}(\widehat{\mathbf y}_{6:8},
+\mathbf y_{6:8}^{*}).
+\]
+这里切片采用 Python 从零开始的索引方式：$8:12$ 是两封装平均与热点四个分量，$6:8$ 是海水平均与热点两个分量。
+
+在已有跨几何实验中，一组典型损失权重为
+\begin{equation}
+\label{eq:loss}
+\mathcal L_{\rm sup}=
+\mathcal L_{\rm all}
++0.45\mathcal L_Z
++0.65\mathcal L_{\rm phys}
++0.90\mathcal L_{\rm pkg}
++0.15\mathcal L_{\rm sea}.
+\end{equation}
+这些是对应实验的实际配置，代码参数允许修改。训练记录会保存各权重和最优 epoch。
+
+\section{多个几何怎样公平参与训练}
+如果训练集中某种线圈有 30 条时程，另一种线圈只有 5 条，把所有数据等权放在一起，网络可能更关注样本多的几何。已有实现提供 \code{--balanced} 选项，让每种训练几何在综合损失中占相同总权重。
+
+设几何 $g$ 有 $n_g$ 条时程，可以令每条时程权重与 $1/n_g$ 成正比，再把所有权重归一化。这样不会改变每条时程内部的时间监督方式，只是避免训练几何样本数差异决定最终模型偏好。
+
+\section{从参考输入到网络自己闭环：为什么要分两步}
+\label{sec:closedtrain}
+普通监督训练使用物理教师生成的功率输入 $\mathbf u^*(t)$，在每一步预测目标。这有助于先学习正确的局部输入输出关系。但是正式部署时，电路电流来自网络自己上一时刻的阻抗预测，因此误差可能逐渐影响之后的功率输入。
+
+代码中提供\textbf{自主闭环训练}：网络先输出阻抗与铜温度，再调用可微的电路方程，产生自己的电流和海水/铜功率，并将其作为下一步网络输入。用系数 $\gamma$ 在教师热源与自主预测热源之间平滑过渡：
+\[
+\mathbf u_n^{\rm train}
+=(1-\gamma)\mathbf u_n^*
++\gamma\widehat{\mathbf u}_n^{\rm physics},
+\qquad 0\le\gamma\le1.
+\]
+训练初期 $\gamma=0$，网络只使用教师输入；经过预热后逐步增长到 $1$，网络完全使用自己的上一时间步输出。这种过程让模型学习如何从小误差中继续稳定推理。
+
+完整训练损失可扩展为
+\[
+\mathcal L=
+\mathcal L_{\rm sup}
++\lambda_{\rm cl}\mathcal L_{\rm closed},
+\]
+其中 $\mathcal L_{\rm closed}$ 对网络自主推演的整条历史应用相同的几何、阻抗和温度监督。只有显式开启 \code{--closed-loss} 才加入该项。代码支持预热和渐进权重，例如前 50 轮只做监督训练，随后 150 轮逐步提高闭环输入比例。
+
+\section{训练的实际代码步骤}
+当前 \code{examples/bfzi\_geom\_frac.py} 的主要训练过程可以用以下简化伪代码表示，变量名称与原脚本相近：
+\begin{lstlisting}[language=Python,caption={几何条件分数阶网络训练流程示意}]
+fit, val, test = split_by_history_and_geometry(data)
+sx, sy = get_scales(fit)  # only training data
+net = GeomFrac(ng=40, hidden=128, nrate=14)
+opt = Adam(net.parameters(), lr=0.003)
+
+for ep in range(epochs):
+    yhat = net(src_fit / sx, times, geo_fit)
+    loss = supervised_loss(yhat, y_fit / sy)
+    if use_closed and ep >= warmup:
+        free = causal_rollout(net, circuit, times)
+        loss += w_cl * supervised_loss(free, y_fit / sy)
+    opt.zero_grad()
+    loss.backward()
+    clip_grad_norm_(net.parameters(), 3.0)
+    opt.step()
+    record_if_best_on_validation()
+
+save(best_weights, sx, sy, geometry_schema, settings)
+evaluate_complete_heldout_histories()
+\end{lstlisting}
+
+训练使用 Adam 优化器、学习率及 epoch 上限可配置。相关历史实验使用 1600 或 1800 epoch 的设置，早停耐心轮数为 280；每轮保存验证损失更优时的网络参数，最终重新加载最优权重。训练输出的模型文件保存权重、归一化尺度、几何输入维数、训练几何清单及网络相关选项。
+
+\section{另一条 C 阶段残差网络怎样训练}
+C 阶段的 \code{FracNet} 训练过程更简单。对一条已知的 BFZI 完整时程，先使用 32 阶热 ROM 和物理温度切线给出六维阻抗变化预测 $\Delta\mathbf z_{\rm phys}$，再计算
+\[
+\mathbf r_Z^*=
+\Delta\mathbf z_{\rm BFZI}^{*}
+-\Delta\mathbf z_{\rm phys}.
+\]
+网络输入为归一化电压、其平方和每步电压变化，输出为 $\mathbf r_Z^*$ 的六个分量。典型 C 阶段使用 14 个 SOE 速率、96 宽度 MLP，分数阶与单指数模型分别训练，并用独立 H1 历史选择模型，H2 历史最终测试。
+
+在线阻抗等于物理温度切线预测再加上神经残差，热状态仍由物理 ROM 和电路联合推进。这条路线适合研究\textbf{物理已经解释大部分响应时，网络还应该学什么}。
+
+\section{怎样评价网络预测是否真的好}
+仅报告训练损失远远不够。最重要的验证是在\textbf{网络从未见过的完整几何和完整激励历史}上自主推理，比较从头到尾的阻抗与温度。
+
+动态阻抗采用
+\[
+e_Z=
+\frac{\left\|
+\widehat{\mathbf z}(t)-\mathbf z^*(t)
+\right\|_{2,\rm all\;times}}
+{\left\|\mathbf z^*(t)-\mathbf z^*(0)\right\|_{2,\rm all\;times}}.
+\]
+分母是原 BFZI 物理参考的\textbf{温变阻抗增量}，这样不会利用较大的冷态电抗把动态预测误差冲淡。
+
+温度通常报告整条时程内的\textbf{最大绝对误差}，分别给海水、两封装、两铜；空间场则报告三维 $T$、$\mathbf J$、$q$ 的误差。此外报告完整能量收支、冷态物理预计算时间和在线 600\,s 推理时间。
+
+\section{一个典型的训练与独立几何测试命令}
+下面是历史 P01/P02/P04/P05/P06 训练、保留 P03 独立几何的示意，路径对应仓库已存在的数据命名：
+\begin{lstlisting}[language=bash,caption={40 维几何网络训练入口}]
+python -m examples.bfzi_geom_frac \
+ --train-files runs/m4_frac_teacher.npz \
+ runs/m1_frac_teacher.npz runs/m2_frac_teacher.npz \
+ runs/bfzi_pose_p01_teacher.npz \
+ runs/bfzi_pose_p02_teacher.npz \
+ --test-geo runs/bfzi_pose_p03_holdout.npz \
+ --port-sea --with-pose \
+ --phys-loss .65 --pkg-loss .9 --sea-loss .15 \
+ --model runs/bfzi_geom_pose.pt \
+ --out runs/bfzi_geom_pose_metrics.json
+\end{lstlisting}
+实际运行应核对所用权重、训练源数据和是否启用闭环训练。最新 S5 物理教师投入代理训练时，应重新生成对应真实训练时程、使用新的训练/验证/测试划分，并保留冻结样本隔离。
+
+\section{训练要解决的核心问题}
+新几何外推精度主要依赖三个方面：几何与热参数训练覆盖面、网络是否在完整物理闭环中训练，以及动态海水阻抗的物理校正。增加隐藏层数并不能代替这些物理和数据条件。因此后续神经优化应优先利用 S5 可信教师更新训练数据，改善材料与姿态外推，并沿用本章已有的网络结构、损失和留出验证方法。

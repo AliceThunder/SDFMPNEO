@@ -1,0 +1,19 @@
+\begin{tikzpicture}[node distance=9mm and 10mm]
+\node[drive,text width=12.2cm] (inp) {用户输入：线圈形状、相对位置、两只封装、海水与热参数、补偿电路、随时间变化的电压};
+\node[phys,below=of inp,text width=12.2cm] (bf) {原 BFZI V150：冷态双端口阻抗、单位端口三维电流场、空间损耗、热算子};
+\node[nerve,below left=12mm and -5mm of bf,text width=5.4cm] (net) {40 维几何条件 + 3 路功率历史\\分数阶 SOE 神经预测};
+\node[phys,below right=12mm and -5mm of bf,text width=5.4cm] (tan) {8 个海水温度模态\\原 BFZI 物理切线校正};
+\node[drive,below=30mm of bf,text width=12.2cm] (circuit) {合成总复阻抗 $\mathbf Z(t)$ $\longrightarrow$ 双端口电路 $\longrightarrow$ 实际电流 $\mathbf I(t)$};
+\node[therm,below=of circuit,text width=12.2cm] (heat) {同源三维海水热源与铜损耗 $\longrightarrow$ 32 阶守恒热 ROM $\longrightarrow$ 三维温度 $T(\mathbf x,t)$};
+\node[phys,below=of heat,text width=12.2cm] (out) {逐时刻输出：复阻抗、功率和效率、铜/双封装/海水温度、三维 $\mathbf J$ 与 $q$};
+\draw[arr] (inp)--(bf);
+\draw[arr] (bf.south) -- ++(0,-.14) -| (net.north);
+\draw[arr] (bf.south) -- ++(0,-.14) -| (tan.north);
+\draw[arr] (net.south) |- (circuit.west);
+\draw[arr] (tan.south) |- (circuit.east);
+\draw[arr] (circuit)--(heat);
+\draw[arr] (heat)--(out);
+\draw[fb] (heat.west) -- ++(-1.0,0) |- (net.west);
+\draw[fb] (heat.east) -- ++(1.0,0) |- (tan.east);
+\node[font=\footnotesize,text=BFgreen,rotate=90] at ([xshift=-12mm]heat.west) {下一热步反馈};
+\end{tikzpicture}

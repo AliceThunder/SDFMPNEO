@@ -1,0 +1,12 @@
+\begin{tikzpicture}[node distance=12mm and 12mm]
+\node[therm,text width=4.4cm] (sea) {海水三维 FV\\含封装附近的八层热层};
+\node[therm,above left=of sea,text width=3.3cm] (p1) {发射端封装\\三维温度场};
+\node[therm,above right=of sea,text width=3.3cm] (p2) {接收端封装\\三维温度场};
+\node[drive,above=of p1,text width=3.3cm] (c1) {发射线圈铜\\铜损耗 $P_{\rm cu,1}$};
+\node[drive,above=of p2,text width=3.3cm] (c2) {接收线圈铜\\铜损耗 $P_{\rm cu,2}$};
+\draw[arr,<->] (c1)--node[right,font=\scriptsize] {绝缘传热} (p1);
+\draw[arr,<->] (c2)--node[left,font=\scriptsize] {绝缘传热} (p2);
+\draw[arr,<->] (p1)--(sea);
+\draw[arr,<->] (p2)--(sea);
+\node[font=\footnotesize,align=center,text=BFink,below=5mm of sea] {海水由 $q_{\rm sea}(\mathbf x,t)$ 直接加热，封装由铜和海水传热\\降阶后保留这五个分区的储热收支};
+\end{tikzpicture}

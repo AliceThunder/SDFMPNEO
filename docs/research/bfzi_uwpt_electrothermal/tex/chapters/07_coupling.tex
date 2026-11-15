@@ -1,0 +1,146 @@
+\chapter{完整在线推理：电路、电磁、热如何逐步闭合}
+\label{ch:coupling}
+
+\section{从一条电压程序开始}
+假设系统已经准备好一只新几何的冷态物理锚、32 阶热 ROM、经过训练的分数阶网络，以及可选的八模态温度切线。用户输入时间序列
+\[
+(t_0,V_0),(t_1,V_1),\dots,(t_N,V_N)
+\]
+以及外部电路的源阻抗、补偿元件和负载阻抗。时刻不必等间隔，SOE 状态和热方程都会使用实际时间差 $\Delta t_n$。
+
+在线程序要解决的是：给定上一时刻已经知道的温度和记忆，如何计算本时刻的复阻抗、电流、发热和新温度，并持续重复。
+
+\begin{figure}[htbp]
+\centering\resizebox{\textwidth}{!}{\input{figures/online}}
+\caption{离线准备与在线快速推理的区别。左侧的数据完成一次构建后可以在多条运行历史中复用。}
+\label{fig:online}
+\end{figure}
+
+\section{第一步：由电路确定两端口实际电流}
+对于给定的外部阻抗矩阵 $\zext$，完整交流电路方程写成
+\begin{equation}
+\label{eq:circuit}
+(\ztot(t)+\zext(t))\mathbf I(t)=
+\begin{bmatrix}V_{\rm src}(t)\\0\end{bmatrix}.
+\end{equation}
+$\zext$ 可以包括选定补偿拓扑在当前工作频率下的容性阻抗、源电阻和接收端负载。当前已实现的基线使用明确的串联补偿与负载电路。解此二元复线性方程，得到实际发射和接收电流。
+
+电路求解要在每个热时间步重复：铜温度和海水温度变化使 $\ztot(t)$ 改变，因此即使电源电压保持不变，电流也会随时间漂移。
+
+\section{第二步：从电流计算总热源}
+给定完整海水复阻抗 $\zsea(t)$，端口海水功率为
+\begin{equation}
+\label{eq:psea}
+P_{\rm sea}(t)=\frac12
+\operatorname{Re}[\mathbf I(t)^\dagger\zsea(t)\mathbf I(t)].
+\end{equation}
+给定两只铜的温变内部复阻抗，铜损耗为
+\[
+P_{{\rm cu},p}(t)=\frac12
+\operatorname{Re}Z_{{\rm cu},p}(T_p(t))\,|I_p(t)|^2.
+\]
+这些功率决定当前热方程的输入。外部引线或电源电阻中的损耗按其物理位置单独分账，避免把封装以外发出的热量错误加入封装内部温升。
+
+\section{第三步：把海水总功率分配到三维空间}
+为什么只有端口功率还不够？因为同样的 10\,W 海水损耗，若主要集中在线圈附近，会与均匀分布在远场海水中产生非常不同的封装温度。
+
+在线代理保留原 BFZI 冷态每个海水有限体积的双端口弱形式热源矩阵 $\mathbf W_{0,i}$。结合当前两端口电流和局部温度相关电导率，先构造非负的空间热源形状：
+\[
+r_i(t)=\max\!\left(
+0,\frac12\operatorname{Re}
+[\mathbf I^\dagger\mathbf W_{0,i}\mathbf I]\,
+\frac{\sigma_i(T_i)}{\sigma_i(T_0)}
+\right).
+\]
+随后按照\textbf{同一时刻的真实端口海水总功率}归一化：
+\begin{equation}
+\label{eq:qnorm}
+q_i(t)=
+\frac{P_{\rm sea}(t)\,r_i(t)}
+{\sum_k V_k r_k(t)}.
+\end{equation}
+其中 $V_i$ 是第 $i$ 个海水单元的有效体积。由此直接得到
+\[
+\sum_iV_iq_i=P_{\rm sea}.
+\]
+这个等式意味着电路认为海水消耗的功率，和热模型真正注入海水的总功率相同。代码在功率为零的断电时刻会将海水热源设为零。
+
+这个过程还保留空间位置：不同 FV 单元的 $q_i$ 可以不同，并随电流相位和海水温度变化重新分配。
+
+\section{第四步：更新三维温度}
+将海水热源 $V_iq_i$、两只铜损耗放入热方程
+\[
+\mathbf C_T\dot{\boldsymbol\theta}
++\mathbf H_T\boldsymbol\theta=\mathbf Q(t).
+\]
+如果使用 32 阶 ROM，则在热模态空间求解式~\eqref{eq:romheat}，并重构原三维温度 $\boldsymbol\theta=\Phi\mathbf a$。
+
+由于当前热源由阻抗和电流决定，而阻抗又依赖温度，代码会对同一个热时间步进行若干次自洽迭代：
+\begin{enumerate}
+\item 用一个候选温度计算铜阻抗、总阻抗和端口电流；
+\item 根据新的端口电流计算海水及铜热源；
+\item 解隐式热方程得到新温度；
+\item 若本次与上次候选温度的差仍较大，重复上述步骤。
+\end{enumerate}
+完成后得到新温度、复阻抗、电流、空间热源和材料能量预算，供下一时间步继续使用。
+
+\section{第五步：用新温度修正海水动态阻抗}
+纯神经模式采用 SOE 历史生成的 $\Delta\zsea^{\rm NN}$。高精度模式额外使用预测出来的海水三维温度，计算八个热模式系数 $\beta_j$，再得到
+\[
+\Delta\zsea^{\rm phys}=\sum_{j=1}^8\beta_j\mathbf D_j.
+\]
+这里使用的是\textbf{当前热步预测的新温度}。因此实际实现先进行一个神经阻抗驱动的热预测，再按物理切线更新海水阻抗并完成正式热步。
+
+温度、阻抗与电流因此形成完整的双向循环：
+\[
+\mathbf T_n
+\longrightarrow\zsea,\zcu
+\longrightarrow\mathbf I
+\longrightarrow\mathbf Q
+\longrightarrow\mathbf T_{n+1}.
+\]
+在断电冷却期间，电流和新焦耳热源趋于零，热模型仍保留初始热量并继续将它传向封装、海水和环境。再次启动时，各部分的残余温度进入新的电磁与电路计算。
+
+\section{三维电流密度和温度如何查询}
+在线使用两个原 BFZI 冷态单位端口电流场 $\mathbf J_{1,0}(\mathbf x)$、$\mathbf J_{2,0}(\mathbf x)$，再按当前电流与局部电导率进行温变重构。最简快速近似写成
+\[
+\widehat{\mathbf J}(\mathbf x,t)\approx
+\frac{\sigma(\mathbf x,T)}{\sigma(\mathbf x,T_0)}
+\sum_{p=1}^2I_p(t)\mathbf J_{p,0}(\mathbf x).
+\]
+代码还提供可选的温度相关 FV 电势投影修正，用于改善变化电导率下的三维 $\mathbf J$，而无需重新执行 BFZI 的 Green 电磁求解。海水热源 $q$ 的正式输出使用上一节的同源非负弱形式和功率归一化。
+
+空间温度查询通过 32 阶热 ROM 恢复原温度节点，并按照原坐标、两只封装的实际旋转姿态和材料分区进行插值。查询封装内部时返回对应封装温度；查询海水位置时返回海水温度，并可以返回海水 $\mathbf J/q$。
+
+\section{推理时序的简化伪代码}
+\begin{lstlisting}[language=Python,caption={具有海水温度校正的自主时程推理}]
+h = init_soe_state()
+a = init_heat_state()
+z = cold_z
+
+for n in range(1, len(times)):
+    dt = times[n] - times[n - 1]
+    T = T0 + Phi @ a
+    u = heat_drive(volts[n], z, ext, T)
+    h, y = net.step(h, u, dt, geometry)
+    dz_nn = unpack_sea_delta(y[:6])
+
+    T_try = heat_step(T, dz_nn, volts[n], dt)
+    dz_ph = tangent_delta(T_try)
+    dz = (1 - weight) * dz_nn + weight * dz_ph
+
+    T, z, I, q, J, budget = heat_step(
+        T, dz, volts[n], dt, full_output=True
+    )
+    a = Phi.T @ (C * (T - T0))
+    save_state(times[n], T, z, I, q, J, budget)
+\end{lstlisting}
+伪代码省略了实际实现中已缓存的矩阵分解、输入尺度以及每步迭代收敛等细节，目的在于说明数据是如何沿着时间传播的。真正实现可从 \code{geom\_heat.py} 的 \code{rollout}、\code{advance} 与 \code{geom\_rom.py} 的 \code{GeomHeatROM} 阅读。
+
+\section{同源功率为什么是重要约束}
+对外部电路，输入功率应当能够分解到电源内阻、负载、海水、铜及其他已建模电学损耗。对热系统，海水和内部铜收到的热功率应等于各材料储热变化与向外传热之和。
+
+这两套账目使用同一个复端口电流与损耗定义，可以避免网络分别预测不同物理输出后出现互相矛盾。报告中不仅比较神经预测误差，还检查端口功率、空间热源体积分和热材料预算，确保快速计算具有物理上的可解释性。
+
+\section{最终能够输出的文件}
+一个完整时程保存每个采样时刻的复阻抗六实分量、双端口复电流、铜/海水损耗、三维温度、海水三维复电流密度和体积热源。温度与空间场可以在后续另选坐标查询，降低重复计算成本。典型入口是 \code{examples/bfzi\_geom\_heat.py}，可加载冷态锚、网络权重、32 阶热 ROM 和八模态切线独立进行推理。

@@ -1,0 +1,194 @@
+\chapter{神经网络详解：40 维几何条件与分数阶记忆}
+\label{ch:neural}
+
+\section{神经网络究竟承担哪部分工作}
+直接物理计算可以逐热步得到真实海水复阻抗，但每次都调用 BFZI 电磁求解器的代价较大。本项目训练神经网络来预测\textbf{海水复阻抗随历史和温度产生的变化}，并提供海水、封装、铜的温度摘要。完整三维温度由热 ROM 更新，高精度模式再使用八模态物理温度导数校正海水阻抗。
+
+神经网络需要知道三类信息：
+\begin{enumerate}
+\item 装置是什么形状，两个线圈怎样摆放，即静态几何条件；
+\item 此刻输入的电压和负载使海水及两只铜线圈产生多少热；
+\item 过去不同时刻的发热在当前还留下多少影响。
+\end{enumerate}
+普通只输入当前电压的 MLP 缺少第三类信息。因此我们把\textbf{指数和（SOE）时间记忆}放到 MLP 前面，让网络不用每次重新读取完整历史，就能够预测温变响应。
+
+\begin{figure}[htbp]
+\centering\resizebox{\textwidth}{!}{\input{figures/network}}
+\caption{当前几何条件分数阶网络 GeomFrac 的实际维数、记忆与输出。}
+\label{fig:network}
+\end{figure}
+
+\section{静态输入：40 维到底包含什么}
+\label{sec:geometry40}
+一个具体的几何在整条运行时程中保持不变，可以用 40 个实数描述：
+\begin{equation}
+\label{eq:geom40}
+\mathbf g_{40}=
+[\underbrace{\mathbf g_{\rm BFZI}}_{16},
+ \underbrace{\mathbf z_0}_{6},
+ \underbrace{\mathbf p}_{18}]
+\in\R^{40}.
+\end{equation}
+这里的 16 维是从原 BFZI 导出的线圈/电路/热学物理特征，包含尺寸、圆角、匝数、铜参数、空气电感和铜热容量等；六维 $\mathbf z_0$ 是冷态三个独立复阻抗元素的实、虚部；另外 18 维是显式几何姿态与封装描述。
+
+18 维姿态的划分非常明确：
+\[
+\mathbf p=
+[\underbrace{\mathbf d}_{3},
+ \underbrace{\operatorname{vec}(R_{\rm rel})}_{9},
+ \underbrace{\mathbf b_1,\mathbf b_2}_{6}].
+\]
+$\mathbf d$ 是相对平移；$R_{\rm rel}$ 是接收端相对发射端的 $3\times3$ 旋转矩阵；$\mathbf b_1,\mathbf b_2$ 各含三个封装半尺寸。用旋转矩阵九个元素作为输入，可以让网络直接接触线圈实际的相对姿态。
+
+\textbf{这 40 维是条件向量，不是网络的 40 个记忆状态。} 条件向量反映当前是哪种几何，记忆状态描述这台装置此前经历了什么。
+
+所有几何与阻抗值先按固定物理尺度归一化，避免毫米、欧姆和微亨等不同量级干扰优化。代码由 \code{geom\_memory.py} 的 \code{geom\_feat} 构建该向量。
+
+\section{动态输入：为什么只有三个通道}
+每个热时间步还输入三维物理加热量：
+\begin{equation}
+\label{eq:u3}
+\mathbf u_n=
+\begin{bmatrix}
+P_{{\rm sea},n}\\[1mm]
+P_{{\rm cu},1,n}/C_{{\rm cu},1}\\[1mm]
+P_{{\rm cu},2,n}/C_{{\rm cu},2}
+\end{bmatrix}
+\in\R^3.
+\end{equation}
+$P_{\rm sea}$ 是由当前海水复阻抗与两端口电流计算的海水损耗功率；$P_{{\rm cu},p}$ 是第 $p$ 只铜线圈的损耗；$C_{{\rm cu},p}$ 是对应铜热容量。
+
+为什么铜输入使用 $P/C$？想象两个不同尺寸的铜线圈都吸收 1\,W：较大线圈热容量大，温升会慢。若只给网络 1\,W，它很难跨线圈尺寸学习相同的物理规律；用 $P/C$ 能直接提供与温升速率相关的尺度。
+
+实际电流由电路方程求得：
+\[
+\mathbf I_n=(\ztot+\zext)^{-1}\begin{bmatrix}V_n\\0\end{bmatrix}.
+\]
+随后计算
+\[
+P_{\rm sea}=\frac12\operatorname{Re}(\mathbf I^\dagger\zsea\mathbf I),
+\quad
+P_{{\rm cu},p}=\frac12\operatorname{Re}(Z_{{\rm cu},p})|I_p|^2.
+\]
+所以，神经网络的三路输入来自\textbf{电磁和电路的真实功率关系}，不是任意构造的时间特征。
+
+\section{核心机制：用许多指数状态表示热记忆}
+\label{sec:soe}
+如果把过去全部输入历史逐项保存，运行 600\,s 或 3600\,s 时的计算和存储就会随历史长度增长。SOE 方法用有限个内部状态记录历史，让每个时间步只更新固定数量的数值。
+
+\begin{figure}[htbp]
+\centering\resizebox{\textwidth}{!}{\input{figures/memory}}
+\caption{一条功率输入的分数阶 SOE 记忆；实际共三路并行。}
+\label{fig:soe}
+\end{figure}
+
+对任意一个输入通道 $u(t)$，设有 14 个衰减率 $\lambda_j$。在不等长时间步 $\Delta t_n=t_{n+1}-t_n$ 下，第 $j$ 个状态更新为
+\begin{equation}
+\label{eq:soeupdate}
+h_{j,n+1}=
+e^{-\lambda_j\Delta t_n}h_{j,n}
++(1-e^{-\lambda_j\Delta t_n})u_{n+1}.
+\end{equation}
+这一公式可理解为：旧记忆留下一个随时间衰减的部分，再吸收一部分当前输入。$\lambda_j$ 大时记忆衰减快，更多反映最近的通电情况；$\lambda_j$ 小时衰减慢，能够保存更久的历史影响。
+
+当前代码使用从 $1/2400$ 到 $1/12\ \mathrm{s}^{-1}$ 的 14 个对数间隔速率，每条通道的速率集合相同。改变时间步只需在指数里使用实际的 $\Delta t$，无需另训一套固定步长的记忆更新规则。
+
+\section{分数阶特性怎样进入网络}
+分数阶热记忆对应的时间核常表现出较长的历史尾部。我们用不同衰减率的指数函数加权，近似这类长尾核，而不在在线求解时直接计算完整的历史卷积。
+
+第 $k$ 条输入通道的可学习分数阶阶数为 $\alpha_k$，权重按照
+\begin{equation}
+w_{k,j}(\alpha_k)=
+\frac{\lambda_j^{-\alpha_k}}
+{\sum_{\ell=1}^{14}\lambda_\ell^{-\alpha_k}}
+\end{equation}
+构造，并形成分数阶记忆摘要
+\[
+m_{k,n}^{\rm frac}=
+\sum_{j=1}^{14}w_{k,j}(\alpha_k)h_{k,j,n}.
+\]
+代码对阶数使用 sigmoid 参数化，让其位于约 $0.12$ 到 $0.95$ 的区间。$\alpha_k$ 越不同，网络强调的长短时记忆比例就越不同。
+
+每路还额外包含一个可学习时间常数的\textbf{普通指数记忆}：
+\[
+h^{\rm exp}_{k,n+1}
+=e^{-\nu_k\Delta t}h^{\rm exp}_{k,n}
++(1-e^{-\nu_k\Delta t})u_{k,n+1}.
+\]
+这一状态适合补充分数阶核难以描述的某些单一时间尺度响应。
+
+因此每条通道共有 $14+1=15$ 个内部状态，三条通道共
+\[
+N_{\rm state}=3\times15=45.
+\]
+三个通道分别是海水、发射铜和接收铜。它们具有不同的输入，但通过同一套小网络读取各自的记忆摘要。
+
+\begin{examplebox}
+\textbf{用一个启停过程理解记忆。} 设电源 0--120\,s 通电，120--240\,s 断电，240\,s 再启动。关断后 $u(t)$ 接近零，公式~\eqref{eq:soeupdate} 中新的热输入消失，已有状态则按不同速度衰减。再启动时，快记忆和慢记忆均可能非零，因此网络可以区分“冷态第一次启动”和“带着残余温度再次启动”。
+\end{examplebox}
+
+\section{时间特征怎样进入 MLP}
+SOE 记忆更新后，当前 MLP 接收四组特征：
+\[
+\mathbf x_n=
+[\underbrace{\mathbf u_n}_{3},
+ \underbrace{\mathbf m_n^{\rm frac}}_{3},
+ \underbrace{\mathbf m_n^{\rm exp}}_{3},
+ \underbrace{\mathbf g_{40}}_{40}]
+\in\R^{49}.
+\]
+网络为两层隐藏层、宽度均为 128 的多层感知机（MLP）：
+\[
+49\xrightarrow{\mathrm{Linear+SiLU}}128
+\xrightarrow{\mathrm{Linear+SiLU}}128
+\xrightarrow{\mathrm{Linear}}14.
+\]
+SiLU 是一种平滑非线性激活函数，帮助网络学习几何、历史和电磁响应之间的非线性关系。它没有改变输入输出的物理定义，只负责计算更灵活的特征组合。
+
+\section{十四个输出分别表示什么}
+\label{sec:output14}
+\begin{table}[htbp]\centering\small
+\caption{GeomFrac 的实际 14 维网络输出}
+\begin{tabularx}{\textwidth}{p{1.4cm}p{3.5cm}X}
+\toprule
+维数 & 名称 & 对应物理量 \\
+\midrule
+1--6 & 海水复阻抗增量 & $\Delta Z_{\rm sea,11}$、$\Delta Z_{\rm sea,12}$、$\Delta Z_{\rm sea,22}$ 各自的实部和虚部。\\
+7--8 & 海水温度摘要 & 海水体积加权平均温升、海水最高温升。\\
+9--10 & 两封装平均温升 & 发射端封装平均温升、接收端封装平均温升。\\
+11--12 & 两封装热点温升 & 发射端封装最高温升、接收端封装最高温升。\\
+13--14 & 两铜线圈温升 & 发射铜温升、接收铜温升。\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+网络输出的是\emph{相对环境的温升和阻抗增量}。代码用记忆幅度对输出进行缩放，使初始零加热时对应零动态增量；对温升通道采用 softplus，帮助维持所学习温升的非负性。阻抗增量允许正负变化，不施加非负约束。
+
+在纯神经模式下，这 14 个量支持快速端口和代表温度预测。在三维混合模式下，完整空间温度由热 ROM 计算，神经输出作为动态阻抗先验与训练中的物理观测。二者不应理解为两套互相冲突的三维温度场。
+
+\section{物理组装发生在网络之后}
+在预测海水复阻抗变化 $\Delta\zsea$ 后，完整阻抗使用原 BFZI 的物理关系组装：
+\[
+\ztot(t)=\zsea(T_0)+\Delta\zsea(t)
++\jj\omega \mathbf L_{\rm air}
++\operatorname{diag}\bigl(Z_{{\rm cu},1}(T_1),Z_{{\rm cu},2}(T_2)\bigr).
+\]
+这一步很重要。铜的温变复阻抗使用原 BFZI Bessel 公式，能够避免让网络重复学习已经有准确物理表达式的部分。组装好的阻抗再进入电路方程求电流，电流产生下一步热源和记忆输入。
+
+\section{另一个网络：C 阶段的切线残差 FracNet}
+C 阶段先使用 32 阶热 ROM 预测温度状态，再用预计算电磁温度切线求完整复阻抗的物理预测。此时网络只需要学习物理切线仍然漏掉的六维阻抗残差。
+
+该网络的输入是归一化电压 $v(t)$、其平方 $v(t)^2$ 和电压跳变量 $\Delta v(t)$，经相同原理的 SOE 分数阶或普通指数记忆，再输出六维残差。它的训练目标是
+\[
+\mathbf r_Z(t)=
+\Delta\mathbf z_{\rm direct}(t)
+-\Delta\mathbf z_{\rm phys}(t).
+\]
+这里 $\mathbf z$ 表示复阻抗的六实分量表示，$\mathbf z_{\rm phys}$ 已包含物理温度切线及非线性铜阻抗。
+
+因此，\code{FracNet} 是\textbf{物理先验上的残差校正}；\code{GeomFrac} 是\textbf{几何条件化的动态阻抗与温度摘要网络}。两条路径的独立留出误差将在第~\ref{ch:validation} 章分开报告。
+
+\section{读完本章应能回答的问题}
+为什么网络同时需要几何输入和功率输入？因为两者分别描述装置的空间结构和当前驱动。为什么需要 SOE？因为热历史会影响当前阻抗，而 SOE 能以固定数量状态保存不同时间尺度的记忆。为什么网络只输出 14 维？因为复杂三维温度与功率守恒交给 ROM 和物理场完成。为什么还要物理切线？因为它能进一步准确计算海水复阻抗对当前空间温度的响应。
+
+代码与此章一一对应：\code{geom\_memory.py} 中的 \code{GeomFrac}、\code{geom\_feat}、\code{heat\_drive}，以及 \code{frac\_memory.py} 中的 \code{FracNet}。详细训练接着见下一章。
