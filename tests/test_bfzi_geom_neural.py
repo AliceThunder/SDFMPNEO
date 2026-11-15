@@ -63,7 +63,7 @@ def test_teacher_training_data_and_loss(tmp_path):
     sx, sy, sa = scales([row])
     g = torch.tensor(np.zeros((1, 22)), dtype=torch.float32)
     net = GeomFracET(ng=22, rank=rom.rank)
-    loss = score(net, [row], g, sx, sy, sa)
+    loss = score(net, [row], g, sx, sy, sa, rom=rom, therm_w=.03)
     assert torch.isfinite(loss)
     loss.backward()
     assert net.heat_head[-1].weight.grad.abs().sum() > 0
@@ -109,6 +109,7 @@ def test_batched_bfzi_teacher_selects_complete_history(tmp_path):
                         z6=np.stack([r["z6"] for r in a]),
                         temp_K=np.stack([r["temp_K"] for r in a]))
     row = read(f"{path}#1", rom)
+    assert row["q"].shape == (len(t), rom.rank)
     assert row["src"].shape == (len(t), 3)
     assert np.allclose(row["z6"], a[1]["z6"])
     assert row["a"].shape == (len(t), rom.rank)

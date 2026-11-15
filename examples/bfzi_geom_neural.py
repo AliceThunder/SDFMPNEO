@@ -70,6 +70,7 @@ def read(path, rom):
     cu0 = rom.port.copper(np.full(2, rom.amb))
     dz = []
     src = []
+    qproj = []
     for k in range(len(t)):
         z = zmat(z6[k])
         cu = rom.port.copper(temp[k, rom.cu])
@@ -79,10 +80,14 @@ def read(path, rom):
                    sea[1,1].real, sea[1,1].imag])
         src.append(heat_drive(float(volts[k]), z, rom.ext, rom.port,
                               temp[k,rom.cu], rom.cap[rom.cu]))
+        I = np.linalg.solve(z+rom.ext, np.array([volts[k], 0.], complex))
+        sea0 = z-1j*rom.port.omega*rom.port.air-np.diag(cu)
+        heat, *_ = rom.source(temp[k]-rom.amb, I, sea0)
+        qproj.append(rom.phi.T @ heat)
     temp_sum = thermal_summary(temp, rom.ns, rom.npkg, rom.vol, rom.amb)
     y = np.column_stack((np.asarray(dz), temp_sum))
     return dict(time=t, voltage=volts, src=np.asarray(src), y=y, a=a,
-                z6=z6, temp_K=temp, file=spec)
+                q=np.asarray(qproj), z6=z6, temp_K=temp, file=spec)
 
 
 def scales(rows):
@@ -95,7 +100,7 @@ def scales(rows):
     return sscale, yscale, ascale
 
 
-def score(net, rows, g, sx, sy, sa, closed=False):
+def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
     total = []
     for row in rows:
         t = row["time"]
@@ -105,13 +110,25 @@ def score(net, rows, g, sx, sy, sa, closed=False):
         asc = torch.as_tensor(sa, dtype=torch.float32)
         h = net.init_state(1)
         pr_z, pr_a = [], []
+        pr_phys = []
         cur = a[0:1]
+        if therm_w:
+            if rom is None:
+                raise ValueError("thermal physics loss requires a heat ROM")
+            K = torch.as_tensor(rom.K, dtype=a.dtype)
+            q = torch.as_tensor(row["q"], dtype=a.dtype)
+            qs = q[1:].abs().amax(dim=0).clamp_min(1e-4)
+
         for k in range(1, len(t)):
             prev = cur if closed else a[k-1:k]
             h, zhat, nxt = net.step_et(h, u[k:k+1], float(t[k]-t[k-1]), g,
                                        prev, asc)
             pr_z.append(zhat[0])
             pr_a.append((nxt[0]-a[k])/asc)
+            if therm_w:
+                res = (nxt[0]-prev[0]) / float(t[k]-t[k-1])
+                res = res+K @ nxt[0]-q[k]
+                pr_phys.append((res/qs).square().mean())
             if closed:
                 cur = nxt
         if not pr_z:
@@ -121,7 +138,8 @@ def score(net, rows, g, sx, sy, sa, closed=False):
         zerr = ((pz-y[1:])**2).mean()
         zextra = ((pz[:, :6]-y[1:, :6])**2).mean()
         heat = pa.square().mean()
-        total.append(zerr+0.45*zextra+heat)
+        phy = torch.stack(pr_phys).mean() if therm_w else 0.
+        total.append(zerr+0.45*zextra+heat+therm_w*phy)
     if not total:
         raise ValueError("teacher histories need at least two times")
     return torch.stack(total).mean()
@@ -168,6 +186,8 @@ def main():
     p.add_argument("--patience", type=int, default=70)
     p.add_argument("--closed-weight", type=float, default=0.2,
                    help="free-running thermal-state loss, with teacher power inputs")
+    p.add_argument("--therm-weight", type=float, default=0.03,
+                   help="physics residual of the 32-state heat equation during training")
     a0 = p.parse_args()
     if set(a0.train) & set(a0.val):
         p.error("train and validation histories must be distinct")
@@ -190,16 +210,21 @@ def main():
     best, saved, best_ep = float("inf"), None, 0
     for ep in range(a0.epochs):
         opt.zero_grad(set_to_none=True)
-        loss = score(net, train, g, sx, sy, sa)
+        loss = score(net, train, g, sx, sy, sa,
+                     rom=rom, therm_w=a0.therm_weight)
         if a0.closed_weight and ep >= 20:
-            loss = loss+a0.closed_weight*score(net, train, g, sx, sy, sa, closed=True)
+            loss = loss+a0.closed_weight*score(
+                net, train, g, sx, sy, sa, closed=True,
+                rom=rom, therm_w=a0.therm_weight)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 3.)
         opt.step()
         net.eval()
         with torch.no_grad():
-            v = float(score(net, val, g, sx, sy, sa)
-                      +a0.closed_weight*score(net, val, g, sx, sy, sa, closed=True))
+            v = float(score(net, val, g, sx, sy, sa,
+                            rom=rom, therm_w=a0.therm_weight)
+                      +a0.closed_weight*score(net, val, g, sx, sy, sa,
+                          closed=True, rom=rom, therm_w=a0.therm_weight))
         if v < best-1e-8:
             best, best_ep = v, ep+1
             saved = {k: x.detach().clone() for k, x in net.state_dict().items()}
@@ -219,6 +244,7 @@ def main():
     result = dict(architecture="GeomFracET", rank=net.rank, ng=net.ng,
                   best_epoch=best_ep, val_loss=best,
                   training_count=len(train), validation_count=len(val),
+                  thermal_physics_loss_weight=a0.therm_weight,
                   teacher="stored BFZI full-temperature and impedance trajectories",
                   physics="neural sea delta + neural 32-state step + five budgets",
                   autonomous_validation=free_val,
