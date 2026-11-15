@@ -10,13 +10,14 @@ import torch
 
 from sdfmpneo_bfzi.geom_heat import GeomHeat
 from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+from sdfmpneo_bfzi.geom_canon import make_rom
 from sdfmpneo_bfzi.geom_neural import GeomFracET, rollout
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--anchor", type=Path, required=True)
-    p.add_argument("--rom-file", type=Path, required=True)
+    p.add_argument("--rom-file", type=Path, default=None)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
@@ -29,8 +30,13 @@ def main():
             or a.horizon/a.step != round(a.horizon/a.step)):
         p.error("expected positive aligned horizon/step and nonnegative heat/cool")
     head = GeomHeat.load(a.anchor)
-    rom = GeomHeatROM.load(head, a.rom_file)
     ck = torch.load(a.model, map_location="cpu", weights_only=True)
+    if ck.get('canonical',False):
+        rom = make_rom(head,rank=int(ck['rank']))
+    else:
+        if a.rom_file is None:
+            p.error('--rom-file is required for the original POD model')
+        rom = GeomHeatROM.load(head, a.rom_file)
     net = GeomFracET(ng=int(ck["ng"]), rank=int(ck["rank"]))
     net.load_state_dict(ck["state"])
     net.eval()

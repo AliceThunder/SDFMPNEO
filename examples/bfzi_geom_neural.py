@@ -125,17 +125,18 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None, therm_w=0.):
         pr_phys = []
         cur = a[0:1]
         if therm_w:
-            if rom is None:
+            if rom is None and 'K' not in row:
                 raise ValueError("thermal physics loss requires a heat ROM")
-            K = torch.as_tensor(rom.K, dtype=a.dtype)
+            K = torch.as_tensor(row['K'] if 'K' in row else rom.K, dtype=a.dtype)
             q = torch.as_tensor(row["q"], dtype=a.dtype)
             # Teacher FV trajectories include truncation and time-sampling
             # error. Compare relative heat residual, not the absolute ROM
             # residual that the teacher itself does not satisfy exactly.
 
+        gg = torch.as_tensor(row['geom'][None],dtype=torch.float32) if 'geom' in row else g
         for k in range(1, len(t)):
             prev = cur if closed else a[k-1:k]
-            h, zhat, nxt = net.step_et(h, u[k:k+1], float(t[k]-t[k-1]), g,
+            h, zhat, nxt = net.step_et(h, u[k:k+1], float(t[k]-t[k-1]), gg,
                                        prev, asc)
             pr_z.append(zhat[0])
             pr_a.append((nxt[0]-a[k])/asc)
@@ -167,7 +168,8 @@ def eval_rollout(rom, net, ck, rows):
     net.eval()
     with torch.no_grad():
         for row in rows:
-            pred = rollout(rom, net, ck, row["voltage"], row["time"])
+            rr = row.get('rom',rom)
+            pred = rollout(rr, net, ck, row["voltage"], row["time"])
             real_z = row["z6"]
             real_t = row["temp_K"]
             dz = np.linalg.norm(real_z-real_z[0])
@@ -178,11 +180,11 @@ def eval_rollout(rom, net, ck, rows):
                 full_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
                                     / max(np.linalg.norm(real_z), 1e-12)),
                 temperature_max_K=float(np.max(abs(pred["temp_K"]-real_t))),
-                copper_max_K=float(np.max(abs(pred["temp_K"][:, rom.cu]
-                                               -real_t[:, rom.cu]))),
+                copper_max_K=float(np.max(abs(pred["temp_K"][:, rr.cu]
+                                               -real_t[:, rr.cu]))),
                 package_max_K=float(np.max(abs(
-                    pred["temp_K"][:, rom.ns:rom.cu.start]
-                    -real_t[:, rom.ns:rom.cu.start]))),
+                    pred["temp_K"][:, rr.ns:rr.cu.start]
+                    -real_t[:, rr.ns:rr.cu.start]))),
                 material_budget_max_W=float(np.max(abs(pred["material_budget_W"]))),
                 fv_residual_max_W=float(np.max(abs(pred["fv_node_residual_W"])))))
     return result

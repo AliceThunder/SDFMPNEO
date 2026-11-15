@@ -16,6 +16,7 @@ from .frac_memory import zmat
 from .geom_heat import pack
 from .geom_memory import G_SCALE, GeomFrac, geom_feat, heat_drive
 from .geom_rom import GeomHeatROM, groups
+from .geom_canon import mode_scale
 from .pose import default_desc
 from .s5_bridge import feature
 
@@ -106,6 +107,7 @@ def rollout(rom, net, ck, voltage, times, correct_J=False):
     D = np.vstack([h_phi[sl].sum(axis=0) for sl in groups(rom)])
     h = net.init_state(1)
     a = np.zeros(rom.rank)
+    norm = mode_scale(rom, rom.rank) if ck.get('canonical',False) else np.ones(rom.rank)
     theta = np.zeros(len(rom.cap))
     zprev = zmat(rom.z0)
     out = {key: [] for key in (
@@ -120,8 +122,9 @@ def rollout(rom, net, ck, voltage, times, correct_J=False):
                 h, torch.tensor((u/sc)[None], dtype=g.dtype), dt, g,
                 torch.tensor(a[None], dtype=g.dtype), ac)
             dsea = zmat(y[0, :6].cpu().numpy() * ys[:6])
-            a, theta, z, I, q, J, ps, pc, res, budget = _balance(
-                rom, a, ahat[0].cpu().numpy(), dt, float(v[k]), dsea, B, D)
+            a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
+                rom, a*norm, ahat[0].cpu().numpy()*norm, dt, float(v[k]), dsea, B, D)
+            a = a_phys/norm
         else:
             sea, z, I = rom.circuit(theta, np.zeros((2, 2), complex), float(v[k]))
             _, q, J, ps, pc = rom.source(theta, I, sea)
