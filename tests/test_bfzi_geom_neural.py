@@ -1,0 +1,69 @@
+"""GeomFracET neural sea impedance and heat-step smoke/integration checks."""
+import numpy as np
+import torch
+
+from sdfmpneo_bfzi.geom_memory import GeomFrac
+from sdfmpneo_bfzi.geom_neural import GeomFracET, rollout
+from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+from test_bfzi_geom_heat import case
+from examples.bfzi_geom_neural import read, score, scales
+
+
+def test_neural_heat_head_trainable():
+    torch.manual_seed(2)
+    net = GeomFracET(ng=22, rank=10)
+    h = net.init_state(2)
+    u = torch.full((2, 3), 0.2)
+    g = torch.zeros(2, 22)
+    a = torch.randn(2, 10)
+    _, y, nxt = net.step_et(h, u, 15., g, a, torch.ones(10))
+    assert y.shape == (2, 14) and nxt.shape == (2, 10)
+    assert torch.allclose(nxt, a)
+    loss = (nxt-a-0.2).square().mean()
+    loss.backward()
+    assert net.heat_head[-1].weight.grad.abs().sum() > 0
+
+
+def test_neural_heat_rollout_preserves_five_budgets():
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    net = GeomFracET(ng=22, rank=rom.rank)
+    for p in net.net.parameters():
+        torch.nn.init.zeros_(p)
+    ck = dict(src_scale=np.ones(3), y_scale=np.ones(14),
+              a_scale=np.ones(rom.rank), port_sea=True)
+    t = [0., 15., 30., 45., 60.]
+    v = [0., 60., 60., 0., 0.]
+    pred = rollout(rom, net, ck, v, t)
+    assert pred["temp_K"].shape == (len(t), len(rom.cap))
+    assert pred["Jsea_A_m2"].shape == (len(t), rom.ns, 3)
+    assert pred["material_budget_W"].shape == (len(t), 5)
+    assert np.max(abs(pred["material_budget_W"])) < 1e-6
+    assert np.allclose(pred["qsea_W_m3"] @ rom.vol,
+                       pred["Psea_W"], atol=1e-10)
+    assert np.min(pred["temp_K"]) >= rom.amb-1e-8
+    assert pred["heat_implicit_solves_online"] == 0
+    assert pred["em_directional_solves_online"] == 0
+
+
+def test_teacher_training_data_and_loss(tmp_path):
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    base = GeomFrac()
+    for p in base.net.parameters():
+        torch.nn.init.zeros_(p)
+    ck = dict(src_scale=np.ones(3), y_scale=np.ones(14), port_sea=True)
+    t = np.array([0., 15., 30., 45.])
+    v = np.array([0., 60., 60., 0.])
+    truth = rom.rollout(base, ck, v, t)
+    path = tmp_path / "trace.npz"
+    np.savez_compressed(path, time_s=t, voltage_v=v,
+                        z6=truth["z6"], temp_K=truth["temp_K"])
+    row = read(path, rom)
+    sx, sy, sa = scales([row])
+    g = torch.tensor(np.zeros((1, 22)), dtype=torch.float32)
+    net = GeomFracET(ng=22, rank=10)
+    loss = score(net, [row], g, sx, sy, sa)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert net.heat_head[-1].weight.grad.abs().sum() > 0
