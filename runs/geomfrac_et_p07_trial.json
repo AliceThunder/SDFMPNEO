@@ -1,0 +1,25 @@
+{
+  "architecture": "GeomFracET",
+  "rank": 32,
+  "ng": 40,
+  "best_epoch": 122,
+  "val_loss": 4.907611846923828,
+  "training_count": 1,
+  "validation_count": 1,
+  "thermal_physics_loss_weight": 0.03,
+  "teacher": "stored BFZI full-temperature and impedance trajectories",
+  "physics": "neural sea delta + neural 32-state step + five budgets",
+  "autonomous_validation": [
+    {
+      "file": "runs/bfzi_pose_p07_15s_holdout.npz#1",
+      "dynamic_Z_rel_L2": 0.003205351047233843,
+      "full_Z_rel_L2": 1.7897995113065804e-06,
+      "temperature_max_K": 1.1088198593483867,
+      "copper_max_K": 0.2348878220659003,
+      "package_max_K": 1.1088198593483867,
+      "material_budget_max_W": 8.773135107276175e-09,
+      "fv_residual_max_W": 0.6499742251606214
+    }
+  ],
+  "status": "experimental; held-out physical acceptance pending"
+}
