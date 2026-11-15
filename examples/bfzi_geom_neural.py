@@ -178,6 +178,27 @@ def eval_rollout(rom, net, ck, rows):
     return result
 
 
+
+def load_init(net, old):
+    """Retain a trained 40D GeomFrac when adding five S5 material inputs."""
+    if not old.get("port_sea", False):
+        raise ValueError("initial GeomFrac must predict seawater delta Z")
+    ng = int(old["ng"])
+    if ng not in (net.ng, net.ng-5):
+        raise ValueError("initial GeomFrac has incompatible geometry dimension")
+    src = old["state"]
+    state = net.state_dict()
+    for name, val in src.items():
+        if name not in state:
+            continue
+        if state[name].shape == val.shape:
+            state[name] = val.detach().clone()
+        elif name == "net.0.weight" and ng == net.ng-5:
+            state[name] = torch.cat((val, val.new_zeros((val.shape[0],5))), dim=1)
+        else:
+            raise ValueError(f"incompatible GeomFrac weight: {name}")
+    net.load_state_dict(state)
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--anchor", type=Path, required=True)
@@ -210,9 +231,10 @@ def main():
     net = GeomFracET(ng=g.shape[-1], rank=rom.rank)
     if a0.init_model:
         old = torch.load(a0.init_model, map_location="cpu", weights_only=True)
-        if old["ng"] != net.ng or not old.get("port_sea", False):
-            p.error("initial GeomFrac is not a matching sea-impedance model")
-        net.load_state_dict(old["state"], strict=False)
+        try:
+            load_init(net, old)
+        except ValueError as exc:
+            p.error(str(exc))
     opt = torch.optim.Adam(net.parameters(), lr=a0.lr)
     best, saved, best_ep = float("inf"), None, 0
     for ep in range(a0.epochs):

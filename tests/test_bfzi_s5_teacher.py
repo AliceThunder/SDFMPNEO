@@ -35,3 +35,23 @@ def test_s5_teacher_reorders_without_losing_skin(tmp_path):
                       max(row['temp_K'][1,:rom.ns])-rom.amb)
     assert row['q'].shape==(3,n)
     assert feature(rom,45).shape==(45,)
+
+
+def test_40d_geomfrac_weights_expand_to_45d():
+    import torch
+    from sdfmpneo_bfzi.geom_memory import GeomFrac
+    from sdfmpneo_bfzi.geom_neural import GeomFracET
+    from examples.bfzi_geom_neural import load_init
+    torch.manual_seed(5)
+    src=GeomFrac(ng=40)
+    dst=GeomFracET(ng=45,rank=5)
+    load_init(dst,{'ng':40,'port_sea':True,'state':src.state_dict()})
+    h=src.init_state(1)
+    u=torch.tensor([[.8,.1,.2]])
+    g=torch.rand((1,40))
+    extra=torch.rand((1,5))
+    _, orig=src.step(h,u,15.,g)
+    _, new=dst.step(h,u,15.,torch.cat((g,extra),dim=1))
+    assert torch.allclose(orig,new,atol=1e-7)
+    assert torch.allclose(dst.net[0].weight[:,-5:],
+                          torch.zeros_like(dst.net[0].weight[:,-5:]))
