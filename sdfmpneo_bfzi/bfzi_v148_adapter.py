@@ -219,7 +219,7 @@ class BFZIV148Adapter:
     def __init__(self, data, calc, *, ambient=293.15, sea_alpha=.02,
                  copper_sigma=5.8e7, copper_alpha=.00393, sea_only=False,
                  heat_mode="j2",fv_faces="approx",source_mask="legacy",
-                 source_radius=.06):
+                 source_radius=.06,source_order=3):
         if len(data["families"]) != 2:
             raise ValueError("v148 adapter requires two physical BFZI ports")
         if heat_mode not in ("j2","port-weak"):
@@ -247,7 +247,9 @@ class BFZIV148Adapter:
         if fv_faces=="exact":
             from .obb_faces import apply
             self.proj=apply(self.proj,data["records"],data["vol_meta"])
-        result = _mass(data,calc,mask=source_mask,
+        if int(source_order)!=source_order or source_order<3:
+            raise ValueError("source quadrature order must be at least 3")
+        result = _mass(data,calc,order=int(source_order),mask=source_mask,
                        source_radius=source_radius)
         self.mass,self.subcells=(result if source_mask=="subcell"
                                  else (result,None))

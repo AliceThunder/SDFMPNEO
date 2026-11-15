@@ -25,7 +25,8 @@ from sdfmpneo_bfzi.sea_layer import BFZIV148Skin3D
 
 def build(data,bf,ext,opts):
     em=BFZIV148Adapter(data,bf,heat_mode="port-weak",
-                      fv_faces="exact",source_mask="subcell")
+                      fv_faces="exact",source_mask="subcell",
+                      source_order=opts.get("source_order",3))
     em.alpha=opts["alpha"]
     et=BFZIV148Skin3D(
         em,external=ext,pkg_shape=(4,2,4),pkg_k=opts["pkg_k"],
@@ -203,6 +204,8 @@ def main():
     p.add_argument("--out",type=Path,default=None)
     p.add_argument("--run-tag",default="",
                    help="Distinct NPZ tag for a numerical-method comparison")
+    p.add_argument("--source-order",type=int,default=3,
+                   help="Full-wet-cell Gauss order for near-source EM integrals")
     a=p.parse_args()
     if (min(a.ins_k,a.pkg_k,a.pkg_sea_h,a.skin,*a.dt)<=0 or a.grid_max_nodes<1 or
             (a.inner_step is not None and a.inner_step<=0) or
@@ -237,6 +240,7 @@ def main():
                 continue
             mat=spec.get("thermal",{})
             opts=dict(alpha=spec["alpha_per_K"],
+                      source_order=a.source_order,
                       skin=mat.get("skin_m",a.skin),
                       ins_k=mat.get("ins_k",a.ins_k),
                       ins_t=mat.get("ins_t",a.ins_t),
@@ -325,7 +329,8 @@ def main():
         dest.write_text(json.dumps(dict(
             method="BFZI V150 corrected copper geometry; fixed skin depth",
             settings=dict(spec_file=str(a.spec_file) if a.spec_file else None,
-                          run_tag=a.run_tag,inner_step_s=a.inner_step,
+                          run_tag=a.run_tag,source_order=a.source_order,
+                          inner_step_s=a.inner_step,
                           dt=a.dt,grids=a.grids,
                           grid_sizes_m={g:list(GRIDS[g]) for g in a.grids},
                           grid_max_nodes=a.grid_max_nodes,skin_m=a.skin,
