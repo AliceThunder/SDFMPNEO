@@ -22,7 +22,7 @@ from sdfmpneo_bfzi.s5_bridge import from_skin, teacher_temp
 def check_plan(plan):
     cases = plan["cases"]
     tr, val = list(plan["train"]), list(plan["val"])
-    if not tr or not val or len(set(tr+val)) != len(tr+val):
+    if not tr or len(set(tr+val)) != len(tr+val):
         raise ValueError("training and validation must use disjoint geometries")
     frozen = {f"U{i:02d}" for i in range(1,13)}
     if (set(tr+val) & frozen) or (set(tr+val)-set(cases)):
@@ -90,9 +90,9 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
         for j,exc in enumerate(c["drives"]):
             spec=dict(c)
             spec.update(voltage=float(exc["voltage"]),off=exc["off"],
-                        duration=float(duration))
+                        duration=float(exc.get("duration",duration)))
             status,raw=march(et,spec,15.,inner_step=heat_step)
-            if status["status"]!="candidate" or len(raw["time_s"])!=int(round(duration/15.))+1:
+            if status["status"]!="candidate" or len(raw["time_s"])!=int(round(spec["duration"]/15.))+1:
                 raise RuntimeError(f"{key} history {j}: physical teacher "
                                    f"did not complete 600s: {status['status']}, "
                                    f"{status.get('failed_at')}")
@@ -140,8 +140,17 @@ def main():
     p.add_argument("--max-pkg-K",type=float,default=None)
     p.add_argument("--duration",type=float,default=600.)
     p.add_argument("--tag",default="")
+    p.add_argument("--cases",nargs="+",default=None,
+                   help="build only selected non-frozen geometry IDs")
     a=p.parse_args()
     plan=json.loads(a.plan.read_text(encoding="utf-8"))
+    if a.cases:
+        sel=set(a.cases)
+        if sel-set(plan["train"]+plan["val"]):
+            raise ValueError("unknown or test-only geometry in --cases")
+        plan={**plan,
+              "train":[k for k in plan["train"] if k in sel],
+              "val":[k for k in plan["val"] if k in sel]}
     generate(plan,bfzi_root=a.bfzi_root,runs=a.runs,grid=a.grid,
              heat_step=a.inner_step,limit_skin=a.max_skin_K,
              limit_pkg=a.max_pkg_K,duration=a.duration,tag=a.tag)
