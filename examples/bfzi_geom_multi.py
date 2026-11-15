@@ -57,6 +57,9 @@ def main():
     p.add_argument('--epochs',type=int,default=500)
     p.add_argument('--patience',type=int,default=90)
     p.add_argument('--lr',type=float,default=.001)
+    p.add_argument('--weight-decay',type=float,default=1e-4)
+    p.add_argument('--lr-patience',type=int,default=20)
+    p.add_argument('--lr-factor',type=float,default=.5)
     p.add_argument('--soe-quad',choices=('legacy','trap'),default='trap')
     p.add_argument('--heat-dt',type=float,default=1.875)
     p.add_argument('--closed-weight',type=float,default=.2)
@@ -91,7 +94,10 @@ def main():
     if a.init_model:
         old=torch.load(a.init_model,map_location='cpu',weights_only=True)
         load_init(net,old)
-    opt=torch.optim.Adam(net.parameters(),lr=a.lr)
+    opt=torch.optim.AdamW(net.parameters(),lr=a.lr,
+                          weight_decay=a.weight_decay)
+    sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
+        opt,mode='min',factor=a.lr_factor,patience=a.lr_patience)
     best=float('inf')
     best_epoch=0
     saved=None
@@ -124,6 +130,8 @@ def main():
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
+        if ep+1>=warmup:
+            sched.step(v)
         if ep+1>=warmup and v<best-1e-8:
             best,best_epoch=v,ep+1
             best_train=float(loss.detach())
@@ -152,6 +160,9 @@ def main():
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  history_weight=a.history_weight,
+                 optimizer='AdamW',weight_decay=a.weight_decay,
+                 lr_factor=a.lr_factor,lr_patience=a.lr_patience,
+                 final_lr=opt.param_groups[0]['lr'],
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best,
