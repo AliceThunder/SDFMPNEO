@@ -14,6 +14,10 @@ def test_v4_split():
     assert not set(tr + val + test) & {f"U{i:02d}" for i in range(1, 13)}
     geo = [plan["cases"][k]["geometry"] for k in tr + val + test]
     assert len({str(g) for g in geo}) == 40
+    # The native M4 coil has ten turns at 5 mm pitch.
+    for g in geo:
+        for j in (1, 2):
+            assert g[f"core{j}_mm"] + 1e-8 >= (1. - g[f"alpha{j}"]) * 50.
     check_plan({**plan, "train": ["N01"], "val": []})
     assert [v["duration"] for v in plan["cases"]["N01"]["drives"]] == [60, 300, 600]
     assert check_plan({**plan,"train":[],"val":[],"test":["E01"]}) == ([], [])

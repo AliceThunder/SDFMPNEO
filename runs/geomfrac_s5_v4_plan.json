@@ -640,7 +640,7 @@
       "geometry": {
         "alpha1": 0.743,
         "alpha2": 0.965,
-        "core1_mm": 12,
+        "core1_mm": 14,
         "core2_mm": 12,
         "shift_mm": [
           -6,
@@ -774,7 +774,7 @@
       "geometry": {
         "alpha1": 0.75,
         "alpha2": 0.758,
-        "core1_mm": 9,
+        "core1_mm": 14,
         "core2_mm": 17,
         "shift_mm": [
           5,
@@ -909,7 +909,7 @@
         "alpha1": 0.828,
         "alpha2": 0.771,
         "core1_mm": 21,
-        "core2_mm": 8,
+        "core2_mm": 13,
         "shift_mm": [
           8,
           106,
@@ -1110,7 +1110,7 @@
         "alpha1": 0.895,
         "alpha2": 0.701,
         "core1_mm": 12,
-        "core2_mm": 8,
+        "core2_mm": 16,
         "shift_mm": [
           -4,
           100,
@@ -1445,7 +1445,7 @@
         "alpha1": 0.972,
         "alpha2": 0.771,
         "core1_mm": 14,
-        "core2_mm": 9,
+        "core2_mm": 13,
         "shift_mm": [
           -5,
           107,
@@ -1578,7 +1578,7 @@
       "geometry": {
         "alpha1": 0.711,
         "alpha2": 0.82,
-        "core1_mm": 10,
+        "core1_mm": 16,
         "core2_mm": 12,
         "shift_mm": [
           5,
@@ -1713,7 +1713,7 @@
         "alpha1": 0.932,
         "alpha2": 0.749,
         "core1_mm": 15,
-        "core2_mm": 8,
+        "core2_mm": 14,
         "shift_mm": [
           3,
           107,
@@ -2249,7 +2249,7 @@
         "alpha1": 0.753,
         "alpha2": 0.706,
         "core1_mm": 18,
-        "core2_mm": 14,
+        "core2_mm": 16,
         "shift_mm": [
           8,
           97,
@@ -2382,7 +2382,7 @@
       "geometry": {
         "alpha1": 0.719,
         "alpha2": 0.866,
-        "core1_mm": 13,
+        "core1_mm": 16,
         "core2_mm": 10,
         "shift_mm": [
           0,

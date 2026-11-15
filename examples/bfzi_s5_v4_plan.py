@@ -54,6 +54,12 @@ def design(seed=1504):
             g.update(alpha1=.76, alpha2=.93, core1_mm=22, core2_mm=10,
                      shift_mm=[-7, 100, 6], tilt_deg=14, yaw_deg=4,
                      pitch_deg=-7, box1_mm=230, box2_mm=224)
+        # M4 has 10 turns at 5 mm pitch. Keep each rounded-square
+        # straight-core reserve nonnegative after the innermost turn.
+        for p in (1, 2):
+            a = g[f"alpha{p}"]
+            key_core = f"core{p}_mm"
+            g[key_core] = max(g[key_core], int(np.ceil((1. - a) * 50. + 1.)))
         th = {
             "ins_k": round(float(rng.uniform(.17, .36)), 4),
             "ins_t": round(float(rng.uniform(.00033, .00047)), 6),
