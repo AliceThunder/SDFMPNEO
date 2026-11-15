@@ -408,6 +408,194 @@
       "time_convergence_pass": false,
       "space_convergence_pass": true,
       "accepted": false
+    },
+    "U06": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15.0,
+          "inner_step_s": 1.0,
+          "completed_s": 600.0,
+          "elapsed_s": 315.3295556999801,
+          "copper_to_package_G_W_K": [
+            26.32229239080269,
+            25.585213656936595
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0023793225532093842,
+          "skin_water_capacity_error_J_K": 0.0,
+          "peak_thermal_residual_W": 2.0693885574019077e-06,
+          "peak_global_budget_W": 1.091116700990824e-06,
+          "max_port_power_residual_W": 3.410605131648481e-12,
+          "max_rel_port_power": 2.9828584836858784e-15,
+          "max_rel_q_power": 2.3947672758592632e-16,
+          "heat_cap_J_K": {
+            "seawater": 379341.63200000074,
+            "package": 1746.8880000000004,
+            "copper": 52.43205417252149
+          },
+          "max_copper_K": 309.11711518569797,
+          "max_package_K": 305.44301965644183,
+          "max_water_K": 298.8619198575103,
+          "max_copper_loss_W": 148.3432190801702,
+          "max_lead_loss_W": 40.618539314268276,
+          "max_sea_loss_W": 238.49300989568553,
+          "max_source_power_W": 1144.0754498090403,
+          "peak_ambient_loss_W": 0.15539796408551612,
+          "max_storage_rate_W": 387.10084668769025
+        },
+        "superfine_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15.0,
+          "inner_step_s": 1.0,
+          "completed_s": 600.0,
+          "elapsed_s": 479.9368404999841,
+          "copper_to_package_G_W_K": [
+            26.32229239080269,
+            25.585213656936595
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.018941480255919352,
+          "skin_water_capacity_error_J_K": 5.820766091346741e-11,
+          "peak_thermal_residual_W": 2.0694852764790994e-06,
+          "peak_global_budget_W": 1.0906794045695278e-06,
+          "max_port_power_residual_W": 2.2737367544323206e-12,
+          "max_rel_port_power": 1.9886669270838634e-15,
+          "max_rel_q_power": 4.772200570081122e-16,
+          "heat_cap_J_K": {
+            "seawater": 379341.63200000563,
+            "package": 1746.8880000000004,
+            "copper": 52.43205417252149
+          },
+          "max_copper_K": 309.0578723459182,
+          "max_package_K": 305.38207952621843,
+          "max_water_K": 298.6313484661952,
+          "max_copper_loss_W": 148.3377314425124,
+          "max_lead_loss_W": 40.62256869541925,
+          "max_sea_loss_W": 238.39217460844532,
+          "max_source_power_W": 1144.0151858414574,
+          "peak_ambient_loss_W": 0.14438539347915952,
+          "max_storage_rate_W": 387.0071293091772
+        }
+      },
+      "comparisons": {
+        "space_dt15": {
+          "shared_until_s": 600.0,
+          "shared_points": 41,
+          "prefix_only": false,
+          "delta_Z_relative_L2": 0.01005372423464496,
+          "copper_abs_K": 0.11098909349271935,
+          "package_abs_K": 0.15192683676366414
+        }
+      },
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": true,
+      "accepted": false
+    },
+    "U07": {
+      "runs": {
+        "ultra_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15.0,
+          "inner_step_s": 1.0,
+          "completed_s": 600.0,
+          "elapsed_s": 347.37870999998995,
+          "copper_to_package_G_W_K": [
+            10.087991369664968,
+            10.08799136966497
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 1.1102230246251565e-16,
+          "skin_water_capacity_error_J_K": 0.0,
+          "peak_thermal_residual_W": 8.132592370202474e-06,
+          "peak_global_budget_W": 5.567081416302244e-06,
+          "max_port_power_residual_W": 1.1823431123048067e-11,
+          "max_rel_port_power": 2.8633111231103667e-15,
+          "max_rel_q_power": 4.220720777355907e-16,
+          "heat_cap_J_K": {
+            "seawater": 379543.5920000049,
+            "package": 1671.1529999999998,
+            "copper": 54.346319727477585
+          },
+          "max_copper_K": 403.4480941730276,
+          "max_package_K": 354.4823075736381,
+          "max_water_K": 309.3769868058622,
+          "max_copper_loss_W": 667.9915040308648,
+          "max_lead_loss_W": 159.94954207410012,
+          "max_sea_loss_W": 547.8538004688135,
+          "max_source_power_W": 4132.159254878052,
+          "peak_ambient_loss_W": 0.17106314163433056,
+          "max_storage_rate_W": 1214.7711853104897
+        },
+        "superfine_dt15": {
+          "status": "candidate",
+          "failed_at": null,
+          "dt_s": 15.0,
+          "inner_step_s": 1.0,
+          "completed_s": 600.0,
+          "elapsed_s": 546.6781895000022,
+          "copper_to_package_G_W_K": [
+            10.087991369664968,
+            10.08799136966497
+          ],
+          "insulation_layer_m": [
+            0.00035943058495790513,
+            0.00035943058495790513
+          ],
+          "skin_depth_m": 0.002,
+          "skin_clip_fraction": 0.0009138183642510844,
+          "skin_water_capacity_error_J_K": 5.820766091346741e-11,
+          "peak_thermal_residual_W": 8.12592418242275e-06,
+          "peak_global_budget_W": 5.561970738199307e-06,
+          "max_port_power_residual_W": 1.000444171950221e-11,
+          "max_rel_port_power": 2.4235328308631886e-15,
+          "max_rel_q_power": 6.229085625775804e-16,
+          "heat_cap_J_K": {
+            "seawater": 379543.59200000094,
+            "package": 1671.1529999999998,
+            "copper": 54.346319727477585
+          },
+          "max_copper_K": 403.3753391000728,
+          "max_package_K": 354.4064274805069,
+          "max_water_K": 308.4837247113517,
+          "max_copper_loss_W": 668.0373138428179,
+          "max_lead_loss_W": 159.95889975461114,
+          "max_sea_loss_W": 547.52901734654,
+          "max_source_power_W": 4132.2233693519875,
+          "peak_ambient_loss_W": 0.15975365914361006,
+          "max_storage_rate_W": 1214.5441938524998
+        }
+      },
+      "comparisons": {
+        "space_dt15": {
+          "shared_until_s": 600.0,
+          "shared_points": 41,
+          "prefix_only": false,
+          "delta_Z_relative_L2": 0.004836728167048492,
+          "copper_abs_K": 0.1908083322095422,
+          "package_abs_K": 0.2808319858727941
+        }
+      },
+      "physical_full_horizon": true,
+      "time_convergence_pass": false,
+      "space_convergence_pass": true,
+      "accepted": false
     }
   }
 }
