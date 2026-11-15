@@ -26,23 +26,45 @@ from sdfmpneo_bfzi.geom_rom import GeomHeatROM
 
 
 def read(path, rom):
-    with np.load(path) as d:
+    """Read one complete history; use file.npz#i for batched BFZI teachers."""
+    spec = str(path)
+    name, sep, tail = spec.rpartition("#")
+    idx = int(tail) if sep and tail.isdigit() else None
+    file = Path(name) if idx is not None else Path(spec)
+    with np.load(file) as d:
         t = d["time_s"].copy()
         temp = d["temp_K"].copy()
         z6 = d["z6"].copy()
+        if temp.ndim == 3:
+            if idx is None:
+                raise ValueError(f"batched teacher needs #history_index: {file}")
+            if idx >= len(temp):
+                raise ValueError(f"teacher history index out of range: {spec}")
+            temp = temp[idx]
+            z6 = z6[idx]
+        elif idx not in (None, 0):
+            raise ValueError(f"single-history teacher has no case #{idx}: {file}")
         if "voltage_v" in d:
             volts = d["voltage_v"].copy()
+            if volts.ndim == 2:
+                if idx is None:
+                    raise ValueError(f"batched voltage requires #history_index: {file}")
+                volts = volts[idx]
         else:
             key = "currents_A" if "currents_A" in d else "current_A"
             currents = d[key].copy()
+            if currents.ndim == 3:
+                if idx is None:
+                    raise ValueError(f"batched currents need #history_index: {file}")
+                currents = currents[idx]
             volts = np.array([((zmat(zz)+rom.ext)@ii)[0].real
                               for zz, ii in zip(z6, currents)])
     if (t.ndim != 1 or t[0] != 0 or np.any(np.diff(t) <= 0)
             or temp.shape != (len(t), len(rom.cap))
             or z6.shape != (len(t), 6) or volts.shape != t.shape):
-        raise ValueError(f"teacher dimensions / time grid mismatch: {path}")
+        raise ValueError(f"teacher dimensions / time grid mismatch: {spec}")
     if not np.allclose(z6[0], rom.z0, atol=1e-7, rtol=1e-6):
-        raise ValueError(f"teacher cold BFZI impedance differs from anchor: {path}")
+        raise ValueError(f"teacher cold BFZI impedance differs from anchor: {spec}")
     temp_rise = temp-rom.amb
     a = (temp_rise*rom.cap) @ rom.phi
     cu0 = rom.port.copper(np.full(2, rom.amb))
@@ -60,7 +82,7 @@ def read(path, rom):
     temp_sum = thermal_summary(temp, rom.ns, rom.npkg, rom.vol, rom.amb)
     y = np.column_stack((np.asarray(dz), temp_sum))
     return dict(time=t, voltage=volts, src=np.asarray(src), y=y, a=a,
-                z6=z6, temp_K=temp, file=str(path))
+                z6=z6, temp_K=temp, file=spec)
 
 
 def scales(rows):
@@ -136,8 +158,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--anchor", type=Path, required=True)
     p.add_argument("--rom-file", type=Path, required=True)
-    p.add_argument("--train", type=Path, nargs="+", required=True)
-    p.add_argument("--val", type=Path, nargs="+", required=True)
+    p.add_argument("--train", type=str, nargs="+", required=True)
+    p.add_argument("--val", type=str, nargs="+", required=True)
     p.add_argument("--init-model", type=Path, default=None)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et.pt"))
     p.add_argument("--report", type=Path, default=Path("runs/geomfrac_et.json"))

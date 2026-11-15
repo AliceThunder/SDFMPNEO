@@ -11,7 +11,7 @@ from examples.bfzi_geom_neural import read, score, scales
 
 def test_neural_heat_head_trainable():
     torch.manual_seed(2)
-    net = GeomFracET(ng=22, rank=10)
+    net = GeomFracET(ng=22, rank=rom.rank)
     h = net.init_state(2)
     u = torch.full((2, 3), 0.2)
     g = torch.zeros(2, 22)
@@ -92,3 +92,26 @@ def test_autonomous_validation_reports_real_error(tmp_path):
     assert np.isfinite(err[0]["dynamic_Z_rel_L2"])
     assert np.isfinite(err[0]["temperature_max_K"])
     assert err[0]["material_budget_max_W"] < 1e-6
+
+
+def test_batched_bfzi_teacher_selects_complete_history(tmp_path):
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    base = GeomFrac()
+    for p in base.net.parameters():
+        torch.nn.init.zeros_(p)
+    ck = dict(src_scale=np.ones(3), y_scale=np.ones(14), port_sea=True)
+    t = np.array([0., 15., 30., 45.])
+    v = np.array([[0., 60., 60., 0.], [0., 45., 45., 0.]])
+    a = [rom.rollout(base, ck, vv, t) for vv in v]
+    path = tmp_path / "two.npz"
+    np.savez_compressed(path, time_s=t, voltage_v=v,
+                        z6=np.stack([r["z6"] for r in a]),
+                        temp_K=np.stack([r["temp_K"] for r in a]))
+    row = read(f"{path}#1", rom)
+    assert row["src"].shape == (len(t), 3)
+    assert np.allclose(row["z6"], a[1]["z6"])
+    assert row["a"].shape == (len(t), rom.rank)
+    import pytest
+    with pytest.raises(ValueError, match="needs #history_index"):
+        read(path, rom)
