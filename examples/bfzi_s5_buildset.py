@@ -47,15 +47,17 @@ def check_plan(plan):
 
 
 def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
-             limit_skin=None, limit_pkg=None):
+             limit_skin=None, limit_pkg=None, duration=600., tag=""):
     tr, val = check_plan(plan)
-    if heat_step <= 0 or grid not in GRIDS:
+    if (heat_step <= 0 or grid not in GRIDS or duration <= 0
+            or abs(duration/15.-round(duration/15.))>1e-9):
         raise ValueError("invalid time step or BFZI grid")
     bf, v150 = originals(bfzi_root)
     runs=Path(runs)
     runs.mkdir(parents=True,exist_ok=True)
     manifest={"train":[],"val":[]}
     report={"cases":{},"teacher":"BFZI V150 five-point-order S5"}
+    suffix=f"_{tag}" if tag else ""
     for key in tr+val:
         start=time.perf_counter()
         c=plan["cases"][key]
@@ -81,16 +83,16 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
         warm,*_=et.em(et.zeros(),np.array([1.,0.]))
         if not np.allclose(pack(warm.total_z),head.z0,atol=1e-7,rtol=1e-6):
             raise RuntimeError(f"{key}: cold EM anchor differs from S5 teacher")
-        anchor=runs/f"bfzi_s5_{key}_{grid}_anchor.npz"
+        anchor=runs/f"bfzi_s5_{key}_{grid}{suffix}_anchor.npz"
         head.save(anchor)
         traces=[]
         checks=[]
         for j,exc in enumerate(c["drives"]):
             spec=dict(c)
             spec.update(voltage=float(exc["voltage"]),off=exc["off"],
-                        duration=600.)
+                        duration=float(duration))
             status,raw=march(et,spec,15.,inner_step=heat_step)
-            if status["status"]!="candidate" or len(raw["time_s"])!=41:
+            if status["status"]!="candidate" or len(raw["time_s"])!=int(round(duration/15.))+1:
                 raise RuntimeError(f"{key} history {j}: physical teacher "
                                    f"did not complete 600s: {status['status']}, "
                                    f"{status.get('failed_at')}")
@@ -106,7 +108,7 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
                                    "exceeds requested limit")
             voltage=np.array([drive(spec,float(t))[0].real
                               for t in raw["time_s"]])
-            teacher=runs/f"bfzi_s5_{key}_{grid}_drive{j+1}.npz"
+            teacher=runs/f"bfzi_s5_{key}_{grid}{suffix}_drive{j+1}.npz"
             np.savez_compressed(teacher,**raw,voltage_v=voltage)
             traces.append(str(teacher))
             checks.append(dict(teacher=str(teacher),physics=status,
@@ -119,9 +121,10 @@ def generate(plan, *, bfzi_root, runs, grid="ultra", heat_step=1.875,
         print("S5DATA",key,len(traces),"histories",flush=True)
     manifest["canonical"]=True
     manifest["rank"]=32
-    (runs/"geomfrac_s5_manifest.json").write_text(
+    manifest["duration_s"]=float(duration)
+    (runs/f"geomfrac_s5{suffix}_manifest.json").write_text(
         json.dumps(manifest,indent=2),encoding="utf-8")
-    (runs/"geomfrac_s5_build_report.json").write_text(
+    (runs/f"geomfrac_s5{suffix}_build_report.json").write_text(
         json.dumps(report,indent=2),encoding="utf-8")
     return manifest,report
 
@@ -135,11 +138,13 @@ def main():
     p.add_argument("--inner-step",type=float,default=1.875)
     p.add_argument("--max-skin-K",type=float,default=None)
     p.add_argument("--max-pkg-K",type=float,default=None)
+    p.add_argument("--duration",type=float,default=600.)
+    p.add_argument("--tag",default="")
     a=p.parse_args()
     plan=json.loads(a.plan.read_text(encoding="utf-8"))
     generate(plan,bfzi_root=a.bfzi_root,runs=a.runs,grid=a.grid,
              heat_step=a.inner_step,limit_skin=a.max_skin_K,
-             limit_pkg=a.max_pkg_K)
+             limit_pkg=a.max_pkg_K,duration=a.duration,tag=a.tag)
 
 
 if __name__=="__main__":

@@ -60,7 +60,7 @@ def main():
     p.add_argument('--closed-weight',type=float,default=.2)
     p.add_argument('--therm-weight',type=float,default=.03)
     a=p.parse_args()
-    config=json.loads(a.manifest.read_text(encoding='utf-8'))
+    config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
     trgeo={str(item['anchor']) for item in trspec}
     vageo={str(item['anchor']) for item in vaspec}

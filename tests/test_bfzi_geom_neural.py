@@ -109,7 +109,7 @@ def test_batched_bfzi_teacher_selects_complete_history(tmp_path):
                         z6=np.stack([r["z6"] for r in a]),
                         temp_K=np.stack([r["temp_K"] for r in a]))
     row = read(f"{path}#1", rom)
-    assert row["q"].shape == (len(t), rom.rank)
+    assert "q" not in row
     assert row["src"].shape == (len(t), 3)
     assert np.allclose(row["z6"], a[1]["z6"])
     assert row["a"].shape == (len(t), rom.rank)

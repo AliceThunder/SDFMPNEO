@@ -34,7 +34,7 @@ def test_s5_teacher_reorders_without_losing_skin(tmp_path):
     assert np.allclose(row['a'],row['temp_K']-rom.amb)
     assert np.isclose(row['y'][1,7],
                       max(row['temp_K'][1,:rom.ns])-rom.amb)
-    assert row['q'].shape==(3,n)
+    assert 'q' not in row
     assert feature(rom,45).shape==(45,)
 
 

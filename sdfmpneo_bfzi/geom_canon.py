@@ -46,7 +46,8 @@ def _shapes(head):
         a,b,c=v.T
         # The original S5 package uses 4x2x4 cells. b**2 is constant
         # with two symmetric thickness layers, so use cross terms instead.
-        features.append(np.stack([a,b,c,a*a,c*c,a*c,b*c],axis=1))
+        r2=a*a+c*c
+        features.append(np.stack([a,b,c,r2,r2*r2,b*r2,a*c],axis=1))
     return features
 
 
