@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -35,11 +36,14 @@ def main():
     net.eval()
     t = np.linspace(0., a.horizon, int(round(a.horizon/a.step))+1)
     v = np.where((t < a.heat) | (t >= a.heat+a.cool), a.voltage, 0.)
+    tic = time.perf_counter()
     pred = rollout(rom, net, ck, v, t)
+    online_s = time.perf_counter()-tic
     a.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(a.out, time_s=t, voltage_v=v,
                         **{k: v for k, v in pred.items() if isinstance(v, np.ndarray)})
     summary = dict(output=str(a.out), nsteps=len(t), rank=rom.rank,
+                   online_seconds=float(online_s),
                    max_copper_K=float(np.max(pred["temp_K"][:, rom.cu])),
                    max_material_budget_W=float(np.max(abs(pred["material_budget_W"]))),
                    max_fv_residual_W=float(np.max(pred["fv_node_residual_W"])),
