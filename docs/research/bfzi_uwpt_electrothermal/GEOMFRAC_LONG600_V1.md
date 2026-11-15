@@ -75,3 +75,28 @@ python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_long_manifest.jso
 推荐在真实 S5 数据齐全的计算环境重训，并比较 600 s T04、两条 60 s T04 的动态阻抗相对 L2、温度场最大误差及五材料能量预算。可直接在原长时训练命令中附加 `--history-weight step --zrel-weight .2`，同时将 `--out` 和 `--report` 维持同一个训练版本以方便前后比较。建议把 `--zrel-weight 0` 作为仅改变时间权重的独立对照。
 
 **本轮已交付代码及局部检查，尚未重跑完整 BFZI S5 600 秒神经训练。** 因此该权重改动对留出精度的实际提升仍需真实训练报告确认。
+
+
+## 7. 2026-11-15 续推：动态阻抗训练目标与物理验收统一
+
+进一步检查发现，旧的可选 `--zrel-weight` 只计算六维**海水**动态阻抗相对误差；模型最终验收的 `dynamic_Z_rel_L2` 则比较**海水加双铜绕组**的完整端口阻抗。这会让神经热头影响的铜阻抗变化只间接受温度损失监督，无法直接通过相对端口阻抗损失调整。
+
+现在保留原有六维海水监督，增加与验收量对应的可微分完整动态阻抗损失：
+
+```text
+Z_pred(t)-Z0 = ΔZ_sea_pred(t) + diag(dZcu/dT|ambient * ΔTcu_pred(t))
+L_zrel = Σ_{t>0} || pack(Z_pred(t)-Z0) - (z6_true(t)-z6_true(0)) ||_2^2
+         / max(Σ_{t>0} || z6_true(t)-z6_true(0) ||_2^2, 1e-12)
+```
+
+其中双铜阻抗的温度切线复用原物理模块 `PortModel.copper()` 在环境温度附近的中心差分，与现有可微分自主热源使用同一近似。训练梯度能够同时作用于海水阻抗预测和 32D 热状态。现有保存模型的结构、SOE、空间热基和在线 BFZI 原始铜阻抗求解方式均不改变；`--zrel-weight 0` 继续对应此前未启用相对阻抗损失的行为。
+
+新增单测 `test_dynamic_z_loss_matches_full_copper_and_seawater` 检验：教师完整阻抗同时包含指定海水变化与铜温变化时，目标损失为零；忽略铜温时产生非零误差，并正确向铜温变量反向传播。该核心计算已在 Python/PyTorch CPU 沙箱独立运行并通过数值与梯度检查。
+
+推荐的下一次真实 S5 长时程跨几何训练采用同一冻结划分（T01–T03 训练，T04 全留出），单一新版本输出：
+
+```powershell
+python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_long_manifest.json --init-model runs/geomfrac_et_s5_soe.pt --soe-quad trap --heat-dt 1.875 --epochs 140 --patience 45 --closed-warmup 10 --closed-ramp 25 --lr .0002 --closed-weight .08 --therm-weight .05 --history-weight step --zrel-weight 1 --out runs/geomfrac_et_s5_long_v2.pt --report runs/geomfrac_et_s5_long_v2.json
+```
+
+验收时与现有 `runs/geomfrac_et_s5_long.json`（T04 60s：21.59%、17.49%；600s：27.98% 动态 Z 相对 L2）逐历史比较，关注温度最大误差、五材料预算是否同时维持；再以独立全新 600s 工况进行最终泛化检查。当前仅完成代码、测试及方案更新，真实 V2 训练尚未执行，也尚无 V2 精度数值。
