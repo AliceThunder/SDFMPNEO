@@ -26,7 +26,7 @@ from sdfmpneo_bfzi.s5_bridge import feature
 
 def prepare(spec,rank=32):
     """Load a cold anchor and project its histories into common K-scale modes."""
-    head=GeomHeat.load(spec['anchor'])
+    head=GeomHeat.load(Path(str(spec['anchor']).replace('\\', '/')))
     rom=make_rom(head,rank)
     ng=45 if hasattr(head,'thermal') else (
         40 if getattr(head,'pose',None) is not None else 22)
@@ -64,11 +64,12 @@ def main():
     p.add_argument('--closed-ramp',type=int,default=60)
     p.add_argument('--therm-weight',type=float,default=.03)
     p.add_argument('--zrel-weight',type=float,default=0.)
+    p.add_argument('--history-weight',choices=('equal','step'),default='step')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
-    trgeo={str(item['anchor']) for item in trspec}
-    vageo={str(item['anchor']) for item in vaspec}
+    trgeo={str(item['anchor']).replace('\\','/') for item in trspec}
+    vageo={str(item['anchor']).replace('\\','/') for item in vaspec}
     if not trgeo or not vageo or trgeo & vageo:
         p.error('train and val require disjoint nonempty geometries')
     if any(re.search(r'(^|_)U(?:0[1-9]|1[0-2])(?:_|$)',Path(g).stem)
@@ -101,12 +102,12 @@ def main():
         net.train()
         opt.zero_grad(set_to_none=True)
         loss=score(net,train,None,sx,sy,sa,therm_w=a.therm_weight,
-                   zrel_w=a.zrel_weight)
+                   zrel_w=a.zrel_weight,hist_weight=a.history_weight)
         if a.closed_weight and ep>=a.closed_warmup:
             mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
             loss+=a.closed_weight*score(net,train,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=mix,
-                        zrel_w=a.zrel_weight)
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight)
         if not torch.isfinite(loss):
             raise RuntimeError(f"training diverged at epoch {ep+1}")
         loss.backward()
@@ -115,11 +116,11 @@ def main():
         net.eval()
         with torch.no_grad():
             v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
-                          zrel_w=a.zrel_weight))
+                          zrel_w=a.zrel_weight,hist_weight=a.history_weight))
             if a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=1.,
-                        zrel_w=a.zrel_weight))
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if ep+1>=warmup and v<best-1e-8:
@@ -149,6 +150,7 @@ def main():
                  mode='canonical-material-32',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
+                 history_weight=a.history_weight,
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best,
