@@ -196,6 +196,26 @@ def _hist_mean(vals, spans, mode):
     return (v*w).sum()/w.sum()
 
 
+def _zrel_full(rom, row, sea, cu, sy):
+    """Relative dynamic full-port impedance, including copper temperature."""
+    if sea.shape[0]!=len(cu) or cu.shape!=(len(sea),2):
+        raise ValueError("expected two predicted copper temperature rises per time")
+    amb=rom.amb
+    hot=rom.port.copper(np.full(2,amb+.1))
+    cold=rom.port.copper(np.full(2,amb-.1))
+    slope=torch.as_tensor((hot-cold)/.2,dtype=torch.complex64,
+                          device=sea.device)
+    dz=cu.to(torch.complex64)*slope[None]
+    zero=torch.zeros_like(dz[:,0].real)
+    copper=torch.stack((dz[:,0].real,dz[:,0].imag,zero,zero,
+                        dz[:,1].real,dz[:,1].imag),dim=-1)
+    zscale=torch.as_tensor(sy[:6],dtype=sea.dtype,device=sea.device)
+    pred=sea[:,:6]*zscale+copper
+    ref=torch.as_tensor(row["z6"][1:]-row["z6"][0],
+                        dtype=sea.dtype,device=sea.device)
+    return (pred-ref).square().sum()/ref.square().sum().clamp_min(1e-12)
+
+
 def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
           therm_w=0., src_mix=0., zrel_w=0., hist_weight="equal"):
     total, spans = [], []
@@ -207,7 +227,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
         asc = torch.as_tensor(sa, dtype=torch.float32)
         h = net.init_state(1)
         pr_z, pr_a = [], []
-        pr_phys,pr_pkg,pr_cu = [],[],[]
+        pr_phys,pr_pkg,pr_cu,pr_cuz = [],[],[],[]
         cur = a[0:1]
         zy = torch.zeros((1,14),dtype=a.dtype)
         rr=row.get("rom",rom)
@@ -258,6 +278,8 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
                               .square().mean())
                 pr_cu.append((pred_temp[n_pkg:]-actual[k,n_pkg:])
                              .square().mean())
+                if zrel_w:
+                    pr_cuz.append(pred_temp[n_pkg:])
             if therm_w:
                 delta=state[0]-a[k]
                 prev_delta=prev[0]-a[k-1]
@@ -276,10 +298,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
                    +.15*torch.stack(pr_cu).mean()) if pr_pkg else 0.
         zrel=0.
         if zrel_w:
-            zscale=torch.as_tensor(sy[:6],dtype=pz.dtype)
-            zd=(pz[:,:6]-y[1:,:6])*zscale
-            ref=y[1:,:6]*zscale
-            zrel=zd.square().sum()/ref.square().sum().clamp_min(1e-12)
+            if rr is None:
+                raise ValueError("full dynamic impedance needs a heat ROM")
+            zrel=_zrel_full(rr,row,pz,torch.stack(pr_cuz),sy)
         total.append(zerr+0.45*zextra+heat+therm_w*phy
                      +temp_loss+zrel_w*zrel)
         spans.append(len(t)-1)
