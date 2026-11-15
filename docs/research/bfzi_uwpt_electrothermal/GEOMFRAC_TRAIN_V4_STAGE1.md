@@ -97,3 +97,30 @@ V4 四几何增量对照（T01/T02/T03/N01，T04 整几何留出）：真实训�
 CPU 推理耗时 0.5585s。
 
 V4 五几何动态Z损失权重对照：同训练数据、同三几何初始化、同AdamW配置。zrel=3，最佳轮次50，T04 60s1/60s2/600s误差20.074/18.540/15.948%；zrel=0，最佳轮次100，对应19.393/17.300/15.813%。原 zrel=1 数据见 geomfrac_et_v4_5g.json。
+
+## V4 eight-geometry cohort and geometry repair (2026-11-15)
+
+The original BFZI V150 S5 teachers for N03/N04/N05 are complete, with
+three excitation histories of 60/300/600 seconds per geometry. The
+eight-geometry training cohort T01/T02/T03/N01-N05 now contains
+24 real physical histories. Its manifest is
+`runs/geomfrac_s5_v4_8g_manifest.json`.
+
+The 32-mode thermal projection maximum error for the 600s histories
+is 1.514 K (N03), 2.251 K (N04), and 9.528 K (N05). N05's
+package-region maximum error is 1.110 K. These are physical teacher
+projection statistics, not neural inference results.
+
+The 5g baseline held-out T04 dynamic impedance relative L2 errors were
+20.796%/18.478%/16.184% for 60s-1/60s-2/600s. The zrel=0
+ablation improved these to 19.393%/17.300%/15.813%, so the
+8g training was initialized from the 5g zrel=0 checkpoint using the
+same 2e-4 learning rate and 0.08/0.05 closed-loop/thermal weights.
+
+The deterministic V4 geometry sampler previously generated
+N06 alpha1=0.743, core1=12 mm: the ten-turn M4 coil needs at least
+12.85 mm for the inner straight-core constraint. The sampler now
+enforces a 1 mm reserve, setting N06 core1 to 14 mm. All existing
+T01-T04 and N01-N05 case definitions remain unchanged. V4 plan tests
+pass (2/2). N06/N07/D01 S5 teachers and the 8g training are running;
+their numerical results must be recorded after completion.
