@@ -59,6 +59,7 @@ def main():
         "docs/research/bfzi_uwpt_electrothermal/evidence/physical_unseen12_final.md"))
     a=ap.parse_args()
     meta={}
+    orders=set()
     names=(sorted(p.name for p in a.runs.glob(
                f"bfzi_unseen_*_{a.run_tag}_*.json")) if a.run_tag else
            sorted(set(FILES+
@@ -69,12 +70,17 @@ def main():
         if not p.exists():
             continue
         d=json.loads(p.read_text(encoding="utf-8"))
+        if a.run_tag and "source_order" in d.get("settings",{}):
+            orders.add(int(d["settings"]["source_order"]))
         for key,case in d.get("cases",{}).items():
             for tag,rec in case.get("runs",{}).items():
                 h=d["settings"]["inner_step_s"]
                 if h in (1,2) and tag in ("ultra_dt15","superfine_dt15"):
                     g=tag.removesuffix("_dt15")
                     meta[(key,g,int(h))]=rec
+    if len(orders)>1:
+        raise ValueError("mixed source quadrature orders in one acceptance")
+    source_order=next(iter(orders),3)
     if not a.run_tag:
         base=a.runs/"bfzi_physical_unseen12_final.json"
         if base.exists():
@@ -170,7 +176,7 @@ def main():
     conservation={k:max(abs(r[k]) for r in rows) if rows else None
                   for k in fields}
     out=dict(method="BFZI V150 four-combination unseen independent physics",
-             run_tag=a.run_tag,
+             run_tag=a.run_tag,source_order=source_order,
              grid={"ultra":"2668-class wet FV","superfine":"3729-class wet FV"},
              true_heat_step_s={"h2":1.875,"h1":1.0},
              output_dt_s=15,elapsed_s=600,counts=counts,
@@ -223,8 +229,8 @@ def main():
             "",
             "在仓库根目录运行（BFZI 依赖目录为相邻 BFZI）：",
             "",
-            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 2{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h2.json",
-            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 1{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h1.json",
+            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 2{f' --source-order {source_order} --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h2.json",
+            f"    python -m examples.bfzi_physics_recheck --bfzi-root ../BFZI --runs runs --spec-file runs/bfzi_physical_unseen12_corrected.json --keys {' '.join(KEYS)} --dt 15 --grids ultra superfine --inner-step 1{f' --source-order {source_order} --run-tag {a.run_tag}' if a.run_tag else ''} --out runs/bfzi_unseen_all_{a.run_tag + '_' if a.run_tag else ''}h1.json",
             f"    python -m examples.bfzi_unseen_accept{f' --run-tag {a.run_tag}' if a.run_tag else ''} --out {a.out} --report {a.report}",
             "",
             f"源数据保存在 runs/bfzi_phys_U*{f'_{a.run_tag}' if a.run_tag else ''}.npz；所有样本的单组合功率、温度及热残差在 {a.out} 中。",
