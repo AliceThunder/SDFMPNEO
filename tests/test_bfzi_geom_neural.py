@@ -116,3 +116,28 @@ def test_batched_bfzi_teacher_selects_complete_history(tmp_path):
     import pytest
     with pytest.raises(ValueError, match="needs #history_index"):
         read(path, rom)
+
+def test_left_interval_voltage_right_time_observation():
+    """Heat the preceding interval even when present voltage turns off."""
+    from sdfmpneo_bfzi.frac_memory import zmat
+    from sdfmpneo_bfzi.geom_memory import heat_drive
+    full = case()
+    rom = GeomHeatROM.build(full, rank=10)
+    net = GeomFracET(ng=22, rank=rom.rank)
+    for p in net.net.parameters():
+        torch.nn.init.zeros_(p)
+    ck = dict(src_scale=np.ones(3), y_scale=np.ones(14),
+              a_scale=np.ones(rom.rank), port_sea=True)
+    t = np.array([0., 15., 30., 45.])
+    v = np.array([60., 0., 0., 0.])
+    pred = rollout(rom, net, ck, v, t)
+    assert np.max(pred["temp_K"][1] - rom.amb) > 1e-3
+    assert np.max(abs(pred["current_A"][1])) < 1e-9
+    assert np.max(abs(pred["material_budget_W"])) < 1e-6
+    # The teacher step (0,15] must see the initial ON voltage.
+    exp = heat_drive(v[0], zmat(pred["z6"][0]), rom.ext, rom.port,
+                     pred["temp_K"][0, rom.cu], rom.cap[rom.cu])
+    assert np.any(exp > 0)
+    assert np.allclose(heat_drive(v[1], zmat(pred["z6"][1]), rom.ext,
+                                  rom.port, pred["temp_K"][1, rom.cu],
+                                  rom.cap[rom.cu]), 0)

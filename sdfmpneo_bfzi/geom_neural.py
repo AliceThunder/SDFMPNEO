@@ -116,15 +116,19 @@ def rollout(rom, net, ck, voltage, times, correct_J=False):
     for k, tm in enumerate(t):
         if k:
             dt = float(tm - t[k-1])
-            u = heat_drive(float(v[k]), zprev, rom.ext, rom.port,
+            u = heat_drive(float(v[k-1]), zprev, rom.ext, rom.port,
                            rom.amb + theta[rom.cu], rom.cap[rom.cu])
             h, y, ahat = net.step_et(
                 h, torch.tensor((u/sc)[None], dtype=g.dtype), dt, g,
                 torch.tensor(a[None], dtype=g.dtype), ac)
             dsea = zmat(y[0, :6].cpu().numpy() * ys[:6])
             a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
-                rom, a*norm, ahat[0].cpu().numpy()*norm, dt, float(v[k]), dsea, B, D)
+                rom, a*norm, ahat[0].cpu().numpy()*norm, dt, float(v[k-1]), dsea, B, D)
             a = a_phys/norm
+            # Heat evolves with left-end interval drive; port outputs and
+            # Joule density at t[k] are sampled with the present voltage.
+            sea, z, I = rom.circuit(theta, dsea, float(v[k]))
+            _, q, J, ps, pc = rom.source(theta, I, sea)
         else:
             sea, z, I = rom.circuit(theta, np.zeros((2, 2), complex), float(v[k]))
             _, q, J, ps, pc = rom.source(theta, I, sea)

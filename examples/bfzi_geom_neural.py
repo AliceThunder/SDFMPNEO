@@ -90,8 +90,12 @@ def read(path, rom):
         dz.append([sea[0,0].real, sea[0,0].imag,
                    sea[0,1].real, sea[0,1].imag,
                    sea[1,1].real, sea[1,1].imag])
-        src.append(heat_drive(float(volts[k]), z, rom.ext, rom.port,
-                              temp[k,rom.cu], rom.cap[rom.cu]))
+        if k:
+            prev = zmat(z6[k-1])
+            src.append(heat_drive(float(volts[k-1]), prev, rom.ext, rom.port,
+                                  temp[k-1,rom.cu], rom.cap[rom.cu]))
+        else:
+            src.append(np.zeros(3))
         I = np.linalg.solve(z+rom.ext, np.array([volts[k], 0.], complex))
         sea0 = z-1j*rom.port.omega*rom.port.air-np.diag(cu)
         heat, *_ = rom.source(temp[k]-rom.amb, I, sea0)
