@@ -132,3 +132,49 @@ def test_multi_geometry_shared_training_gradients(monkeypatch):
     assert torch.isfinite(loss)
     loss.backward()
     assert model.heat_head[-1].weight.grad.abs().sum()>0
+
+
+def test_s5_skin_modes_recover_local_hot_water():
+    """Explicit TX/RX shell modes prevent smoothing away 2mm skin heating."""
+    from examples.bfzi_geom_basis_check import metrics
+    h=Head()
+    nwet=h.ns
+    nskin=1024
+    rng=np.random.default_rng(23)
+    h.nwet=nwet
+    h.nskin=nskin
+    h.skin_pkg=np.repeat(np.arange(2),nskin//2)
+    mid=h.pkg_xyz.mean(axis=1)
+    xyz=np.vstack([
+        rng.uniform(-.1,.1,(nskin//2,3))+mid[0],
+        rng.uniform(-.1,.1,(nskin//2,3))+mid[1]])
+    h.xyz=np.vstack([h.xyz,xyz])
+    h.ns=nwet+nskin
+    h.cap=np.r_[h.cap[:nwet],np.full(nskin,.12),h.cap[nwet:]]
+    h.cu=slice(len(h.cap)-2,len(h.cap))
+    h.H=diags(np.ones(len(h.cap))).tocsr()
+    h.amb=293.15
+    theta=np.zeros(len(h.cap))
+    theta[:nwet]=.5
+    theta[nwet:nwet+nskin]=12.+3*h.skin_pkg
+    theta[h.ns:h.ns+2*h.npkg]=3.
+    theta[h.cu]=17.
+    temp=h.amb+np.stack([theta,1.1*theta])
+    result=metrics(h,temp,rank=32)
+    assert result["regions"]["sea_skin"]["max_abs_K"]<1e-7
+    assert result["regions"]["sea_bulk"]["max_abs_K"]<1e-7
+    assert result["material_mean_max_K"]<1e-8
+    phi=basis(h)
+    assert np.max(abs(phi.T@(h.cap[:,None]*phi)-np.eye(32)))<1e-9
+
+
+def test_s5_skin_labels_must_match_two_packages():
+    h=Head()
+    h.nwet=h.ns
+    h.nskin=4
+    h.skin_pkg=np.array([0,1,0,3])
+    h.xyz=np.r_[h.xyz,h.xyz[:4]]
+    h.ns+=4
+    h.cap=np.r_[h.cap[:h.nwet],np.ones(4),h.cap[h.nwet:]]
+    with pytest.raises(ValueError,match="package labels"):
+        basis(h)

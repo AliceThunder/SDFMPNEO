@@ -19,10 +19,26 @@ def _shapes(head):
     span = np.maximum(np.ptp(sea,axis=0),.03)
     x,y,z = ((sea-origin)/span).T
     dist = np.linalg.norm(sea[:,None,:]-mid[None,:,:],axis=-1)
-    vals = [x,y,z,x*x,y*y,z*z,x*y,x*z,y*z,
-            np.sin(np.pi*x),np.sin(np.pi*y),
-            np.exp(-.5*(dist[:,0]/.09)**2),
-            np.exp(-.5*(dist[:,1]/.09)**2)]
+    extra=[np.sin(np.pi*x),np.sin(np.pi*y)]
+    if hasattr(head,"nskin"):
+        nwet,nskin=int(head.nwet),int(head.nskin)
+        if nwet+nskin!=len(sea) or nskin%2:
+            raise ValueError("invalid S5 sea-skin partition")
+        # S5 traverses package surfaces in TX/RX order. Older anchors
+        # retain this ordering even without explicit skin_pkg labels.
+        pkg_id=(np.asarray(head.skin_pkg,int) if hasattr(head,"skin_pkg")
+                else np.repeat(np.arange(2),nskin//2))
+        if pkg_id.shape!=(nskin,) or np.any((pkg_id<0)|(pkg_id>1)):
+            raise ValueError("invalid BFZI sea-skin package labels")
+        extra=[]
+        for j in range(2):
+            mask=np.zeros(len(sea))
+            mask[nwet:]=(pkg_id==j).astype(float)
+            extra.append(mask)
+    vals=[x,y,z,x*x,y*y,z*z,x*y,x*z,y*z,
+          *extra,
+          np.exp(-.5*(dist[:,0]/.09)**2),
+          np.exp(-.5*(dist[:,1]/.09)**2)]
     features = [np.stack(vals,axis=1)]
     for j in range(2):
         v=(pkg[j]-mid[j])@np.asarray(head._pkg_axes[j],float)

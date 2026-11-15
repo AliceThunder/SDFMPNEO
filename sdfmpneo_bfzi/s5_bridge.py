@@ -80,6 +80,8 @@ def from_skin(em, et, ext, *, thermal):
     head.thermal = therm
     head.nwet = nwet
     head.nskin = nskin
+    head.skin_pkg = (np.asarray(et.skin_pkg,int) if hasattr(et,"skin_pkg")
+                     else np.repeat(np.arange(2),nskin//2))
     return head
 
 

@@ -158,7 +158,7 @@ class GeomHeat:
         m=self.H.tocsr()
         extra=({f"sea_proj_{k}":v for k,v in self.sea_proj.items()}
                if self.sea_proj is not None else {})
-        for name in ("state_order","thermal","nwet","nskin"):
+        for name in ("state_order","thermal","nwet","nskin","skin_pkg"):
             if hasattr(self,name):
                 extra[name]=getattr(self,name)
         np.savez_compressed(Path(path),geometry=self.geom,z0=self.z0,
@@ -190,7 +190,7 @@ class GeomHeat:
                        pkg_mid=d["pkg_mid"] if "pkg_mid" in d else None,
                        pkg_half=d["pkg_half"] if "pkg_half" in d else None,
                        sea_proj=proj)
-            for name in ("state_order","thermal","nwet","nskin"):
+            for name in ("state_order","thermal","nwet","nskin","skin_pkg"):
                 if name in d.files:
                     item=d[name].copy()
                     setattr(head,name,int(item) if name in ("nwet","nskin")
