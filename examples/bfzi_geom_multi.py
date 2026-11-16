@@ -75,6 +75,8 @@ def main():
                    help='histories per stochastic step; 0 uses full training set')
     p.add_argument('--val-every',type=int,default=1,
                    help='validate every N training epochs')
+    p.add_argument('--select',choices=('loss','dynamic_z'),default='loss',
+                   help='best-checkpoint criterion for validation')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -115,6 +117,16 @@ def main():
     best_epoch=0
     saved=None
     best_train=None
+    best_loss=None
+    eck=dict(src_scale=sx,y_scale=sy,a_scale=sa,
+             canonical=True,port_sea=True)
+    if a.select=='dynamic_z' and a.init_model:
+        net.eval()
+        with torch.no_grad():
+            init_z=eval_rollout(None,net,eck,val)
+        best=float(np.mean([x['dynamic_Z_rel_L2'] for x in init_z]))
+        saved={k:v.detach().clone() for k,v in net.state_dict().items()}
+        print('INIT dynamic_z',round(best,6),flush=True)
     if a.val_every<1 or a.batch_hist<0:
         p.error('val-every must be positive, batch-hist must be nonnegative')
     if a.closed_warmup<0 or a.closed_ramp<=0:
@@ -152,20 +164,41 @@ def main():
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
+        if a.select=='dynamic_z':
+            with torch.no_grad():
+                zval=eval_rollout(None,net,eck,val)
+            metric=float(np.mean([x['dynamic_Z_rel_L2'] for x in zval]))
+        else:
+            metric=v
+        if not np.isfinite(metric):
+            raise RuntimeError('nonfinite validation selection metric')
         if ep+1>=warmup:
-            sched.step(v)
-        if ep+1>=warmup and v<best-1e-8:
-            best,best_epoch=v,ep+1
+            sched.step(metric)
+        if ep+1>=warmup and metric<best-1e-8:
+            best,best_epoch=metric,ep+1
+            best_loss=v
             best_train=float(loss.detach())
             saved={k:vv.detach().clone() for k,vv in net.state_dict().items()}
         if (ep+1)%50==0:
             print("TRAIN",ep+1,"train",round(float(loss.detach()),6),
-                  "val",round(v,6),"best",best_epoch,flush=True)
+                  "val",round(v,6),"select",round(metric,6),
+                  "best",best_epoch,flush=True)
         if saved is not None and ep+1-best_epoch>=a.patience:
             break
     if saved is None:
         raise RuntimeError("training requires enough epochs for closed-loop source warmup")
     net.load_state_dict(saved)
+    if best_loss is None:
+        net.eval()
+        with torch.no_grad():
+            best_loss=float(score(net,val,None,sx,sy,sa,
+                therm_w=a.therm_weight,zrel_w=a.zrel_weight,
+                hist_weight=a.history_weight))
+            if a.closed_weight:
+                best_loss+=a.closed_weight*float(score(net,val,None,
+                    sx,sy,sa,closed=True,therm_w=a.therm_weight,
+                    src_mix=1.,zrel_w=a.zrel_weight,
+                    hist_weight=a.history_weight))
     ck=dict(state=net.state_dict(),ng=net.ng,rank=net.rank,
             src_scale=torch.as_tensor(sx,dtype=torch.float32),
             y_scale=torch.as_tensor(sy,dtype=torch.float32),
@@ -189,7 +222,10 @@ def main():
                  final_lr=opt.param_groups[0]['lr'],
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
-                 best_epoch=best_epoch,val_loss=best,
+                 best_epoch=best_epoch,val_loss=best_loss if a.select=='dynamic_z' else best,
+                 select=a.select,best_score=best,
+                 val_dynamic_Z_mean_rel_L2=float(np.mean(
+                     [v['dynamic_Z_rel_L2'] for v in autonomous])),
                  train_loss_at_best=best_train,epochs_trained=ep+1,
                  closed_source_warmup=warmup,
                  closed_warmup=a.closed_warmup,

@@ -168,3 +168,30 @@ python -m examples.bfzi_geom_eval --model runs/geomfrac_et_v4_8g.pt --manifest r
 
 The 8g checkpoint evaluated on T04 reproduces the original three
 dynamic impedance errors exactly (maximum difference 0.0).
+
+## Eight-geometry independent-validation comparison (2026-11-15)
+
+T04 and D01 are disjoint development geometries, never included in any of these training sets.
+
+| Model | T04 60a | T04 60b | T04 600 | D01 60 | D01 300 | D01 600 |
+|---|---:|---:|---:|---:|---:|---:|
+| 5g | 19.393% | 17.300% | 15.813% | 16.407% | 14.084% | 18.172% |
+| 8g | 51.076% | 54.780% | 39.681% | 29.017% | 30.039% | 32.303% |
+| 8g_v2 | 25.844% | 24.237% | 18.104% | 19.095% | 17.104% | 20.555% |
+
+The 8g v2 correction retained the 5g normalization and trained 145 epochs, best at epoch 55;
+it improved over the original 8g, but 5g remained better on all six held-out histories.
+The first larger-cohort experiments optimized a composite teacher/thermal objective;
+checkpoint selection was not aligned with autonomous dynamic-Z relative L2.
+
+New training option `--select dynamic_z` selects the checkpoint by mean
+autonomous dynamic-Z relative L2 over all validation histories, with early stopping
+and the learning-rate scheduler using this same metric. With a warm start, epoch 0
+is a retained baseline checkpoint. The 10g experiment uses T01-T03/N01-N07,
+30 teacher histories, and T04/D01 for development validation. The final
+E01-E05 geometry cohort remains reserved for final independent testing.
+
+New physical teachers N07, N08, N09 and independent D01 are completed, all
+three excitation histories per geometry (60/300/600 s). Their 600s maximum
+32-mode spatial projection errors are: N07=10.812 K, D01=1.499 K, N08=4.665 K, N09=2.255 K.
+N10-N12 physical data generation continues independently.

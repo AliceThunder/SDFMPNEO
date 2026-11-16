@@ -1,0 +1,87 @@
+{
+  "model": "runs\\geomfrac_et_v4_5g_z0.pt",
+  "manifest": "runs\\geomfrac_s5_v4_8g_val2_manifest.json",
+  "split": "val",
+  "geometries": 2,
+  "histories": 6,
+  "dynamic_Z_mean_rel_L2": 0.168613981047209,
+  "results": [
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "inference_cpu_s": 0.04755650000879541,
+      "dynamic_Z_rel_L2": 0.19393403995924494,
+      "full_Z_rel_L2": 6.914557991904002e-06,
+      "temperature_max_K": 0.6977051779365411,
+      "copper_max_K": 0.23663597606542908,
+      "package_max_K": 0.6977051779365411,
+      "material_budget_max_W": 5.933173952143989e-10,
+      "fv_residual_max_W": 0.8233827581078653,
+      "dynamic_Z_0_60_rel_L2": 0.19393403995924494
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "inference_cpu_s": 0.05014969999319874,
+      "dynamic_Z_rel_L2": 0.17299539899829738,
+      "full_Z_rel_L2": 1.3239192384910159e-05,
+      "temperature_max_K": 0.9527021299080047,
+      "copper_max_K": 0.34956325290153245,
+      "package_max_K": 0.9527021299080047,
+      "material_budget_max_W": 4.387388230497891e-09,
+      "fv_residual_max_W": 1.352167484680651,
+      "dynamic_Z_0_60_rel_L2": 0.17299539899829738
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "inference_cpu_s": 0.40201360001810826,
+      "dynamic_Z_rel_L2": 0.15813435234722956,
+      "full_Z_rel_L2": 7.80393747596492e-06,
+      "temperature_max_K": 0.9664331039456329,
+      "copper_max_K": 0.2877524054121636,
+      "package_max_K": 0.9443698251563433,
+      "material_budget_max_W": 5.933173952143989e-10,
+      "fv_residual_max_W": 0.847601119579399,
+      "dynamic_Z_0_60_rel_L2": 0.19393403995924494,
+      "dynamic_Z_60_300_rel_L2": 0.1201561496591096,
+      "dynamic_Z_300_600_rel_L2": 0.16683043195324443
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "inference_cpu_s": 0.05487679998623207,
+      "dynamic_Z_rel_L2": 0.16406542503416335,
+      "full_Z_rel_L2": 2.9125489110893105e-06,
+      "temperature_max_K": 0.5114729603170076,
+      "copper_max_K": 0.16134322955713287,
+      "package_max_K": 0.5114729603170076,
+      "material_budget_max_W": 3.960147765269539e-09,
+      "fv_residual_max_W": 0.2998817536955747,
+      "dynamic_Z_0_60_rel_L2": 0.16406542503416335
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "inference_cpu_s": 0.21920580000733025,
+      "dynamic_Z_rel_L2": 0.14083638258504375,
+      "full_Z_rel_L2": 7.807664040771687e-06,
+      "temperature_max_K": 1.6955810940367542,
+      "copper_max_K": 0.6004628245078152,
+      "package_max_K": 1.6955810940367542,
+      "material_budget_max_W": 1.6432366578555957e-10,
+      "fv_residual_max_W": 0.5100967563407705,
+      "dynamic_Z_0_60_rel_L2": 0.1683180805685174,
+      "dynamic_Z_60_300_rel_L2": 0.13884259117169684
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "inference_cpu_s": 0.44358039999497123,
+      "dynamic_Z_rel_L2": 0.18171828735927512,
+      "full_Z_rel_L2": 1.4159108927832885e-05,
+      "temperature_max_K": 1.6195074408817618,
+      "copper_max_K": 0.6825376805955443,
+      "package_max_K": 1.6195074408817618,
+      "material_budget_max_W": 8.56176640695594e-09,
+      "fv_residual_max_W": 0.4672531024082609,
+      "dynamic_Z_0_60_rel_L2": 0.15647241749080573,
+      "dynamic_Z_60_300_rel_L2": 0.14333901328358853,
+      "dynamic_Z_300_600_rel_L2": 0.1929123623796035
+    }
+  ]
+}
