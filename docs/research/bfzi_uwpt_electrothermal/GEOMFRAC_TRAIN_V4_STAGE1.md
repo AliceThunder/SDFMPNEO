@@ -253,3 +253,17 @@ The experiment does not increase thermal ROM rank or change neural
 architecture; its purpose is to test data-quality weighting as an
 interim solution. The baseline and weighted outcomes must be
 reported separately.
+
+## Dynamic-impedance error source probe
+
+On six T04/D01 physics histories, the 8g-quality checkpoint was
+evaluated by feeding the teacher's true source inputs and true
+previous-time thermal coordinates into the neural SOE/impedance
+predictor, and comparing its seawater dynamic impedance prediction
+against the teacher's seawater impedance, normalized by the total
+port dynamic impedance magnitude. The teacher-forced result is
+16.660% mean error; autonomous closed-loop error on the same histories is 16.385%.
+Because oracle teacher inputs alone do not remove the dynamic-Z error,
+the learned seawater impedance mapping itself is also a priority
+for subsequent architecture/loss refinement. Probe numeric results:
+`runs/geomfrac_et_v4_open_loop_probe.json`.

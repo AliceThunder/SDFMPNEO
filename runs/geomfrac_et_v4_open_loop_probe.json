@@ -1,0 +1,26 @@
+[
+  {
+    "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+    "teacher_forced_full_Z_rel_L2": 0.2226650532014712
+  },
+  {
+    "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+    "teacher_forced_full_Z_rel_L2": 0.19033114062457993
+  },
+  {
+    "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+    "teacher_forced_full_Z_rel_L2": 0.15534979407381838
+  },
+  {
+    "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+    "teacher_forced_full_Z_rel_L2": 0.1914669545949554
+  },
+  {
+    "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+    "teacher_forced_full_Z_rel_L2": 0.10988953703155847
+  },
+  {
+    "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+    "teacher_forced_full_Z_rel_L2": 0.1299177029612657
+  }
+]
