@@ -107,3 +107,21 @@ Current evidence:
 - runs/geomfrac_et_v9_eval_dev.json
 - runs/geomfrac_et_v9_s04_retro.json
 - runs/geomfrac_et_v9_selection.json
+
+## W01?W04 frozen independent acceptance
+
+Four previously unseen BFZI V150 S5 geometries, twelve 60/300/600-second physical histories, including two low-voltage excitation geometries, have been completed without changing the frozen V9 checkpoint.
+
+| Model | Mean dynamic-Z rel L2 | Worst history dynamic-Z rel L2 | Mean maximum 3-D temperature error | Mean CPU/history | Max material energy residual |
+|---|---:|---:|---:|---:|---:|
+| V7 | 8.669% | 19.836% | 1.062 K | 0.689 s | 9.31e-09 W |
+| V9 | 6.994% | 17.444% | 1.062 K | 0.769 s | 9.36e-09 W |
+
+| Geometry | Drive setting | V7 mean dynamic-Z | V9 mean dynamic-Z | V7 600s | V9 600s |
+|---|---|---:|---:|---:|---:|
+| W01 | weak | 13.988% | 12.019% | 19.836% | 17.444% |
+| W02 | weak | 9.715% | 6.002% | 13.642% | 6.864% |
+| W03 | full | 3.271% | 2.870% | 3.740% | 3.698% |
+| W04 | full | 7.702% | 7.085% | 8.004% | 6.246% |
+
+The frozen V9 nonlinear tangent yields a relative 19.32% change in mean dynamic Z versus V7 on the new cohort. Full teacher and trajectory-level results are in runs/geomfrac_et_v9_final.json.

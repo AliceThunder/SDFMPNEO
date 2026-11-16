@@ -921,3 +921,7 @@ W01?W04 independent geometry/weak-drive plans are
 frozen, with BFZI S5 physical teachers launched.
 V7 remains the accepted version pending V9 independent
 evaluation. See GEOMFRAC_TRAIN_V9.md.
+
+## V9 W01?W04 independent test completed
+
+Frozen geometry-disjoint 12-history BFZI evaluation: mean dynamic-Z V7 8.669% and V9 6.994%; mean 3-D maximum temperature error V7 1.062 K and V9 1.062 K; maximum five-material energy residual V9 9.36e-09 W. See GEOMFRAC_TRAIN_V9.md and geomfrac_et_v9_final.json.
