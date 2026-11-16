@@ -10,7 +10,7 @@ import numpy as np
 from .geom_rom import groups
 
 
-def _shapes(head):
+def _shapes(head,rank=32):
     """Temperature shapes in sea (13) and package A/B (7+7)."""
     sea = np.asarray(head.xyz,float)
     pkg = np.asarray(head.pkg_xyz,float)
@@ -39,6 +39,17 @@ def _shapes(head):
           *extra,
           np.exp(-.5*(dist[:,0]/.09)**2),
           np.exp(-.5*(dist[:,1]/.09)**2)]
+    if rank==48:
+        # Eight local surface variations for each package; these
+        # capture anisotropic heating in the thin seawater shell.
+        if not hasattr(head,"nskin"):
+            raise ValueError("48-mode thermal basis requires S5 sea-skin cells")
+        for j in range(2):
+            local=(sea-mid[j])@np.asarray(head._pkg_axes[j],float)
+            local/=np.maximum(2*np.asarray(head._pkg_half[j],float),1e-4)
+            a,b,c=local.T
+            vals.extend([extra[j]*v for v in
+                         (a,b,c,a*a,c*c,a*c,a*b,b*c)])
     features = [np.stack(vals,axis=1)]
     for j in range(2):
         v=(pkg[j]-mid[j])@np.asarray(head._pkg_axes[j],float)
@@ -52,9 +63,14 @@ def _shapes(head):
 
 
 def labels(rank=32):
-    if rank not in (5,32):
-        raise ValueError("canonical thermal basis uses 5 or 32 modes")
-    return np.array([0,1,2,3,4]+([0]*13+[1]*7+[2]*7 if rank==32 else []),int)
+    if rank not in (5,32,48):
+        raise ValueError("canonical thermal basis uses 5, 32 or 48 modes")
+    lab=[0,1,2,3,4]
+    if rank>=32:
+        lab += [0]*13+[1]*7+[2]*7
+    if rank==48:
+        lab += [0]*16
+    return np.array(lab,int)
 
 
 def basis(head,rank=32):
@@ -69,7 +85,7 @@ def basis(head,rank=32):
         phi[span,j]=1/np.sqrt(np.sum(cap[span]))
     if rank==5:
         return phi
-    for mat,raw in enumerate(_shapes(head)):
+    for mat,raw in enumerate(_shapes(head,rank)):
         span=sl[mat]
         weight=cap[span]
         ids=np.flatnonzero(lab==mat)

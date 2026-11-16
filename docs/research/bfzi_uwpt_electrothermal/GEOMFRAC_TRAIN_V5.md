@@ -202,3 +202,37 @@ V4 independent Q test average dynamic-Z relative L2 = 18.035%; frozen V5 = 8.322
 | Q03 | 21.540% | 10.259% |
 | Q04 | 13.348% | 4.063% |
 | Q05 | 16.679% | 9.608% |
+
+## V5 thermal basis extension: 32 to 48 shared modes
+
+The largest spatial temperature reconstruction errors in the frozen
+Q01 and Q03 independent V5 acceptance occur in the TX package's
+adjacent seawater skin. A 48-mode *optional experimental* canonical
+basis preserves the first 32 modes, adding eight package-local
+seawater-skin shapes around each TX/RX enclosure. The added shapes
+depend on each enclosure's normalized local coordinates; their
+meaning is consistent across package sizes and coil positions.
+All 48 modes remain heat-capacity orthonormal. The original V5
+production checkpoint and its frozen Q01-Q05 acceptance are unchanged.
+
+Projected BFZI teacher temperature fields were compared at 600 s
+for the five development geometries:
+mean maximum abs reconstruction error 2.541 K (32 modes) to
+1.151 K (48 modes). The previously examined Q01-Q05 cases yield
+6.119 K to 2.787 K retrospectively, with Q01 11.089 -> 4.630 K and
+Q03 16.569 -> 8.157 K. These values measure direct *projection of
+physical truth*; they are not neural temperature-prediction results.
+The Q dataset has now been examined for representation design and
+will not serve as a new blind test for an eventual 48-mode model.
+
+A minimal training path expands the existing neural heat state from
+32 to 48 modes, copying the original 32-state heat dynamics and
+zero-initializing the 16 new thermal outputs. It freezes pretrained
+SOE impedance weights and selects a new checkpoint by the mean
+autonomous 3-D temperature maximum error on T04/D01-D04. The
+geometry-conditioned neural impedance tangent is reused without
+retraining. The 48-mode training outcome must be compared against
+the frozen V5 32-mode checkpoint before any new final acceptance.
+
+Projection evidence: `runs/geomfrac_s5_v5_basis48_dev.json`,
+`runs/geomfrac_s5_v5_basis48_qdiag.json`.

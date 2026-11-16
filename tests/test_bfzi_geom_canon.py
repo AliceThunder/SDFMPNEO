@@ -62,7 +62,7 @@ def test_two_geometries_same_thermal_semantics():
     assert np.allclose(x[:5],y[:5])
     assert np.linalg.norm(x[5:])<1e-9
     assert np.linalg.norm(y[5:])<1e-9
-    with pytest.raises(ValueError,match='5 or 32'):
+    with pytest.raises(ValueError,match='5, 32 or 48'):
         basis(a,24)
 
 

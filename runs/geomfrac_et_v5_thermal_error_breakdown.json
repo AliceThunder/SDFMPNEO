@@ -1,0 +1,176 @@
+{
+  "model": "frozen V5 Q01-Q05",
+  "duration_s": 600,
+  "cases": [
+    {
+      "case": "Q01",
+      "physical_max_K": 43.992801131703914,
+      "projection_max_K": 11.088715091817392,
+      "neural_max_K": 12.883265898789432,
+      "neural_vs_projection_max_K": 11.761271494167715,
+      "regions": {
+        "sea": {
+          "proj_max_K": 11.088715091817392,
+          "net_max_K": 11.351343224645973,
+          "state_max_K": 3.2321712558572244
+        },
+        "pkg_tx": {
+          "proj_max_K": 1.1221597883089771,
+          "net_max_K": 12.883265898789432,
+          "state_max_K": 11.761271494167715
+        },
+        "pkg_rx": {
+          "proj_max_K": 0.2396042823234552,
+          "net_max_K": 5.601721867828303,
+          "state_max_K": 5.416962127539875
+        },
+        "copper_tx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 4.7135801265217765,
+          "state_max_K": 4.7135801265217765
+        },
+        "copper_rx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 3.061738890997276,
+          "state_max_K": 3.061738890997276
+        }
+      }
+    },
+    {
+      "case": "Q02",
+      "physical_max_K": 5.412038603655674,
+      "projection_max_K": 0.9489961638902287,
+      "neural_max_K": 1.198030224353829,
+      "neural_vs_projection_max_K": 1.2289945354000338,
+      "regions": {
+        "sea": {
+          "proj_max_K": 0.9489961638902287,
+          "net_max_K": 0.843515153528358,
+          "state_max_K": 0.41194347637161854
+        },
+        "pkg_tx": {
+          "proj_max_K": 0.10748708064926404,
+          "net_max_K": 0.9397798884453437,
+          "state_max_K": 0.9140225924519427
+        },
+        "pkg_rx": {
+          "proj_max_K": 0.033038296043741866,
+          "net_max_K": 1.198030224353829,
+          "state_max_K": 1.2289945354000338
+        },
+        "copper_tx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.16847780038818883,
+          "state_max_K": 0.16847780038818883
+        },
+        "copper_rx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.23426220950733523,
+          "state_max_K": 0.23426220950733523
+        }
+      }
+    },
+    {
+      "case": "Q03",
+      "physical_max_K": 75.39181366704474,
+      "projection_max_K": 16.569267973131332,
+      "neural_max_K": 22.86639728609589,
+      "neural_vs_projection_max_K": 15.915493478597057,
+      "regions": {
+        "sea": {
+          "proj_max_K": 16.569267973131332,
+          "net_max_K": 22.86639728609589,
+          "state_max_K": 15.51521930603144
+        },
+        "pkg_tx": {
+          "proj_max_K": 1.7178122781114098,
+          "net_max_K": 16.168247427987694,
+          "state_max_K": 15.915493478597057
+        },
+        "pkg_rx": {
+          "proj_max_K": 0.1647139670178035,
+          "net_max_K": 2.403393672081279,
+          "state_max_K": 2.4844088779262847
+        },
+        "copper_tx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 12.051321563494923,
+          "state_max_K": 12.051321563494923
+        },
+        "copper_rx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 1.984260435043268,
+          "state_max_K": 1.984260435043268
+        }
+      }
+    },
+    {
+      "case": "Q04",
+      "physical_max_K": 5.715039441029774,
+      "projection_max_K": 0.9046276120037078,
+      "neural_max_K": 2.5045060150557106,
+      "neural_vs_projection_max_K": 2.530860994000875,
+      "regions": {
+        "sea": {
+          "proj_max_K": 0.9046276120037078,
+          "net_max_K": 0.8158505160474192,
+          "state_max_K": 0.5070376651415813
+        },
+        "pkg_tx": {
+          "proj_max_K": 0.08801640445136627,
+          "net_max_K": 2.5045060150557106,
+          "state_max_K": 2.530860994000875
+        },
+        "pkg_rx": {
+          "proj_max_K": 0.08954571248534648,
+          "net_max_K": 0.957012479235857,
+          "state_max_K": 0.9453948922303539
+        },
+        "copper_tx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.49179812657877164,
+          "state_max_K": 0.49179812657877164
+        },
+        "copper_rx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.09483480497880237,
+          "state_max_K": 0.09483480497880237
+        }
+      }
+    },
+    {
+      "case": "Q05",
+      "physical_max_K": 4.859226772188947,
+      "projection_max_K": 1.0821991396414319,
+      "neural_max_K": 1.4642951470183903,
+      "neural_vs_projection_max_K": 1.41911406456245,
+      "regions": {
+        "sea": {
+          "proj_max_K": 1.0821991396414319,
+          "net_max_K": 1.1885150294084497,
+          "state_max_K": 0.7430863769164375
+        },
+        "pkg_tx": {
+          "proj_max_K": 0.1250683975300717,
+          "net_max_K": 1.4642951470183903,
+          "state_max_K": 1.41911406456245
+        },
+        "pkg_rx": {
+          "proj_max_K": 0.10116747968004347,
+          "net_max_K": 0.9350392950223636,
+          "state_max_K": 0.9069490638432853
+        },
+        "copper_tx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.442746904173589,
+          "state_max_K": 0.442746904173589
+        },
+        "copper_rx": {
+          "proj_max_K": 0.0,
+          "net_max_K": 0.27650154757077416,
+          "state_max_K": 0.27650154757077416
+        }
+      }
+    }
+  ]
+}

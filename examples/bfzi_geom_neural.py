@@ -376,6 +376,20 @@ def load_init(net, old):
             state[name] = val.detach().clone()
         elif name == "net.0.weight" and ng == net.ng-5:
             state[name] = torch.cat((val, val.new_zeros((val.shape[0],5))), dim=1)
+        elif (int(old.get('rank',0))==32 and net.rank==48
+              and name=="heat_head.0.weight"):
+            out=state[name].clone()
+            hidden=val.shape[0]
+            out[:,:hidden+32]=val[:,:hidden+32]
+            out[:,-1]=val[:,-1]
+            out[:,hidden+32:-1]=0.
+            state[name]=out
+        elif (int(old.get('rank',0))==32 and net.rank==48
+              and name in ("heat_head.2.weight","heat_head.2.bias")):
+            out=state[name].clone()
+            out[:32]=val
+            out[32:]=0.
+            state[name]=out
         else:
             raise ValueError(f"incompatible GeomFrac weight: {name}")
     net.load_state_dict(state)

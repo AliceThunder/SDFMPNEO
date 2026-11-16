@@ -46,3 +46,24 @@ def test_coupled_tangent_preserves_material_budgets():
                  tangent=tangent)
     assert np.isfinite(pred['z6']).all()
     assert np.max(abs(pred['material_budget_W']))<1e-6
+
+def test_rank48_keeps_pretrained_rank32_thermal_dynamics():
+    import numpy as np
+    from examples.bfzi_geom_neural import load_init
+    torch.manual_seed(12)
+    old=GeomFracET(ng=45,rank=32,heat_dt=1.875)
+    with torch.no_grad():
+        old.heat_head[-1].weight.normal_(0,.001)
+    ck=dict(state=old.state_dict(),rank=32,ng=45,port_sea=True)
+    new=GeomFracET(ng=45,rank=48,heat_dt=1.875)
+    load_init(new,ck)
+    h=old.init_state(1)
+    u=torch.rand(1,3)
+    geom=torch.rand(1,45)
+    temp=torch.rand(1,32)
+    _, y0, a0=old.step_et(h,u,15.,geom,temp,torch.ones(32))
+    _, y1, a1=new.step_et(h,u,15.,geom,
+                         torch.cat((temp,torch.zeros(1,16)),dim=1),torch.ones(48))
+    assert torch.allclose(y1,y0,atol=1e-7)
+    assert torch.allclose(a1[:,:32],a0,atol=1e-7)
+    assert torch.count_nonzero(a1[:,32:])==0

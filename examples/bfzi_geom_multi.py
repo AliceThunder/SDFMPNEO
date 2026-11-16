@@ -65,7 +65,7 @@ def main():
                    help='supervise thermal state via tangent-projected impedance')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
     p.add_argument('--report',type=Path,default=Path('runs/geomfrac_et_multi.json'))
-    p.add_argument('--rank',type=int,default=32,choices=(5,32))
+    p.add_argument('--rank',type=int,default=32,choices=(5,32,48))
     p.add_argument('--epochs',type=int,default=500)
     p.add_argument('--patience',type=int,default=90)
     p.add_argument('--lr',type=float,default=.001)
@@ -85,7 +85,7 @@ def main():
                    help='histories per stochastic step; 0 uses full training set')
     p.add_argument('--val-every',type=int,default=1,
                    help='validate every N training epochs')
-    p.add_argument('--select',choices=('loss','dynamic_z'),default='loss',
+    p.add_argument('--select',choices=('loss','dynamic_z','thermal'),default='loss',
                    help='best-checkpoint criterion for validation')
     p.add_argument('--proj-tau',type=float,default=0.,
                    help='projection quality scale in K for history sampling; 0=uniform')
@@ -117,7 +117,11 @@ def main():
         if a.reuse_scales:
             sx=np.asarray(old['src_scale'],dtype=float)
             sy=np.asarray(old['y_scale'],dtype=float)
-            sa=np.asarray(old['a_scale'],dtype=float)
+            sa_old=np.asarray(old['a_scale'],dtype=float)
+            if len(sa_old)<a.rank:
+                sa=np.r_[sa_old,sa[len(sa_old):]]
+            else:
+                sa=sa_old
     elif a.reuse_scales:
         p.error('--reuse-scales requires --init-model')
     if a.head_only and a.heat_only:
@@ -148,13 +152,14 @@ def main():
     best_loss=None
     eck=dict(src_scale=sx,y_scale=sy,a_scale=sa,
              canonical=True,port_sea=True)
-    if a.select=='dynamic_z' and a.init_model:
+    if a.select in ('dynamic_z','thermal') and a.init_model:
         net.eval()
         with torch.no_grad():
             init_z=eval_rollout(None,net,eck,val,tangent=tangent)
-        best=float(np.mean([x['dynamic_Z_rel_L2'] for x in init_z]))
+        key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
+        best=float(np.mean([x[key] for x in init_z]))
         saved={k:v.detach().clone() for k,v in net.state_dict().items()}
-        print('INIT dynamic_z',round(best,6),flush=True)
+        print('INIT',a.select,round(best,6),flush=True)
     if a.val_every<1 or a.batch_hist<0 or a.proj_tau<0:
         p.error('invalid validation interval, batch size or projection scale')
     if a.proj_tau:
@@ -202,10 +207,11 @@ def main():
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
-        if a.select=='dynamic_z':
+        if a.select in ('dynamic_z','thermal'):
             with torch.no_grad():
                 zval=eval_rollout(None,net,eck,val,tangent=tangent)
-            metric=float(np.mean([x['dynamic_Z_rel_L2'] for x in zval]))
+            key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
+            metric=float(np.mean([x[key] for x in zval]))
         else:
             metric=v
         if not np.isfinite(metric):
@@ -250,7 +256,7 @@ def main():
     torch.save(ck,a.out)
     autonomous=eval_rollout(None,net,ck,val,tangent=tangent)
     metrics=dict(architecture='GeomFracET-cross-geometry',
-                 mode='canonical-material-32',rank=net.rank,
+                 mode=f'canonical-material-{net.rank}',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
@@ -265,7 +271,7 @@ def main():
                  final_lr=opt.param_groups[0]['lr'],
                  ntrain_geometries=len(trgeo),nval_geometries=len(vageo),
                  train_histories=len(train),val_histories=len(val),
-                 best_epoch=best_epoch,val_loss=best_loss if a.select=='dynamic_z' else best,
+                 best_epoch=best_epoch,val_loss=best_loss if a.select!='loss' else best,
                  select=a.select,best_score=best,
                  val_dynamic_Z_mean_rel_L2=float(np.mean(
                      [v['dynamic_Z_rel_L2'] for v in autonomous])),
