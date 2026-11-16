@@ -29,7 +29,8 @@ def main():
     net = GeomFracET(
         ng=int(ck["ng"]), rank=int(ck["rank"]),
         soe_quad=ck.get("soe_quad", "trap"),
-        heat_dt=float(ck.get("heat_dt", 1.875)))
+        heat_dt=float(ck.get("heat_dt", 1.875)),
+        heat_z=bool(ck.get("heat_z", False)))
     net.load_state_dict(ck["state"])
     rows = [r for spec in specs for r in prepare(spec, int(ck["rank"]))]
     vals = eval_rollout(None, net, ck, rows)

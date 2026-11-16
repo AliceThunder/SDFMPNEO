@@ -25,7 +25,7 @@ class GeomFracET(GeomFrac):
     """One shared SOE/MLP trunk and two outputs: sea Z and thermal ROM state."""
 
     def __init__(self, ng=40, rank=32, hidden=128, nrate=14,
-                 soe_quad="legacy", heat_dt=0.):
+                 soe_quad="legacy", heat_dt=0., heat_z=False):
         super().__init__(ng=ng, hidden=hidden, nrate=nrate,soe_quad=soe_quad)
         if heat_dt<0:
             raise ValueError("heat internal step must be nonnegative")
@@ -33,11 +33,20 @@ class GeomFracET(GeomFrac):
         if rank < 5:
             raise ValueError("heat rank must include five material modes")
         self.rank = int(rank)
+        self.heat_z = bool(heat_z)
         self.heat_head = nn.Sequential(
             nn.Linear(hidden + rank + 1, hidden), nn.SiLU(),
             nn.Linear(hidden, rank))
         nn.init.zeros_(self.heat_head[-1].weight)
         nn.init.zeros_(self.heat_head[-1].bias)
+        if self.heat_z:
+            # Thermal correction is exactly zero for ambient heat state.
+            # The final layer starts at zero to preserve a V4 warm start.
+            self.heat_z_head = nn.Sequential(
+                nn.Linear(hidden + rank, hidden // 2), nn.SiLU(),
+                nn.Linear(hidden // 2, 6))
+            nn.init.zeros_(self.heat_z_head[-1].weight)
+            nn.init.zeros_(self.heat_z_head[-1].bias)
 
     def step_et(self, h, u, dt, geom, a, scale):
         """Causal one-step sea impedance and normalized heat-state prediction."""
@@ -58,6 +67,14 @@ class GeomFracET(GeomFrac):
             clock=a.new_full((len(a),1),np.log1p(hdt)/np.log1p(600.))
             f=torch.cat((latent,a/scale,clock),dim=-1)
             a=a+(hdt/30.)*scale*self.heat_head(f)
+            if self.heat_z:
+                # Use the interval-end temperature, consistently in
+                # teacher-forced training and autonomous inference.
+                thermal=a/scale
+                hot=torch.cat((latent,thermal),dim=-1)
+                cold=torch.cat((latent,torch.zeros_like(thermal)),dim=-1)
+                dz=self.heat_z_head(hot)-self.heat_z_head(cold)
+                y=torch.cat((y[:,:6]+dz,y[:,6:]),dim=-1)
         return h,y,a
 
 

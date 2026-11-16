@@ -53,6 +53,10 @@ def main():
     p.add_argument('--init-model',type=Path,default=None)
     p.add_argument('--reuse-scales',action='store_true',
                    help='keep source/output/state scales when fine-tuning')
+    p.add_argument('--heat-z',action='store_true',
+                   help='condition seawater impedance directly on thermal ROM state')
+    p.add_argument('--head-only',action='store_true',
+                   help='only train the new heat-conditioned impedance head')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
     p.add_argument('--report',type=Path,default=Path('runs/geomfrac_et_multi.json'))
     p.add_argument('--rank',type=int,default=32,choices=(5,32))
@@ -100,7 +104,7 @@ def main():
         p.error('geometry and thermal feature dimensions must match')
     sx,sy,sa=scales(train)
     net=GeomFracET(ng=dims.pop(),rank=a.rank,
-                   soe_quad=a.soe_quad,heat_dt=a.heat_dt)
+                   soe_quad=a.soe_quad,heat_dt=a.heat_dt,heat_z=a.heat_z)
     if a.init_model:
         old=torch.load(a.init_model,map_location='cpu',weights_only=True)
         load_init(net,old)
@@ -110,7 +114,12 @@ def main():
             sa=np.asarray(old['a_scale'],dtype=float)
     elif a.reuse_scales:
         p.error('--reuse-scales requires --init-model')
-    opt=torch.optim.AdamW(net.parameters(),lr=a.lr,
+    if a.head_only:
+        if not a.heat_z or not a.init_model:
+            p.error('--head-only requires --heat-z and --init-model')
+        for name,param in net.named_parameters():
+            param.requires_grad_(name.startswith('heat_z_head.'))
+    opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt,mode='min',factor=a.lr_factor,
@@ -216,7 +225,8 @@ def main():
             y_scale=torch.as_tensor(sy,dtype=torch.float32),
             a_scale=torch.as_tensor(sa,dtype=torch.float32),
             canonical=True,port_sea=True,architecture='GeomFracET',
-            soe_quad=a.soe_quad,heat_dt=a.heat_dt,drive_rule="left",
+            heat_z=a.heat_z,soe_quad=a.soe_quad,heat_dt=a.heat_dt,
+            drive_rule="left",
             train_files=[r['file'] for r in train],
             val_files=[r['file'] for r in val])
     a.out.parent.mkdir(parents=True,exist_ok=True)
@@ -227,6 +237,7 @@ def main():
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
+                 heat_z=a.heat_z,head_only=a.head_only,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
                  batch_hist=a.batch_hist,val_every=a.val_every,

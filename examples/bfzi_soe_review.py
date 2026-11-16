@@ -17,7 +17,7 @@ def review(anchor,model,teacher,out):
     rom=make_rom(GeomHeat.load(anchor),int(ck["rank"]))
     net=GeomFracET(ng=int(ck["ng"]),rank=int(ck["rank"]),
                    soe_quad=ck.get("soe_quad","legacy"),
-                   heat_dt=float(ck.get("heat_dt",0.)))
+                   heat_dt=float(ck.get("heat_dt",0.)),heat_z=bool(ck.get("heat_z",False)))
     net.load_state_dict(ck["state"])
     net.eval()
     with np.load(teacher) as data:
