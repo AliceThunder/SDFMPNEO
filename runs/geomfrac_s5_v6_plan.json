@@ -1,0 +1,216 @@
+{
+  "description": "Frozen V6 independent test after V6 package correction selected on V4 development data",
+  "train": [],
+  "val": [],
+  "test": [
+    "R01",
+    "R02",
+    "R03"
+  ],
+  "cases": {
+    "R01": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.769,
+        "alpha2": 0.765,
+        "core1_mm": 13,
+        "core2_mm": 13,
+        "shift_mm": [
+          5,
+          83,
+          -2
+        ],
+        "tilt_deg": 11,
+        "yaw_deg": 6,
+        "pitch_deg": -6,
+        "box1_mm": 231,
+        "box2_mm": 231
+      },
+      "alpha_per_K": 0.02438,
+      "thermal": {
+        "ins_k": 0.3496,
+        "ins_t": 0.000436,
+        "pkg_k": 0.1938,
+        "pkg_sea_h": 33.157,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 52.28,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 72.38,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 67.02,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "R02": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.781,
+        "alpha2": 0.784,
+        "core1_mm": 15,
+        "core2_mm": 24,
+        "shift_mm": [
+          -5,
+          89,
+          -6
+        ],
+        "tilt_deg": 8,
+        "yaw_deg": -3,
+        "pitch_deg": 3,
+        "box1_mm": 223,
+        "box2_mm": 223
+      },
+      "alpha_per_K": 0.02611,
+      "thermal": {
+        "ins_k": 0.3321,
+        "ins_t": 0.000458,
+        "pkg_k": 0.3013,
+        "pkg_sea_h": 17.027,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 61.46,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 85.1,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 78.8,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "R03": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.805,
+        "alpha2": 0.814,
+        "core1_mm": 21,
+        "core2_mm": 16,
+        "shift_mm": [
+          -8,
+          101,
+          8
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": -1,
+        "pitch_deg": -8,
+        "box1_mm": 230,
+        "box2_mm": 232
+      },
+      "alpha_per_K": 0.02068,
+      "thermal": {
+        "ins_k": 0.1923,
+        "ins_t": 0.000355,
+        "pkg_k": 0.3335,
+        "pkg_sea_h": 26.16,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 72.44,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 100.31,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 92.88,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    }
+  },
+  "seed": 1706,
+  "grid": "ultra",
+  "inner_step_s": 1.875
+}
