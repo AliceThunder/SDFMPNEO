@@ -852,3 +852,18 @@ physical teachers are being generated. See GEOMFRAC_TRAIN_V6.md.
 ## V6 R01-R03 frozen independent acceptance
 
 R01-R03 (9 histories) dynamic-Z mean V5 10.137%, V6 pkg 7.725%, V6 coupled 7.738%; mean 3D maximum temperature errors 1.664 K, 1.653 K, 1.388 K. See `runs/geomfrac_et_v6_final.json`.
+
+## 2026-11-16 ? V6 frozen R01-R03 final acceptance closed
+
+Independent nine-history R01-R03 evaluation (new BFZI V150 S5
+geometries) is complete. Frozen V5 mean dynamic Z 10.137%;
+V6 package-only 7.725%; V6 20%-coupled 7.738%. Mean maximum 3-D
+temperature errors V5 1.664 K, V6 package 1.653 K,
+V6 coupled 1.388 K. The coupled model achieves a 23.67%
+relative dynamic-Z error reduction and 16.58% temperature
+error reduction, with material budgets within 1e-8 W.
+The 600s R02 transmitting seawater-skin hotspot remains
+the dominant unsolved 3-D accuracy issue (5.642 K V6 error).
+Next priority: autonomous sea-skin thermal-state modeling,
+without changing the accepted V6 model or reusing R01-R03
+as training/selection data. See GEOMFRAC_TRAIN_V6.md.

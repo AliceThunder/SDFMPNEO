@@ -1,0 +1,191 @@
+{
+  "status": "post-frozen-independent-test diagnostic",
+  "cases": [
+    {
+      "case": "R01",
+      "duration_s": 600.0,
+      "regions": {
+        "sea_bulk": {
+          "baseline_max_K": 1.063555769562015,
+          "V6_max_K": 1.080950341664959,
+          "projection_max_K": 0.9287101640611013,
+          "baseline_mean_max_K": 0.01382422336953072,
+          "V6_mean_max_K": 0.014520828535709157
+        },
+        "skin_tx": {
+          "baseline_max_K": 2.204637047023482,
+          "V6_max_K": 1.8896960092170048,
+          "projection_max_K": 2.5699328154170757,
+          "baseline_mean_max_K": 0.9700180102677592,
+          "V6_mean_max_K": 0.44535274541958886
+        },
+        "skin_rx": {
+          "baseline_max_K": 1.8378422901591307,
+          "V6_max_K": 0.7710707919709989,
+          "projection_max_K": 1.1495178564529738,
+          "baseline_mean_max_K": 0.7301783744899571,
+          "V6_mean_max_K": 0.21782059796554257
+        },
+        "sea": {
+          "baseline_max_K": 2.204637047023482,
+          "V6_max_K": 1.8896960092170048,
+          "projection_max_K": 2.5699328154170757,
+          "baseline_mean_max_K": 0.013187686254819026,
+          "V6_mean_max_K": 0.013283183602649276
+        },
+        "pkg_tx": {
+          "baseline_max_K": 1.2556165098760061,
+          "V6_max_K": 0.6930834000620507,
+          "projection_max_K": 0.23835583684547146,
+          "baseline_mean_max_K": 0.7657696610949963,
+          "V6_mean_max_K": 0.4361639875695112
+        },
+        "pkg_rx": {
+          "baseline_max_K": 1.1217361232630196,
+          "V6_max_K": 0.47320433281601026,
+          "projection_max_K": 0.10498580141768343,
+          "baseline_mean_max_K": 0.23018233644441466,
+          "V6_mean_max_K": 0.13792588861815602
+        },
+        "cu_tx": {
+          "baseline_max_K": 0.7374780351470349,
+          "V6_max_K": 0.5310138230046277,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 0.7374780351470349,
+          "V6_mean_max_K": 0.5310138230046277
+        },
+        "cu_rx": {
+          "baseline_max_K": 0.5832261144698805,
+          "V6_max_K": 0.23584910578261997,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 0.5832261144698805,
+          "V6_mean_max_K": 0.23584910578261997
+        }
+      }
+    },
+    {
+      "case": "R02",
+      "duration_s": 600.0,
+      "regions": {
+        "sea_bulk": {
+          "baseline_max_K": 2.171067797291471,
+          "V6_max_K": 2.2310073634638456,
+          "projection_max_K": 2.134571346931523,
+          "baseline_mean_max_K": 0.005573225754947293,
+          "V6_mean_max_K": 0.010202425338866939
+        },
+        "skin_tx": {
+          "baseline_max_K": 5.532967399100073,
+          "V6_max_K": 5.6422109213546605,
+          "projection_max_K": 2.807672936468748,
+          "baseline_mean_max_K": 2.720743761683814,
+          "V6_mean_max_K": 3.795376690670122
+        },
+        "skin_rx": {
+          "baseline_max_K": 5.35049458972685,
+          "V6_max_K": 2.4155717135204213,
+          "projection_max_K": 2.593910662917665,
+          "baseline_mean_max_K": 2.715863198482812,
+          "V6_mean_max_K": 0.5958358068306122
+        },
+        "sea": {
+          "baseline_max_K": 5.532967399100073,
+          "V6_max_K": 5.6422109213546605,
+          "projection_max_K": 2.807672936468748,
+          "baseline_mean_max_K": 0.018003109551729478,
+          "V6_mean_max_K": 0.019463989692994267
+        },
+        "pkg_tx": {
+          "baseline_max_K": 3.2140636303944916,
+          "V6_max_K": 1.7765483297136484,
+          "projection_max_K": 0.3908499028268011,
+          "baseline_mean_max_K": 0.9834530168018958,
+          "V6_mean_max_K": 1.0235798713759383
+        },
+        "pkg_rx": {
+          "baseline_max_K": 2.7848351611888233,
+          "V6_max_K": 0.6870291009145149,
+          "projection_max_K": 0.35747943815573535,
+          "baseline_mean_max_K": 0.8735085168930931,
+          "V6_mean_max_K": 0.16595131980578337
+        },
+        "cu_tx": {
+          "baseline_max_K": 1.9572221509037604,
+          "V6_max_K": 1.2443284797865317,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 1.9572221509037604,
+          "V6_mean_max_K": 1.2443284797865317
+        },
+        "cu_rx": {
+          "baseline_max_K": 1.2504373576562102,
+          "V6_max_K": 0.28836327556876995,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 1.2504373576562102,
+          "V6_mean_max_K": 0.28836327556876995
+        }
+      }
+    },
+    {
+      "case": "R03",
+      "duration_s": 600.0,
+      "regions": {
+        "sea_bulk": {
+          "baseline_max_K": 0.20544045790904875,
+          "V6_max_K": 0.19967069393965176,
+          "projection_max_K": 0.18721885750966294,
+          "baseline_mean_max_K": 0.005877971306668621,
+          "V6_mean_max_K": 0.005590075194717314
+        },
+        "skin_tx": {
+          "baseline_max_K": 0.5424315100033823,
+          "V6_max_K": 0.4015671552130584,
+          "projection_max_K": 0.4465768841950535,
+          "baseline_mean_max_K": 0.3084565351009975,
+          "V6_mean_max_K": 0.25537964108078215
+        },
+        "skin_rx": {
+          "baseline_max_K": 0.6511458940207717,
+          "V6_max_K": 0.5854631327422339,
+          "projection_max_K": 0.43883119081749555,
+          "baseline_mean_max_K": 0.40373523199953665,
+          "V6_mean_max_K": 0.3659071246288647
+        },
+        "sea": {
+          "baseline_max_K": 0.6511458940207717,
+          "V6_max_K": 0.5854631327422339,
+          "projection_max_K": 0.4465768841950535,
+          "baseline_mean_max_K": 0.004097269657045034,
+          "V6_mean_max_K": 0.004061850493710622
+        },
+        "pkg_tx": {
+          "baseline_max_K": 0.9354972033768831,
+          "V6_max_K": 0.28731276521438076,
+          "projection_max_K": 0.04514416932858012,
+          "baseline_mean_max_K": 0.18746633577145388,
+          "V6_mean_max_K": 0.1708797649339111
+        },
+        "pkg_rx": {
+          "baseline_max_K": 0.35265126928510426,
+          "V6_max_K": 0.2961311019759023,
+          "projection_max_K": 0.039743223725281496,
+          "baseline_mean_max_K": 0.23293426721098778,
+          "V6_mean_max_K": 0.22473309889101142
+        },
+        "cu_tx": {
+          "baseline_max_K": 0.11699752861619572,
+          "V6_max_K": 0.1688438454659149,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 0.11699752861619572,
+          "V6_mean_max_K": 0.1688438454659149
+        },
+        "cu_rx": {
+          "baseline_max_K": 0.2094398602960723,
+          "V6_max_K": 0.22321738412358627,
+          "projection_max_K": 0.0,
+          "baseline_mean_max_K": 0.2094398602960723,
+          "V6_mean_max_K": 0.22321738412358624
+        }
+      }
+    }
+  ]
+}

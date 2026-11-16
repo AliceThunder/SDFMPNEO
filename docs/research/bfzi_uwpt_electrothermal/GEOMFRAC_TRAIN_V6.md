@@ -113,3 +113,44 @@ Three geometry-disjoint BFZI V150 S5 teachers, nine trajectories; frozen package
 | V6_coupled | 7.738% | 1.388 K | 0.658 s | 9.91e-09 W |
 
 All values are independent of the V4 training geometries and T04/D01-D04 developer geometry set. Full trajectory results: `runs/geomfrac_et_v6_final.json`.
+
+### Independent closure and remaining error by physical region
+
+The 9-history R01-R03 frozen independent acceptance is complete and
+committed (R01-R03 all 60/300/600s physical traces; each physics
+status is candidate). For each geometry the three time histories'
+mean errors are:
+
+| Geometry | V5 dynamic-Z error | V6 package-only | V6 coupled (20%) | V5 mean max 3-D temp | V6 coupled |
+|---|---:|---:|---:|---:|---:|
+| R01 | 14.636% | 10.453% | 10.403% | 1.382 K | 1.017 K |
+| R02 | 9.172% | 7.268% | 7.244% | 3.096 K | 2.818 K |
+| R03 | 6.604% | 5.455% | 5.568% | 0.513 K | 0.328 K |
+
+The coupled V6 independent mean dynamic-Z relative L2 is
+7.738% versus 10.137% V5 (23.67% relative improvement), and
+the mean per-history maximum 3-D temperature error is 1.388 K
+versus 1.664 K (16.58% relative improvement). The 9-history
+worst dynamic-Z error decreases from 19.244% to 12.917%.
+The maximum material energy-budget residual is 9.91e-9 W.
+Average measured CPU inference time per history is 0.658 s
+versus 0.285 s for the original V5; the V6 package baseline
+trajectory accounts for much of this extra work.
+
+The 600-second R02 case is the dominant remaining thermal
+accuracy limitation. Its transmitting-package adjacent seawater
+skin maximum errors are 5.533 K for V5 and 5.642 K for
+the coupled V6, while the original 32-mode capacity-weighted
+projection of the true field gives 2.808 K in that region.
+Meanwhile R02 TX package maximum error decreases from
+3.214 to 1.777 K and RX package 2.785 to 0.687 K.
+The V6 package correction is successful; the sea-skin state
+evolution and feedback remain the next high-value improvement.
+Future V7 experiments should learn geometry/drive/state-aware
+sea-skin modes on the existing 30 training geometries, select
+on T04/D01-D04, and evaluate generalization on an additional
+frozen test geometry set after architecture selection. The
+previously evaluated R01-R03 outcomes must remain evidence
+for V6, not become training or model-selection labels.
+
+Per-material diagnostic: runs/geomfrac_et_v6_thermal_breakdown.json.
