@@ -810,3 +810,25 @@ runs/geomfrac_et_v5_tangent_aware_dev.json.
 
 Geometry-disjoint 15-history autonomous dynamic-Z mean error 8.322%, maximum 14.438%.
 Complete report: runs/geomfrac_et_v5_final.json.
+
+## 2026-11-16 ? V5 final acceptance and spatial thermal lifting
+
+Q01-Q05 complete BFZI S5 physical validation (five unseen
+geometries, 15 histories), frozen V5 neural inference:
+mean dynamic-Z relative L2 8.322% versus V4 18.035% on
+the same geometries, a relative 53.86% reduction.
+Worst trajectory dynamic-Z error 14.438%.
+All reports and physical datasets are committed.
+The 48-mode local sea-skin canonical basis reduces mean
+physical temperature projection maximum errors from
+2.541 to 1.151 K on T04/D01-D04.
+A 48-output recurrent neural heat fine-tuning trial
+failed to improve autonomous temperature accuracy.
+An auxiliary ridge thermal lifting decoder trained on
+neural autonomous heat states reduces mean max temperature
+error on all 15 development histories 1.898 to 1.607 K.
+This extra sea-skin temperature output is postprocessed,
+and does not alter the verified V5 physical feedback loop.
+Next priority is improving package temperature evolution
+and integrating spatial sea-skin corrections into a
+self-consistent thermal time-step solver.

@@ -236,3 +236,54 @@ the frozen V5 32-mode checkpoint before any new final acceptance.
 
 Projection evidence: `runs/geomfrac_s5_v5_basis48_dev.json`,
 `runs/geomfrac_s5_v5_basis48_qdiag.json`.
+
+## V5 48-mode neural thermal trial and optional sea-skin lifting
+
+A warm-started rank-48 GeomFracET neural heat head was trained for
+70 epochs on all 30 training geometries. Autonomous maximum 3-D
+temperature error on the 15 development histories selected the
+epoch-zero checkpoint, with 1.898 K mean error. The extra 16
+thermal states therefore need a training method better aligned to
+the autonomous heat trajectory; simply increasing the rank of the
+existing recurrent heat head did not improve generalization.
+
+A small auxiliary 14x16 ridge map now learns the additional local
+sea-skin mode coefficients from the **autonomous** 32-dimensional
+neural temperature coordinates. It uses 30 training geometries,
+90 BFZI teacher histories and the frozen autonomous thermal-Z
+tangent. This map changes only spatial seawater reconstruction:
+all five heat-capacity-weighted material means remain unchanged,
+and copper/package temperatures are preserved.
+
+The optional temperature output `temp_lift_K` is deliberately
+separate from the original `temp_K` and is not fed back into the
+Joule/circuit/time-evolution solver. Consequently the original V5
+energy-budget physics and independently verified 8.322% dynamic-Z
+test performance remain unchanged. This is a *thermal field
+reconstruction* enhancement, not a newly validated coupled
+physical model.
+
+Across 15 development trajectories, the mean maximum 3-D
+temperature absolute error decreases from 1.898 to 1.607 K.
+On the previously examined Q01-Q05 cohort (retrospective
+diagnostic), it decreases from 4.355 to 3.775 K; the Q03
+600-second value decreases from 22.866 to 18.19 K. Since these
+Q results were already examined during model development,
+a further independently frozen cohort will be required to
+claim fresh generalization for the lifting correction.
+
+Fit the lifting map with:
+
+```powershell
+python -m examples.bfzi_geom_lift --manifest runs/geomfrac_s5_v4_30g_manifest.json --model runs/geomfrac_et_v4_8g_quality.pt --tangent-model runs/geomfrac_et_v5_tangent_aware.pt --out runs/geomfrac_et_v5_lift.npz --report runs/geomfrac_et_v5_lift_dev.json
+```
+
+Add `--lift-model runs/geomfrac_et_v5_lift.npz` to
+`examples.bfzi_geom_neural_infer` to save both `temp_K`
+and `temp_lift_K` for the same autonomous inference.
+The output retains original physically coupled fields. Input
+normalization and neural SOE network are unchanged.
+
+Evidence: `runs/geomfrac_et_v5_heat48.json`,
+`runs/geomfrac_et_v5_lift_dev.json`,
+`runs/geomfrac_et_v5_lift_qdiag.json`.

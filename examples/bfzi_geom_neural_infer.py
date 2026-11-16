@@ -20,6 +20,8 @@ def main():
     p.add_argument("--rom-file", type=Path, default=None)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--tangent-model", type=Path, default=None)
+    p.add_argument("--lift-model", type=Path, default=None,
+                   help="optional 48-mode sea-skin reconstruction")
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
     p.add_argument("--heat", type=float, default=240.)
@@ -51,6 +53,11 @@ def main():
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
     pred = rollout(rom, net, ck, v, t, tangent=tangent)
+    if a.lift_model:
+        from sdfmpneo_bfzi.geom_lift import reconstruct
+        with np.load(a.lift_model) as lift:
+            pred["temp_lift_K"] = reconstruct(head,pred["temp_K"],
+                                               pred["heat_state"],lift["w"])
     online_s = time.perf_counter()-tic
     a.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(a.out, time_s=t, voltage_v=v,
@@ -61,6 +68,7 @@ def main():
                    max_material_budget_W=float(np.max(abs(pred["material_budget_W"]))),
                    max_fv_residual_W=float(np.max(pred["fv_node_residual_W"])),
                    max_dynamic_Z_ohm=float(np.max(abs(pred["z6"]-pred["z6"][0]))),
+                   lift_model=str(a.lift_model) if a.lift_model else None,
                    neural_heat=True, em_directional_solves_online=0,
                    heat_implicit_solves_online=0)
     print(json.dumps(summary, indent=2), flush=True)

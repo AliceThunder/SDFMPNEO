@@ -1,0 +1,84 @@
+{
+  "status": "retrospective post-V5 acceptance, not a new independent test",
+  "geometries": 5,
+  "histories": 15,
+  "mean_base_max_K": 4.355103328670058,
+  "mean_lift_max_K": 3.7745696628173238,
+  "results": [
+    {
+      "file": "runs/bfzi_s5_Q01_ultra_v5_drive1.npz",
+      "base_max_K": 1.3828214075727487,
+      "lift_max_K": 1.3828214075727487
+    },
+    {
+      "file": "runs/bfzi_s5_Q01_ultra_v5_drive2.npz",
+      "base_max_K": 6.328929384024605,
+      "lift_max_K": 2.7784123065486597
+    },
+    {
+      "file": "runs/bfzi_s5_Q01_ultra_v5_drive3.npz",
+      "base_max_K": 12.883265898789432,
+      "lift_max_K": 12.883265898789432
+    },
+    {
+      "file": "runs/bfzi_s5_Q02_ultra_v5_drive1.npz",
+      "base_max_K": 0.24241101135862664,
+      "lift_max_K": 0.24241101135862664
+    },
+    {
+      "file": "runs/bfzi_s5_Q02_ultra_v5_drive2.npz",
+      "base_max_K": 0.5510435130943847,
+      "lift_max_K": 0.5116858489730589
+    },
+    {
+      "file": "runs/bfzi_s5_Q02_ultra_v5_drive3.npz",
+      "base_max_K": 1.198030224353829,
+      "lift_max_K": 1.198030224353829
+    },
+    {
+      "file": "runs/bfzi_s5_Q03_ultra_v5_drive1.npz",
+      "base_max_K": 3.978823589241699,
+      "lift_max_K": 3.978823589241699
+    },
+    {
+      "file": "runs/bfzi_s5_Q03_ultra_v5_drive2.npz",
+      "base_max_K": 10.018802686464824,
+      "lift_max_K": 9.730507203517107
+    },
+    {
+      "file": "runs/bfzi_s5_Q03_ultra_v5_drive3.npz",
+      "base_max_K": 22.86639728609589,
+      "lift_max_K": 18.193149479512726
+    },
+    {
+      "file": "runs/bfzi_s5_Q04_ultra_v5_drive1.npz",
+      "base_max_K": 0.14581181397085174,
+      "lift_max_K": 0.14581181397085174
+    },
+    {
+      "file": "runs/bfzi_s5_Q04_ultra_v5_drive2.npz",
+      "base_max_K": 0.7771620610633931,
+      "lift_max_K": 0.7771620610633931
+    },
+    {
+      "file": "runs/bfzi_s5_Q04_ultra_v5_drive3.npz",
+      "base_max_K": 2.5045060150557106,
+      "lift_max_K": 2.5045060150557106
+    },
+    {
+      "file": "runs/bfzi_s5_Q05_ultra_v5_drive1.npz",
+      "base_max_K": 0.17707073138979013,
+      "lift_max_K": 0.17707073138979013
+    },
+    {
+      "file": "runs/bfzi_s5_Q05_ultra_v5_drive2.npz",
+      "base_max_K": 0.8071791605567,
+      "lift_max_K": 0.6505922038938365
+    },
+    {
+      "file": "runs/bfzi_s5_Q05_ultra_v5_drive3.npz",
+      "base_max_K": 1.4642951470183903,
+      "lift_max_K": 1.4642951470183903
+    }
+  ]
+}

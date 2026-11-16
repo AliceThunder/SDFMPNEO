@@ -1,0 +1,168 @@
+{
+  "reg": 1e-05,
+  "train_geometries": 30,
+  "model": "runs\\geomfrac_et_v4_8g_quality.pt",
+  "tangent_model": "runs\\geomfrac_et_v5_tangent_aware.pt",
+  "val": {
+    "results": [
+      {
+        "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+        "base_max_K": 0.39231423214863526,
+        "lift_max_K": 0.39231423214863526
+      },
+      {
+        "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+        "base_max_K": 0.7485093310893376,
+        "lift_max_K": 0.7372176763513494
+      },
+      {
+        "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+        "base_max_K": 1.2648094157034961,
+        "lift_max_K": 1.2648094157034961
+      },
+      {
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+        "base_max_K": 0.39685741375933503,
+        "lift_max_K": 0.39685741375933503
+      },
+      {
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+        "base_max_K": 1.0569349418619254,
+        "lift_max_K": 1.0569349418619254
+      },
+      {
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+        "base_max_K": 1.276187758214462,
+        "lift_max_K": 1.276187758214462
+      },
+      {
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+        "base_max_K": 0.9932478703163952,
+        "lift_max_K": 0.9932478703163952
+      },
+      {
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+        "base_max_K": 4.0604409681095035,
+        "lift_max_K": 3.0887238728293482
+      },
+      {
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+        "base_max_K": 6.831941197750837,
+        "lift_max_K": 3.8646197796898036
+      },
+      {
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+        "base_max_K": 0.25542808883000134,
+        "lift_max_K": 0.18379941693297042
+      },
+      {
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+        "base_max_K": 2.844693225248932,
+        "lift_max_K": 2.844693225248932
+      },
+      {
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+        "base_max_K": 4.622951264716903,
+        "lift_max_K": 4.622951264716903
+      },
+      {
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+        "base_max_K": 0.291335429548667,
+        "lift_max_K": 0.291335429548667
+      },
+      {
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+        "base_max_K": 1.22415669615566,
+        "lift_max_K": 0.9467351336749061
+      },
+      {
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+        "base_max_K": 2.212993834467113,
+        "lift_max_K": 2.1384962550822024
+      }
+    ],
+    "mean_base_max_K": 1.8981867778614137,
+    "mean_lift_max_K": 1.6065949124052887
+  },
+  "test": {
+    "results": [
+      {
+        "file": "runs/bfzi_s5_E01_ultra_v4_drive1.npz",
+        "base_max_K": 0.5198483434730292,
+        "lift_max_K": 0.5198483434730292
+      },
+      {
+        "file": "runs/bfzi_s5_E01_ultra_v4_drive2.npz",
+        "base_max_K": 5.139391791981211,
+        "lift_max_K": 2.9624027788137255
+      },
+      {
+        "file": "runs/bfzi_s5_E01_ultra_v4_drive3.npz",
+        "base_max_K": 9.243455764506336,
+        "lift_max_K": 6.5961633062216265
+      },
+      {
+        "file": "runs/bfzi_s5_E02_ultra_v4_drive1.npz",
+        "base_max_K": 0.23499198482306838,
+        "lift_max_K": 0.23499198482306838
+      },
+      {
+        "file": "runs/bfzi_s5_E02_ultra_v4_drive2.npz",
+        "base_max_K": 0.8971741577739749,
+        "lift_max_K": 0.7244435842694088
+      },
+      {
+        "file": "runs/bfzi_s5_E02_ultra_v4_drive3.npz",
+        "base_max_K": 1.6329675360858573,
+        "lift_max_K": 1.3712953001399342
+      },
+      {
+        "file": "runs/bfzi_s5_E03_ultra_v4_drive1.npz",
+        "base_max_K": 0.41065958114495515,
+        "lift_max_K": 0.41065958114495515
+      },
+      {
+        "file": "runs/bfzi_s5_E03_ultra_v4_drive2.npz",
+        "base_max_K": 1.192540984040079,
+        "lift_max_K": 0.8472604945346234
+      },
+      {
+        "file": "runs/bfzi_s5_E03_ultra_v4_drive3.npz",
+        "base_max_K": 1.6760308947725662,
+        "lift_max_K": 1.650460260289492
+      },
+      {
+        "file": "runs/bfzi_s5_E04_ultra_v4_drive1.npz",
+        "base_max_K": 2.700358558216749,
+        "lift_max_K": 2.700358558216749
+      },
+      {
+        "file": "runs/bfzi_s5_E04_ultra_v4_drive2.npz",
+        "base_max_K": 6.743888635301914,
+        "lift_max_K": 6.716375187149765
+      },
+      {
+        "file": "runs/bfzi_s5_E04_ultra_v4_drive3.npz",
+        "base_max_K": 20.19456806096224,
+        "lift_max_K": 20.19456806096224
+      },
+      {
+        "file": "runs/bfzi_s5_E05_ultra_v4_drive1.npz",
+        "base_max_K": 0.5728194088852661,
+        "lift_max_K": 0.5728194088852661
+      },
+      {
+        "file": "runs/bfzi_s5_E05_ultra_v4_drive2.npz",
+        "base_max_K": 1.8974458298230843,
+        "lift_max_K": 1.6953182344013271
+      },
+      {
+        "file": "runs/bfzi_s5_E05_ultra_v4_drive3.npz",
+        "base_max_K": 3.446799060664091,
+        "lift_max_K": 3.0641890768086455
+      }
+    ],
+    "mean_base_max_K": 3.766862706163628,
+    "mean_lift_max_K": 3.3507436106755906
+  }
+}
