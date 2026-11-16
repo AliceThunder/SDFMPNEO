@@ -1,0 +1,29 @@
+{
+  "selected": "tangent_aware",
+  "model": "runs/geomfrac_et_v4_8g_quality.pt",
+  "tangent": "runs/geomfrac_et_v5_tangent_aware.pt",
+  "dev_geometry_ids": [
+    "T04",
+    "D01",
+    "D02",
+    "D03",
+    "D04"
+  ],
+  "frozen_test_geometry_ids": [
+    "Q01",
+    "Q02",
+    "Q03",
+    "Q04",
+    "Q05"
+  ],
+  "dev_scores": {
+    "v4": 0.16314533246528498,
+    "v5_head": 0.12763481594529577,
+    "tangent": 0.10572158089449177,
+    "tangent_aware": 0.08366732876803612,
+    "tangent_iter2": 0.08366732876803612
+  },
+  "criterion": "mean autonomous dynamic-Z relative L2 on 15 development histories",
+  "independent_test_evaluated": false,
+  "explanation": "Second tangent iteration retained the first aware checkpoint; all candidate models frozen before the new Q01-Q05 test evaluation."
+}

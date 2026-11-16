@@ -147,3 +147,7 @@ The initial physical-temperature tangent and the autonomous-aware tangent were c
 | 1.00 | 10.572% | 26.255% |
 
 The autonomous-aware tangent alone retains the lowest mean development error and is frozen for the new Q01-Q05 acceptance.
+
+## V5 model frozen before independent testing
+
+A second tangent self-consistency fitting iteration retained its starting checkpoint. Its 15-history development error remained 8.367%. The selected V5 checkpoint is the original autonomous-state-aware tangent; models and acceptance geometry IDs are frozen in `runs/geomfrac_et_v5_selection.json` before any Q01-Q05 evaluation.

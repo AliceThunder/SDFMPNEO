@@ -169,7 +169,7 @@ def main():
             best_ep=ep
             saved={k:v.detach().clone() for k,v in model.state_dict().items()}
         if ep%50==0:
-            print('TANGENT',ep,'train',round(float(loss),5),
+            print('TANGENT',ep,'train',round(float(loss.detach()),5),
                   'dev',round(metric,5),'best',best_ep,flush=True)
         if ep-best_ep>=120:
             break
