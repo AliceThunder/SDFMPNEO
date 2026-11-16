@@ -1,0 +1,27 @@
+{
+  "status": "frozen before S01-S04 physical teacher and evaluation",
+  "model_name": "GeomFracET V7 sea-skin spatial-output residual decoder",
+  "base_v6_selection": "runs/geomfrac_et_v6_selection.json",
+  "model": "runs/geomfrac_et_v4_8g_quality.pt",
+  "tangent_model": "runs/geomfrac_et_v5_tangent_aware.pt",
+  "pkg_model": "runs/geomfrac_et_v6_pkg.pt",
+  "lift_model": "runs/geomfrac_et_v5_lift.npz",
+  "lift_gain": 0.2,
+  "skin_output_model": "runs/geomfrac_et_v7_skin_resid.pt",
+  "skin_feedback": false,
+  "train_geom_count": 30,
+  "dev_geom_count": 5,
+  "dev_histories": 15,
+  "dev_v6_z_rel_L2": 0.07516230959128344,
+  "dev_v7_z_rel_L2": 0.07516230959128344,
+  "dev_v6_mean_max_T_K": 1.5508539964132788,
+  "dev_v7_mean_max_T_K": 1.1823006517803378,
+  "new_test_plan": "runs/geomfrac_s5_v7_plan.json",
+  "new_test_cases": [
+    "S01",
+    "S02",
+    "S03",
+    "S04"
+  ],
+  "new_test_results_seen": false
+}

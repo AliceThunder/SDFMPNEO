@@ -122,3 +122,70 @@ def test_feedback_lift_preserves_material_energy():
     new=rollout(rom,net,ck,[0.,50.,0.],[0.,15.,30.],lift=w)
     assert np.max(abs(new['material_budget_W']))<1e-6
     assert np.isfinite(new['temp_K']).all()
+
+def test_v7_skin_zero_correction_preserves_rank32_feedback():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_neural import rollout
+    from sdfmpneo_bfzi.geom_skin import SkinFix
+    h=GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz')
+    rom=GeomHeatROM(h,basis(h,32))
+    net=GeomFracET(ng=45,rank=32)
+    fix=SkinFix(ng=45)
+    ck=dict(src_scale=np.ones(3),y_scale=np.ones(14),
+            a_scale=np.ones(32),port_sea=True,canonical=True)
+    voltage=np.array([0.,45.,0.])
+    times=np.array([0.,15.,30.])
+    a=rollout(rom,net,ck,voltage,times)
+    b=rollout(rom,net,ck,voltage,times,skin=fix)
+    assert np.allclose(a['temp_K'],b['temp_K'],atol=1e-7)
+    assert np.max(abs(b['material_budget_W']))<1e-7
+    assert np.max(abs(b['skin_state']))<1e-10
+    assert b['heat_implicit_solves_online']==0
+
+def test_v7_residual_skin_zero_gain_preserves_v6_linear_feedback():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_neural import rollout
+    from sdfmpneo_bfzi.geom_skin import SkinFix
+    h=GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz')
+    rom=GeomHeatROM(h,basis(h,32))
+    net=GeomFracET(ng=45,rank=32)
+    fix=SkinFix(ng=45)
+    ck=dict(src_scale=np.ones(3),y_scale=np.ones(14),
+            a_scale=np.ones(32),port_sea=True,canonical=True)
+    w=np.zeros((14,16))
+    w[1,1]=.03
+    v=np.array([0.,45.,0.])
+    t=np.array([0.,15.,30.])
+    old=rollout(rom,net,ck,v,t,lift=w)
+    new=rollout(rom,net,ck,v,t,lift=w,skin=fix,skin_gain=0.)
+    assert np.allclose(old['temp_K'],new['temp_K'],atol=1e-7)
+    assert np.max(abs(new['material_budget_W']))<1e-7
+
+def test_v7_skin_output_preserves_material_means_and_original_temperatures():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM,groups
+    from sdfmpneo_bfzi.geom_skin import SkinFix,reconstruct
+    rom=GeomHeatROM(GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz'),
+                    basis(GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz'),32))
+    net=SkinFix(ng=45)
+    n=3
+    time=np.array([0.,15.,30.])
+    voltage=np.array([0.,45.,45.])
+    heat=np.random.default_rng(73).uniform(295,300,(n,len(rom.cap)))
+    state=np.random.default_rng(37).normal(size=(n,32))
+    out=reconstruct(rom,heat,state,time,voltage,net)
+    assert np.allclose(out,heat,atol=1e-9)
+    with torch.no_grad():
+        net.net[-1].weight.fill_(.01)
+    out=reconstruct(rom,heat,state,time,voltage,net)
+    for sl in groups(rom):
+        assert np.max(abs((out[:,sl]-heat[:,sl])@rom.cap[sl]))<1e-6
+    assert np.array_equal(out[:,rom.ns:],heat[:,rom.ns:])

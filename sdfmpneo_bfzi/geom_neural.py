@@ -130,7 +130,8 @@ def _balance(rom, old, pred, dt, voltage, dsea, B, D, phi=None):
 
 
 @torch.no_grad()
-def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=None, lift=None):
+def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None,
+            pkg=None, lift=None, skin=None, skin_gain=1.):
     """Fully autonomous neural impedance + neural thermal evolution.
 
     Requires a precomputed cold FV anchor and spatial thermal basis, but uses
@@ -152,17 +153,26 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=Non
     if sc.shape != (3,) or ys.shape != (14,) or ac.shape != (rom.rank,):
         raise ValueError("invalid GeomFracET normalization")
     phi=rom.phi
+    skin_scale=None
+    skin_old=None
     if lift is not None:
         from .geom_lift import lift_basis
         phi=lift_basis(rom,lift)
+    if skin is not None:
+        if rom.rank!=32 or not ck.get('canonical',False):
+            raise ValueError("V7 neural sea-skin feedback requires canonical rank 32")
+        from .geom_canon import basis
+        phi=np.column_stack((phi,basis(rom,48)[:,32:]))
+        skin_scale=mode_scale(rom,48)[32:]
+        skin_old=np.zeros(16)
     cap_phi = rom.cap[:, None] * phi
     h_phi = rom.H @ phi
     B = np.vstack([cap_phi[sl].sum(axis=0) for sl in groups(rom)])
     D = np.vstack([h_phi[sl].sum(axis=0) for sl in groups(rom)])
     pkg_ref=None
-    if pkg is not None:
-        # A standalone reference trajectory anchors the package target.
-        # Otherwise an absolute residual applied at every step accumulates.
+    if pkg is not None or skin is not None:
+        # Both absolute spatial corrections are conditioned on the same
+        # uncorrected autonomous neural reference trajectory.
         pkg_ref=rollout(rom,net,ck,v,t,correct_J=False,
                         tangent=tangent,pkg=None)["heat_state"]
     h = net.init_state(1)
@@ -170,9 +180,12 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=Non
     norm = mode_scale(rom, rom.rank) if ck.get('canonical',False) else np.ones(rom.rank)
     theta = np.zeros(len(rom.cap))
     zprev = zmat(rom.z0)
-    out = {key: [] for key in (
-        "temp_K", "z6", "current_A", "qsea_W_m3", "Jsea_A_m2",
-        "Psea_W", "Pcu_W", "fv_node_residual_W", "material_budget_W", "heat_state")}
+    keys=["temp_K", "z6", "current_A", "qsea_W_m3", "Jsea_A_m2",
+          "Psea_W", "Pcu_W", "fv_node_residual_W",
+          "material_budget_W", "heat_state"]
+    if skin is not None:
+        keys.append("skin_state")
+    out = {key: [] for key in keys}
     for k, tm in enumerate(t):
         if k:
             dt = float(tm - t[k-1])
@@ -185,13 +198,25 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=Non
                 dsea = zmat(y[0, :6].cpu().numpy() * ys[:6])
             else:
                 def sea_at(phys):
-                    state=torch.as_tensor((phys/norm)[None],dtype=g.dtype)
+                    state=torch.as_tensor((phys[:rom.rank]/norm)[None],dtype=g.dtype)
                     sea6=tangent(g,state)[0].detach().cpu().numpy()
                     return zmat(sea6)
                 dsea=sea_at
             prior=a*norm
+            predicted=ahat[0].cpu().numpy()*norm
+            if skin is not None:
+                tm_in=torch.as_tensor([[tm]],dtype=g.dtype)
+                v_in=torch.as_tensor([[v[k-1]]],dtype=g.dtype)
+                ref=torch.as_tensor(pkg_ref[k:k+1],dtype=g.dtype)
+                extra=skin(g,ref,tm_in,v_in)[0].cpu().numpy()
+                if lift is not None:
+                    from .geom_lift import IDX
+                    extra-=pkg_ref[k,IDX]@np.asarray(lift,float)
+                extra*=float(skin_gain)
+                prior=np.r_[prior,skin_old*skin_scale]
+                predicted=np.r_[predicted,extra*skin_scale]
             a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
-                rom, prior, ahat[0].cpu().numpy()*norm, dt, float(v[k-1]), dsea, B, D, phi)
+                rom, prior, predicted, dt, float(v[k-1]), dsea, B, D, phi)
             if pkg is not None:
                 if rom.rank!=32:
                     raise ValueError("package correction needs 32 thermal modes")
@@ -201,7 +226,9 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=Non
                 a_new[18:32]=(pkg_ref[k,18:32]+delta)*norm[18:32]
                 a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
                     rom, prior, a_new, dt, float(v[k-1]), dsea, B, D, phi)
-            a = a_phys/norm
+            a = a_phys[:rom.rank]/norm
+            if skin is not None:
+                skin_old=a_phys[rom.rank:]/skin_scale
             if tangent is not None:
                 dsea=sea_at(a_phys)
             # Heat evolves with left-end interval drive; port outputs and
@@ -223,6 +250,8 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=Non
             ("fv_node_residual_W", np.max(abs(res))),
             ("material_budget_W", budget), ("heat_state", a)):
             out[name].append(np.asarray(value).copy())
+        if skin is not None:
+            out["skin_state"].append(skin_old.copy())
     res = {k: np.asarray(v) for k, v in out.items()}
     res.update(rom_rank=rom.rank, neural_heat=True,
                em_directional_solves_online=0, heat_implicit_solves_online=0)

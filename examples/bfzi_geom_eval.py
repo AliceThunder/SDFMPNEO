@@ -22,6 +22,10 @@ def main():
                    help="optional self-consistent sea-skin thermal feedback")
     p.add_argument("--lift-gain", type=float, default=1.,
                    help="fraction of learned sea-skin feedback to apply")
+    p.add_argument("--skin-model", type=Path, default=None)
+    p.add_argument("--skin-gain", type=float, default=1.)
+    p.add_argument("--skin-output-model", type=Path, default=None,
+                   help="postprocessed V7 seawater-skin field, without feedback")
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--split", choices=("train", "val", "test"), default="val")
     p.add_argument("--out", type=Path, required=True)
@@ -51,12 +55,25 @@ def main():
     if a.lift_model:
         with np.load(a.lift_model) as data:
             lift=data['w']*a.lift_gain
-    vals = eval_rollout(None, net, ck, rows, tangent=tangent, pkg=pkg, lift=lift)
+    skin=None
+    if a.skin_model:
+        from sdfmpneo_bfzi.geom_skin import restore
+        skin=restore(a.skin_model)
+    skin_out=None
+    if a.skin_output_model:
+        from sdfmpneo_bfzi.geom_skin import restore
+        skin_out=restore(a.skin_output_model)
+    vals = eval_rollout(None, net, ck, rows, tangent=tangent, pkg=pkg,
+                        lift=lift, skin=skin, skin_gain=a.skin_gain,
+                        skin_out=skin_out)
     out = dict(
         model=str(a.model),tangent_model=str(a.tangent_model) if a.tangent_model else None,
         pkg_model=str(a.pkg_model) if a.pkg_model else None,
         lift_model=str(a.lift_model) if a.lift_model else None,
         lift_gain=a.lift_gain,
+        skin_model=str(a.skin_model) if a.skin_model else None,
+        skin_gain=a.skin_gain,
+        skin_output_model=str(a.skin_output_model) if a.skin_output_model else None,
         manifest=str(a.manifest), split=a.split,
         geometries=len(specs), histories=len(vals),
         dynamic_Z_mean_rel_L2=float(np.mean(

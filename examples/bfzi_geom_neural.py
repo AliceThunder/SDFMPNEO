@@ -320,7 +320,8 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
     return _hist_mean(total, spans, hist_weight)
 
 
-def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None):
+def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None,
+                 skin=None, skin_gain=1., skin_out=None):
     """Evaluate a genuinely autonomous physics-coupled held-out history."""
     result = []
     net.eval()
@@ -329,7 +330,13 @@ def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None):
             rr = row.get('rom',rom)
             begin = time.perf_counter()
             pred = rollout(rr, net, ck, row["voltage"], row["time"],
-                           tangent=tangent, pkg=pkg, lift=lift)
+                           tangent=tangent, pkg=pkg, lift=lift,
+                           skin=skin, skin_gain=skin_gain)
+            temp=pred["temp_K"]
+            if skin_out is not None:
+                from sdfmpneo_bfzi.geom_skin import reconstruct
+                temp=reconstruct(rr,temp,pred["heat_state"],row["time"],
+                                 row["voltage"],skin_out)
             cpu_s = time.perf_counter() - begin
             real_z = row["z6"]
             real_t = row["temp_K"]
@@ -348,7 +355,8 @@ def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None):
                                        / max(dz, 1e-12)),
                 full_Z_rel_L2=float(np.linalg.norm(pred["z6"]-real_z)
                                     / max(np.linalg.norm(real_z), 1e-12)),
-                temperature_max_K=float(np.max(abs(pred["temp_K"]-real_t))),
+                temperature_max_K=float(np.max(abs(temp-real_t))),
+                core_temperature_max_K=float(np.max(abs(pred["temp_K"]-real_t))),
                 copper_max_K=float(np.max(abs(pred["temp_K"][:, rr.cu]
                                                -real_t[:, rr.cu]))),
                 package_max_K=float(np.max(abs(

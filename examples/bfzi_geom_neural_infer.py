@@ -26,6 +26,9 @@ def main():
     p.add_argument("--lift-feedback", action="store_true",
                    help="incorporate sea-skin lift in coupled heat balance")
     p.add_argument("--lift-gain", type=float, default=1.)
+    p.add_argument("--skin-model", type=Path, default=None)
+    p.add_argument("--skin-gain", type=float, default=1.)
+    p.add_argument("--skin-output-model", type=Path, default=None)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
     p.add_argument("--heat", type=float, default=240.)
@@ -66,7 +69,17 @@ def main():
             p.error("--lift-feedback requires --lift-model")
         with np.load(a.lift_model) as data:
             lift=data["w"]*a.lift_gain
-    pred = rollout(rom, net, ck, v, t, tangent=tangent, pkg=pkg, lift=lift)
+    skin=None
+    if a.skin_model:
+        from sdfmpneo_bfzi.geom_skin import restore
+        skin=restore(a.skin_model)
+    pred = rollout(rom, net, ck, v, t, tangent=tangent, pkg=pkg,
+                   lift=lift, skin=skin, skin_gain=a.skin_gain)
+    if a.skin_output_model:
+        from sdfmpneo_bfzi.geom_skin import reconstruct,restore
+        fix=restore(a.skin_output_model)
+        pred["temp_skin_K"]=reconstruct(rom,pred["temp_K"],
+            pred["heat_state"],t,v,fix)
     if a.lift_model and not a.lift_feedback:
         from sdfmpneo_bfzi.geom_lift import reconstruct
         with np.load(a.lift_model) as lift:
@@ -86,6 +99,10 @@ def main():
                    pkg_model=str(a.pkg_model) if a.pkg_model else None,
                    lift_feedback=a.lift_feedback,
                    lift_gain=a.lift_gain,
+                   skin_model=str(a.skin_model) if a.skin_model else None,
+                   skin_gain=a.skin_gain,
+                   skin_output_model=str(a.skin_output_model)
+                       if a.skin_output_model else None,
                    neural_heat=True, em_directional_solves_online=0,
                    heat_implicit_solves_online=0)
     print(json.dumps(summary, indent=2), flush=True)

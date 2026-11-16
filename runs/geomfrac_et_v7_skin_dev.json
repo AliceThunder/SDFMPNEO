@@ -1,0 +1,72 @@
+{
+  "best_epoch": 230,
+  "epochs_trained": 295,
+  "train_geometries": 30,
+  "val_geometries": 5,
+  "train_histories": 90,
+  "val_histories": 15,
+  "dev_skin_baseline_max_K": 1.6608068153278623,
+  "dev_skin_predicted_max_K": 1.1529030118078443,
+  "val_history_max_K": [
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "skin_max_K": 0.2428969495497313
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "skin_max_K": 0.5803002145805749
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "skin_max_K": 0.515214975225831
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "skin_max_K": 0.0421753686628108
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "skin_max_K": 0.5012909189523498
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "skin_max_K": 0.8541866944484582
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+      "skin_max_K": 0.3527302239272103
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+      "skin_max_K": 2.7355823198219014
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+      "skin_max_K": 3.4664715228893783
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+      "skin_max_K": 0.23580551218327628
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+      "skin_max_K": 1.5428046444880579
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+      "skin_max_K": 3.001209057162214
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+      "skin_max_K": 0.19110970714547193
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+      "skin_max_K": 0.9409286028003407
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+      "skin_max_K": 2.090838465280058
+    }
+  ]
+}
