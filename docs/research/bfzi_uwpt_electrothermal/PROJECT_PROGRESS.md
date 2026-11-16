@@ -867,3 +867,20 @@ the dominant unsolved 3-D accuracy issue (5.642 K V6 error).
 Next priority: autonomous sea-skin thermal-state modeling,
 without changing the accepted V6 model or reusing R01-R03
 as training/selection data. See GEOMFRAC_TRAIN_V6.md.
+
+## 2026-11-16 ? GeomFracET V7 spatial temperature enhancement
+
+A geometry/time/state-conditioned 16-mode seawater-skin MLP
+has been trained on 30 S5 physical training geometries and
+selected on 5 developer geometries. Earlier tests injecting
+it directly into thermal feedback degraded dynamic-Z accuracy,
+so V7 retains the accepted V6 electromagnetic/thermal loop
+and adds a zero-material-mean seawater-only temperature output.
+On 15 developer histories, average max 3-D temperature error
+improves 1.551 K to 1.182 K, without changing dynamic-Z
+relative L2 7.516% or energy budgets. R01-R03 retrospective
+diagnostic improves 1.388 to 1.226 K.
+V7 selection is frozen in runs/geomfrac_et_v7_selection.json.
+Independent S01-S04 BFZI V150 S5 physical teachers have
+been launched with 4 geometry-disjoint examples/12 histories;
+see GEOMFRAC_TRAIN_V7.md and bfzi_geom_v7_accept.py.
