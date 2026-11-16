@@ -888,3 +888,19 @@ see GEOMFRAC_TRAIN_V7.md and bfzi_geom_v7_accept.py.
 ## V7 S01-S04 frozen independent acceptance closed
 
 12 BFZI V150 S5 unseen physical histories completed. Dynamic Z: V5 8.856%; V6/V7 7.890%. Mean maximum 3D temperature error: V6 3.148 K; V7 2.597 K. Relative V7 temperature improvement 17.50%. Five-material budget max 9.89e-09 W. See geomfrac_et_v7_final.json.
+
+## 2026-11-16 ? V7 independent acceptance closed; V8 exploratory
+
+The V7 frozen S01?S04 BFZI acceptance is complete:
+12 new physical trajectories, mean dynamic-Z relative
+L2 7.890% and mean maximum 3-D temperature error
+2.597 K, down 17.50% from V6 3.148 K.
+A 64-mode bulk-seawater spatial extension was trained
+on the original 30 training geometries. Developer
+mean maximum temperature error improves only
+1.1823 -> 1.1791 K; previously examined S03 600s
+improves 7.298 -> 6.510 K retrospectively. V7 is
+retained as production and V8 remains optional.
+Next mainline: improve weak-signal long-duration
+dynamic port impedance generalization. See
+GEOMFRAC_TRAIN_V8.md.

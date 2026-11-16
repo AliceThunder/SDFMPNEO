@@ -321,7 +321,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
 
 
 def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None,
-                 skin=None, skin_gain=1., skin_out=None):
+                 skin=None, skin_gain=1., skin_out=None, bulk_out=None):
     """Evaluate a genuinely autonomous physics-coupled held-out history."""
     result = []
     net.eval()
@@ -337,6 +337,10 @@ def eval_rollout(rom, net, ck, rows, tangent=None, pkg=None, lift=None,
                 from sdfmpneo_bfzi.geom_skin import reconstruct
                 temp=reconstruct(rr,temp,pred["heat_state"],row["time"],
                                  row["voltage"],skin_out)
+            if bulk_out is not None:
+                from sdfmpneo_bfzi.geom_skin import reconstruct
+                temp=reconstruct(rr,temp,pred["heat_state"],row["time"],
+                                 row["voltage"],bulk_out,rank=64)
             cpu_s = time.perf_counter() - begin
             real_z = row["z6"]
             real_t = row["temp_K"]

@@ -1,0 +1,60 @@
+{
+  "model": "runs\\geomfrac_et_v4_8g_quality.pt",
+  "tangent_model": "runs\\geomfrac_et_v5_tangent_aware.pt",
+  "pkg_model": "runs\\geomfrac_et_v6_pkg.pt",
+  "lift_model": "runs\\geomfrac_et_v5_lift.npz",
+  "lift_gain": 0.2,
+  "skin_model": null,
+  "skin_gain": 1.0,
+  "skin_output_model": "runs\\geomfrac_et_v7_skin_resid.pt",
+  "bulk_output_model": "runs\\geomfrac_et_v8_bulk.pt",
+  "manifest": "runs\\geomfrac_s5_v7c_manifest.json",
+  "split": "test",
+  "geometries": 1,
+  "histories": 3,
+  "dynamic_Z_mean_rel_L2": 0.0669917903512618,
+  "results": [
+    {
+      "file": "runs/bfzi_s5_S03_ultra_v7c_drive1.npz",
+      "inference_cpu_s": 0.2213325999910012,
+      "dynamic_Z_rel_L2": 0.046433133747699806,
+      "full_Z_rel_L2": 5.818903920877966e-06,
+      "temperature_max_K": 1.1448757949786454,
+      "core_temperature_max_K": 1.1448757949786454,
+      "copper_max_K": 0.5052295013712751,
+      "package_max_K": 1.1448757949786454,
+      "material_budget_max_W": 1.7915340322360862e-09,
+      "fv_residual_max_W": 1.5363777193823538,
+      "dynamic_Z_0_60_rel_L2": 0.046433133747699806
+    },
+    {
+      "file": "runs/bfzi_s5_S03_ultra_v7c_drive2.npz",
+      "inference_cpu_s": 0.686612999998033,
+      "dynamic_Z_rel_L2": 0.08379952791743568,
+      "full_Z_rel_L2": 3.683943629067972e-05,
+      "temperature_max_K": 4.6102996055287235,
+      "core_temperature_max_K": 4.6102996055287235,
+      "copper_max_K": 1.6550208744437782,
+      "package_max_K": 4.6102996055287235,
+      "material_budget_max_W": 4.530022579274373e-09,
+      "fv_residual_max_W": 3.240366423404345,
+      "dynamic_Z_0_60_rel_L2": 0.04069338038061098,
+      "dynamic_Z_60_300_rel_L2": 0.08545683222959306
+    },
+    {
+      "file": "runs/bfzi_s5_S03_ultra_v7c_drive3.npz",
+      "inference_cpu_s": 1.4334183000028133,
+      "dynamic_Z_rel_L2": 0.07074270938864997,
+      "full_Z_rel_L2": 4.6481429085103485e-05,
+      "temperature_max_K": 6.509812374971943,
+      "core_temperature_max_K": 7.605982142913945,
+      "copper_max_K": 1.9671617166744113,
+      "package_max_K": 4.431650318343429,
+      "material_budget_max_W": 6.696978971376666e-09,
+      "fv_residual_max_W": 3.0299314633022147,
+      "dynamic_Z_0_60_rel_L2": 0.046958314999678556,
+      "dynamic_Z_60_300_rel_L2": 0.09093376153053317,
+      "dynamic_Z_300_600_rel_L2": 0.06434855800629716
+    }
+  ]
+}

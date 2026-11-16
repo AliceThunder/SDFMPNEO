@@ -26,6 +26,8 @@ def main():
     p.add_argument("--skin-gain", type=float, default=1.)
     p.add_argument("--skin-output-model", type=Path, default=None,
                    help="postprocessed V7 seawater-skin field, without feedback")
+    p.add_argument("--bulk-output-model", type=Path, default=None,
+                   help="V8 extra 16-mode bulk-sea temperature output")
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--split", choices=("train", "val", "test"), default="val")
     p.add_argument("--out", type=Path, required=True)
@@ -63,9 +65,15 @@ def main():
     if a.skin_output_model:
         from sdfmpneo_bfzi.geom_skin import restore
         skin_out=restore(a.skin_output_model)
+    bulk_out=None
+    if a.bulk_output_model:
+        from sdfmpneo_bfzi.geom_skin import restore
+        bulk_out=restore(a.bulk_output_model)
+        if skin_out is None:
+            p.error("--bulk-output-model requires --skin-output-model")
     vals = eval_rollout(None, net, ck, rows, tangent=tangent, pkg=pkg,
                         lift=lift, skin=skin, skin_gain=a.skin_gain,
-                        skin_out=skin_out)
+                        skin_out=skin_out, bulk_out=bulk_out)
     out = dict(
         model=str(a.model),tangent_model=str(a.tangent_model) if a.tangent_model else None,
         pkg_model=str(a.pkg_model) if a.pkg_model else None,
@@ -74,6 +82,7 @@ def main():
         skin_model=str(a.skin_model) if a.skin_model else None,
         skin_gain=a.skin_gain,
         skin_output_model=str(a.skin_output_model) if a.skin_output_model else None,
+        bulk_output_model=str(a.bulk_output_model) if a.bulk_output_model else None,
         manifest=str(a.manifest), split=a.split,
         geometries=len(specs), histories=len(vals),
         dynamic_Z_mean_rel_L2=float(np.mean(

@@ -189,3 +189,26 @@ def test_v7_skin_output_preserves_material_means_and_original_temperatures():
     for sl in groups(rom):
         assert np.max(abs((out[:,sl]-heat[:,sl])@rom.cap[sl]))<1e-6
     assert np.array_equal(out[:,rom.ns:],heat[:,rom.ns:])
+
+def test_v8_bulk_output_is_seawater_only_and_conservative():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM,groups
+    from sdfmpneo_bfzi.geom_skin import SkinFix,reconstruct
+    head=GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz')
+    rom=GeomHeatROM(head,basis(head,32))
+    model=SkinFix(ng=45)
+    with torch.no_grad():
+        model.net[-1].weight.fill_(.01)
+    times=np.array([0.,15.,30.])
+    voltage=np.array([0.,45.,45.])
+    t=np.full((3,len(rom.cap)),298.15)
+    state=np.random.default_rng(7).normal(size=(3,32))
+    state[0]=0.
+    bulk=reconstruct(rom,t,state,times,voltage,model,rank=64)
+    assert bulk.shape==t.shape
+    assert np.array_equal(bulk[:,rom.ns:],t[:,rom.ns:])
+    for sl in groups(rom):
+        assert np.max(abs((bulk[:,sl]-t[:,sl])@rom.cap[sl]))<1e-6
+    assert np.max(abs(bulk[0]-t[0]))<1e-9

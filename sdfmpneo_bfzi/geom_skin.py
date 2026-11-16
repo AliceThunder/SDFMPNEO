@@ -39,8 +39,8 @@ def restore(path):
     return model
 
 @torch.no_grad()
-def reconstruct(rom,temp,state,time,voltage,model):
-    """Improve only the spatial sea-skin temperature output of a V6 trajectory."""
+def reconstruct(rom,temp,state,time,voltage,model,rank=48):
+    """Enhance V6/V7 spatial seawater temperature with 16 zero-mean modes."""
     from .geom_canon import basis,mode_scale
     t=np.asarray(temp,float)
     a=np.asarray(state,float)
@@ -56,5 +56,7 @@ def reconstruct(rom,temp,state,time,voltage,model):
                torch.as_tensor(a,dtype=dtype),
                torch.as_tensor(times[:,None],dtype=dtype),
                torch.as_tensor(v[:,None],dtype=dtype)).numpy()
-    phi=basis(rom,48)[:,32:]*mode_scale(rom,48)[32:]
+    if rank not in (48,64):
+        raise ValueError("spatial seawater decoder supports ranks 48 and 64")
+    phi=basis(rom,rank)[:,rank-16:]*mode_scale(rom,rank)[rank-16:]
     return t+corr@phi.T

@@ -62,7 +62,7 @@ def test_two_geometries_same_thermal_semantics():
     assert np.allclose(x[:5],y[:5])
     assert np.linalg.norm(x[5:])<1e-9
     assert np.linalg.norm(y[5:])<1e-9
-    with pytest.raises(ValueError,match='5, 32 or 48'):
+    with pytest.raises(ValueError,match='5, 32, 48 or 64'):
         basis(a,24)
 
 
@@ -200,3 +200,21 @@ def test_positive_spatial_projection_keeps_material_means():
         before=float(pre[sl]@rom.cap[sl]/rom.cap[sl].sum())
         after=float(temp[sl]@rom.cap[sl]/rom.cap[sl].sum())
         assert abs(after-before)<1e-10
+
+def test_64_mode_bulk_skin_geometry_nested():
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    head=GeomHeat.load('runs/bfzi_s5_D02_ultra_v4_anchor.npz')
+    p32=basis(head,32)
+    p48=basis(head,48)
+    p64=basis(head,64)
+    assert np.max(abs(p64[:,:32]-p32))<1e-9
+    assert np.max(abs(p64[:,:48]-p48))<1e-9
+    assert np.max(abs(p64.T@(head.cap[:,None]*p64)-np.eye(64)))<1e-8
+    assert np.max(abs(p64[head.ns:,48:]))<1e-12
+    # Orthonormalizing new bulk-centered modes against the retained
+    # 48 sea modes also induces small components on the seawater skin.
+    assert np.max(abs(head.cap[:head.ns] @ p64[:head.ns,48:]))<1e-7
+    bulk=float(np.sum(head.cap[:head.nwet,None]*p64[:head.nwet,48:]**2))
+    skin=float(np.sum(head.cap[head.nwet:head.ns,None]*
+                      p64[head.nwet:head.ns,48:]**2))
+    assert bulk>skin

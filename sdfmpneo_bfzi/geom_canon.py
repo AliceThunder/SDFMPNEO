@@ -39,7 +39,7 @@ def _shapes(head,rank=32):
           *extra,
           np.exp(-.5*(dist[:,0]/.09)**2),
           np.exp(-.5*(dist[:,1]/.09)**2)]
-    if rank==48:
+    if rank>=48:
         # Eight local surface variations for each package; these
         # capture anisotropic heating in the thin seawater shell.
         if not hasattr(head,"nskin"):
@@ -50,6 +50,19 @@ def _shapes(head,rank=32):
             a,b,c=local.T
             vals.extend([extra[j]*v for v in
                          (a,b,c,a*a,c*c,a*c,a*b,b*c)])
+    if rank==64:
+        # Localized bulk-seawater response around each package,
+        # complementary to the 16 surface/skin modes.
+        bulk=np.zeros(len(sea))
+        bulk[:nwet]=1.
+        for j in range(2):
+            local=(sea-mid[j])@np.asarray(head._pkg_axes[j],float)
+            local/=np.maximum(2*np.asarray(head._pkg_half[j],float),1e-4)
+            a,b,c=local.T
+            d=np.linalg.norm(local,axis=1)
+            w=bulk*np.exp(-.5*(d/.9)**2)
+            vals.extend([w*v for v in
+                         (np.ones_like(a),a,b,c,a*b,a*c,b*c,a*a+c*c)])
     features = [np.stack(vals,axis=1)]
     for j in range(2):
         v=(pkg[j]-mid[j])@np.asarray(head._pkg_axes[j],float)
@@ -63,12 +76,14 @@ def _shapes(head,rank=32):
 
 
 def labels(rank=32):
-    if rank not in (5,32,48):
-        raise ValueError("canonical thermal basis uses 5, 32 or 48 modes")
+    if rank not in (5,32,48,64):
+        raise ValueError("canonical thermal basis uses 5, 32, 48 or 64 modes")
     lab=[0,1,2,3,4]
     if rank>=32:
         lab += [0]*13+[1]*7+[2]*7
-    if rank==48:
+    if rank>=48:
+        lab += [0]*16
+    if rank==64:
         lab += [0]*16
     return np.array(lab,int)
 

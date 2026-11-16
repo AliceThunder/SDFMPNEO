@@ -12,11 +12,11 @@ from examples.bfzi_geom_multi import prepare
 from examples.bfzi_z_tangent import restore as load_tan
 from sdfmpneo_bfzi.geom_canon import basis,mode_scale
 from sdfmpneo_bfzi.geom_neural import GeomFracET,rollout
-from sdfmpneo_bfzi.geom_skin import SkinFix
+from sdfmpneo_bfzi.geom_skin import SkinFix, reconstruct
 from sdfmpneo_bfzi.geom_pkg import restore as load_pkg
 
 
-def gather(specs,net,ck,tan,pkg=None,lift=None):
+def gather(specs,net,ck,tan,pkg=None,lift=None,rank=48,base_skin=None):
     data=[]
     for spec in specs:
         for row in prepare(spec,32):
@@ -25,9 +25,13 @@ def gather(specs,net,ck,tan,pkg=None,lift=None):
                 pred=rollout(rom,net,ck,row['voltage'],row['time'],
                              tangent=tan,pkg=pkg,lift=lift)
             n=len(row['time'])
-            phi=basis(rom,48)
-            sc=mode_scale(rom,48)
-            y=((row['temp_K']-pred['temp_K'])*rom.cap)@phi[:,32:]/sc[32:]
+            phi=basis(rom,rank)
+            sc=mode_scale(rom,rank)
+            base=pred['temp_K']
+            if base_skin is not None:
+                base=reconstruct(rom,base,pred['heat_state'],row['time'],
+                                 row['voltage'],base_skin,rank=48)
+            y=((row['temp_K']-base)*rom.cap)@phi[:,rank-16:]/sc[rank-16:]
             t=np.asarray(row['time'],float).reshape(-1,1)
             vin=np.r_[0.,row['voltage'][:-1]].reshape(-1,1)
             data.append(dict(file=row['file'],row=row,rom=rom,
@@ -37,8 +41,8 @@ def gather(specs,net,ck,tan,pkg=None,lift=None):
                 time=torch.as_tensor(t,dtype=torch.float32),
                 voltage=torch.as_tensor(vin,dtype=torch.float32),
                 y=torch.as_tensor(y,dtype=torch.float32),
-                base=pred['temp_K'],true=row['temp_K'],
-                extra=phi[:,32:]*sc[32:]))
+                base=base,true=row['temp_K'],
+                extra=phi[:,rank-16:]*sc[rank-16:]))
         print('SKIN_PREP',spec['anchor'],flush=True)
     return data
 
@@ -73,6 +77,9 @@ def main():
     p.add_argument('--lift-model',type=Path,default=None,
                    help="train residual on V6 linear seawater feedback")
     p.add_argument('--lift-gain',type=float,default=.2)
+    p.add_argument('--rank',type=int,choices=(48,64),default=48)
+    p.add_argument('--base-skin-model',type=Path,default=None,
+                   help="frozen V7 decoder before rank-64 bulk residual")
     a=p.parse_args()
     torch.manual_seed(59)
     torch.set_num_threads(2)
@@ -88,8 +95,12 @@ def main():
         with np.load(a.lift_model) as data:
             lift=data['w']*a.lift_gain
     mf=json.loads(a.manifest.read_text(encoding='utf-8'))
-    train=gather(mf['train'],net,ck,tan,pkg,lift)
-    val=gather(mf['val'],net,ck,tan,pkg,lift)
+    base_skin=None
+    if a.base_skin_model:
+        from sdfmpneo_bfzi.geom_skin import restore
+        base_skin=restore(a.base_skin_model)
+    train=gather(mf['train'],net,ck,tan,pkg,lift,a.rank,base_skin)
+    val=gather(mf['val'],net,ck,tan,pkg,lift,a.rank,base_skin)
     fix=SkinFix(ng=int(ck['ng']),scale=np.asarray(ck['a_scale']))
     X=torch.cat([r['state'] for r in train])
     G=torch.cat([r['geom'] for r in train])
@@ -134,13 +145,16 @@ def main():
              src_model=str(a.model),tangent_model=str(a.tangent_model),
              pkg_model=str(a.pkg_model) if a.pkg_model else None,
              lift_model=str(a.lift_model) if a.lift_model else None,
-             lift_gain=a.lift_gain),a.out)
+             lift_gain=a.lift_gain,rank=a.rank,
+             base_skin_model=str(a.base_skin_model) if a.base_skin_model else None),a.out)
     report=dict(best_epoch=best_ep,epochs_trained=ep,train_geometries=len(mf['train']),
        val_geometries=len(mf['val']),train_histories=len(train),val_histories=len(val),
        dev_global_baseline_max_K=initial,dev_global_predicted_max_K=offline,
        dev_skin_baseline_max_K=init_sea,dev_skin_predicted_max_K=final_sea,
        pkg_model=str(a.pkg_model) if a.pkg_model else None,
        lift_model=str(a.lift_model) if a.lift_model else None,
+       rank=a.rank,
+       base_skin_model=str(a.base_skin_model) if a.base_skin_model else None,
        val_history_max_K=[dict(file=r['file'],temperature_max_K=e)
            for r,e in zip(val,val_errors)])
     a.report.write_text(json.dumps(report,indent=2),encoding='utf-8')

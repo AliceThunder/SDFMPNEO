@@ -29,6 +29,7 @@ def main():
     p.add_argument("--skin-model", type=Path, default=None)
     p.add_argument("--skin-gain", type=float, default=1.)
     p.add_argument("--skin-output-model", type=Path, default=None)
+    p.add_argument("--bulk-output-model", type=Path, default=None)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
     p.add_argument("--heat", type=float, default=240.)
@@ -80,6 +81,13 @@ def main():
         fix=restore(a.skin_output_model)
         pred["temp_skin_K"]=reconstruct(rom,pred["temp_K"],
             pred["heat_state"],t,v,fix)
+    if a.bulk_output_model:
+        if not a.skin_output_model:
+            p.error("--bulk-output-model requires --skin-output-model")
+        from sdfmpneo_bfzi.geom_skin import reconstruct,restore
+        fix=restore(a.bulk_output_model)
+        pred["temp_bulk_K"]=reconstruct(rom,pred["temp_skin_K"],
+            pred["heat_state"],t,v,fix,rank=64)
     if a.lift_model and not a.lift_feedback:
         from sdfmpneo_bfzi.geom_lift import reconstruct
         with np.load(a.lift_model) as lift:
@@ -103,6 +111,8 @@ def main():
                    skin_gain=a.skin_gain,
                    skin_output_model=str(a.skin_output_model)
                        if a.skin_output_model else None,
+                   bulk_output_model=str(a.bulk_output_model)
+                       if a.bulk_output_model else None,
                    neural_heat=True, em_directional_solves_online=0,
                    heat_implicit_solves_online=0)
     print(json.dumps(summary, indent=2), flush=True)

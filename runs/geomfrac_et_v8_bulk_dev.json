@@ -1,0 +1,78 @@
+{
+  "best_epoch": 40,
+  "epochs_trained": 110,
+  "train_geometries": 30,
+  "val_geometries": 5,
+  "train_histories": 90,
+  "val_histories": 15,
+  "dev_global_baseline_max_K": 1.1823006517803378,
+  "dev_global_predicted_max_K": 1.1790781663088599,
+  "dev_skin_baseline_max_K": 1.1537145945609077,
+  "dev_skin_predicted_max_K": 1.153058555445322,
+  "pkg_model": "runs\\geomfrac_et_v6_pkg.pt",
+  "lift_model": "runs\\geomfrac_et_v5_lift.npz",
+  "rank": 64,
+  "base_skin_model": "runs\\geomfrac_et_v7_skin_resid.pt",
+  "val_history_max_K": [
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "temperature_max_K": 0.282791426108588
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "temperature_max_K": 0.5720315955629189
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "temperature_max_K": 0.6889441266595213
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "temperature_max_K": 0.20494481484860216
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "temperature_max_K": 0.4966182148659186
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "temperature_max_K": 0.6476768086157563
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+      "temperature_max_K": 0.37300975522089175
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+      "temperature_max_K": 2.1246952716556393
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+      "temperature_max_K": 2.749102621249733
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+      "temperature_max_K": 0.2429099396583183
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+      "temperature_max_K": 2.3871486638750525
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+      "temperature_max_K": 3.850706583188753
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+      "temperature_max_K": 0.1961447081082497
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+      "temperature_max_K": 1.0476287655110923
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+      "temperature_max_K": 1.8218191995038637
+    }
+  ]
+}
