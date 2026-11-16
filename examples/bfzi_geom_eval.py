@@ -16,6 +16,7 @@ from sdfmpneo_bfzi.geom_neural import GeomFracET
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", type=Path, required=True)
+    p.add_argument("--tangent-model",type=Path,default=None)
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--split", choices=("train", "val", "test"), default="val")
     p.add_argument("--out", type=Path, required=True)
@@ -33,9 +34,14 @@ def main():
         heat_z=bool(ck.get("heat_z", False)))
     net.load_state_dict(ck["state"])
     rows = [r for spec in specs for r in prepare(spec, int(ck["rank"]))]
-    vals = eval_rollout(None, net, ck, rows)
+    tangent=None
+    if a.tangent_model:
+        from examples.bfzi_z_tangent import restore
+        tangent=restore(a.tangent_model)
+    vals = eval_rollout(None, net, ck, rows, tangent=tangent)
     out = dict(
-        model=str(a.model), manifest=str(a.manifest), split=a.split,
+        model=str(a.model),tangent_model=str(a.tangent_model) if a.tangent_model else None,
+        manifest=str(a.manifest), split=a.split,
         geometries=len(specs), histories=len(vals),
         dynamic_Z_mean_rel_L2=float(np.mean(
             [r["dynamic_Z_rel_L2"] for r in vals])),

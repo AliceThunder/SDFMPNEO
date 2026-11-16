@@ -86,7 +86,7 @@ def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D):
     jac = B[:, :5]/dt + D[:, :5]
     for _ in range(12):
         theta = rom.phi @ a
-        sea, z, I = rom.circuit(theta, dsea, voltage)
+        sea, z, I = rom.circuit(theta, dsea(a) if callable(dsea) else dsea, voltage)
         heat, q, J, ps, pc = rom.source(theta, I, sea)
         qg = np.array([heat[sl].sum() for sl in groups(rom)])
         err = B @ ((a-old)/dt) + D @ a - qg
@@ -94,7 +94,7 @@ def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D):
             break
         a[:5] += np.linalg.solve(jac, -err)
     theta = rom.phi @ a
-    sea, z, I = rom.circuit(theta, dsea, voltage)
+    sea, z, I = rom.circuit(theta, dsea(a) if callable(dsea) else dsea, voltage)
     heat, q, J, ps, pc = rom.source(theta, I, sea)
     res = rom.cap * (theta - rom.phi @ old)/dt + rom.H @ theta - heat
     budget = np.array([res[sl].sum() for sl in groups(rom)])
@@ -128,7 +128,7 @@ def _balance(rom, old, pred, dt, voltage, dsea, B, D):
 
 
 @torch.no_grad()
-def rollout(rom, net, ck, voltage, times, correct_J=False):
+def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None):
     """Fully autonomous neural impedance + neural thermal evolution.
 
     Requires a precomputed cold FV anchor and spatial thermal basis, but uses
@@ -169,10 +169,19 @@ def rollout(rom, net, ck, voltage, times, correct_J=False):
             h, y, ahat = net.step_et(
                 h, torch.tensor((u/sc)[None], dtype=g.dtype), dt, g,
                 torch.tensor(a[None], dtype=g.dtype), ac)
-            dsea = zmat(y[0, :6].cpu().numpy() * ys[:6])
+            if tangent is None:
+                dsea = zmat(y[0, :6].cpu().numpy() * ys[:6])
+            else:
+                def sea_at(phys):
+                    state=torch.as_tensor((phys/norm)[None],dtype=g.dtype)
+                    sea6=tangent(g,state)[0].detach().cpu().numpy()
+                    return zmat(sea6)
+                dsea=sea_at
             a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
                 rom, a*norm, ahat[0].cpu().numpy()*norm, dt, float(v[k-1]), dsea, B, D)
             a = a_phys/norm
+            if tangent is not None:
+                dsea=sea_at(a_phys)
             # Heat evolves with left-end interval drive; port outputs and
             # Joule density at t[k] are sampled with the present voltage.
             sea, z, I = rom.circuit(theta, dsea, float(v[k]))

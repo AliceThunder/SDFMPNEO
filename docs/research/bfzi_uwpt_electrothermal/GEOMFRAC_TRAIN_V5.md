@@ -51,3 +51,28 @@ is chosen; do not reuse E01?E05 as a fresh hold-out after having
 examined their V4 error details. Report port-Z, maximum spatial
 temperature error and inference cost. The primary dynamic-Z target
 is below 10% across the new independent cohort.
+
+## Geometry-conditioned sea thermal tangent and closed-loop results
+
+A second V5 path learns a geometry-conditioned six-component
+seawater thermal susceptibility from the BFZI cold-anchor geometry
+and material features. The learned 6x14 matrix acts on the
+canonical seawater temperature mean and 13 seawater spatial
+modes. The prediction is exactly zero at ambient temperature.
+Copper effects remain analytic in the original circuit model.
+
+The tangent was trained against 30 independent BFZI V150 S5
+teacher geometries with 90 histories and spatial-projection-quality
+weights. It achieves 2.554% mean dynamic-Z relative L2 on
+the 15 T04/D01-D04 validation histories when supplied the
+physical teacher temperature (teacher-forced diagnostic).
+
+A fully autonomous test attaches this tangent to the best V4
+neural heat model. The tangent is evaluated inside every
+five-material energy-balance correction, coupling sea impedance
+to temperature, circuit current and Joule heating self-consistently.
+The 15-history autonomous mean dynamic-Z error drops from
+16.315% (V4) to 10.572% (V5 tangent).
+Maximum material budget residual 9.75e-09 W; mean CPU 0.367 s per trajectory.
+Tangent teacher-forced and autonomous results: `runs/geomfrac_et_v5_tangent.json`, `runs/geomfrac_et_v5_tangent_dev.json`.
+Main remaining error: D04 600s = 26.25%; next improve neural thermal evolution.

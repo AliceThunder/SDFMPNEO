@@ -1,0 +1,71 @@
+{
+  "architecture": "geometry-conditioned-linear-sea-tangent",
+  "best_epoch": 25,
+  "epochs_trained": 145,
+  "dev_sea_dynamic_mean_rel_L2": 0.02554162498563528,
+  "dev_results": [
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "dynamic_Z_rel_L2": 0.022873496636748314
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "dynamic_Z_rel_L2": 0.022460537031292915
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "dynamic_Z_rel_L2": 0.07592616975307465
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.011008906178176403
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.018834413960576057
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.022997524589300156
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.015310019254684448
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.02667122893035412
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.03413102403283119
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.01893157698214054
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.033960651606321335
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.044645048677921295
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.008785167708992958
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.012274176813662052
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.014314432628452778
+    }
+  ],
+  "training_geometries": 30,
+  "dev_geometries": 5,
+  "tau": 5.0
+}

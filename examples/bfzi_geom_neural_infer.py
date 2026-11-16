@@ -19,6 +19,7 @@ def main():
     p.add_argument("--anchor", type=Path, required=True)
     p.add_argument("--rom-file", type=Path, default=None)
     p.add_argument("--model", type=Path, required=True)
+    p.add_argument("--tangent-model", type=Path, default=None)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
     p.add_argument("--heat", type=float, default=240.)
@@ -45,7 +46,11 @@ def main():
     t = np.linspace(0., a.horizon, int(round(a.horizon/a.step))+1)
     v = np.where((t < a.heat) | (t >= a.heat+a.cool), a.voltage, 0.)
     tic = time.perf_counter()
-    pred = rollout(rom, net, ck, v, t)
+    tangent=None
+    if a.tangent_model:
+        from examples.bfzi_z_tangent import restore
+        tangent=restore(a.tangent_model)
+    pred = rollout(rom, net, ck, v, t, tangent=tangent)
     online_s = time.perf_counter()-tic
     a.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(a.out, time_s=t, voltage_v=v,

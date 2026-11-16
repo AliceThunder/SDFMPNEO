@@ -310,7 +310,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
     return _hist_mean(total, spans, hist_weight)
 
 
-def eval_rollout(rom, net, ck, rows):
+def eval_rollout(rom, net, ck, rows, tangent=None):
     """Evaluate a genuinely autonomous physics-coupled held-out history."""
     result = []
     net.eval()
@@ -318,7 +318,7 @@ def eval_rollout(rom, net, ck, rows):
         for row in rows:
             rr = row.get('rom',rom)
             begin = time.perf_counter()
-            pred = rollout(rr, net, ck, row["voltage"], row["time"])
+            pred = rollout(rr, net, ck, row["voltage"], row["time"], tangent=tangent)
             cpu_s = time.perf_counter() - begin
             real_z = row["z6"]
             real_t = row["temp_K"]
