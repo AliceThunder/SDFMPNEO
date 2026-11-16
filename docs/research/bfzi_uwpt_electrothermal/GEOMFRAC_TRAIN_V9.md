@@ -74,7 +74,7 @@ until fresh independent acceptance completes.
 
 ## Fresh independent test cohort
 
-The new W01?W04 geometries were frozen in
+The new W01-W04 geometries were frozen in
 runs/geomfrac_s5_v9_plan.json, with distinct geometry
 combinations not used in the original 30 training geometries
 or previously tested Q/R/S geometries.
@@ -108,7 +108,7 @@ Current evidence:
 - runs/geomfrac_et_v9_s04_retro.json
 - runs/geomfrac_et_v9_selection.json
 
-## W01?W04 frozen independent acceptance
+## W01-W04 frozen independent acceptance
 
 Four previously unseen BFZI V150 S5 geometries, twelve 60/300/600-second physical histories, including two low-voltage excitation geometries, have been completed without changing the frozen V9 checkpoint.
 
@@ -125,3 +125,52 @@ Four previously unseen BFZI V150 S5 geometries, twelve 60/300/600-second physica
 | W04 | full | 7.702% | 7.085% | 8.004% | 6.246% |
 
 The frozen V9 nonlinear tangent yields a relative 19.32% change in mean dynamic Z versus V7 on the new cohort. Full teacher and trajectory-level results are in runs/geomfrac_et_v9_final.json.
+
+## V9 production acceptance decision
+
+**V9 is the latest accepted electromagnetic-thermal neural surrogate.**
+The independent W01-W04 cohort has four unseen BFZI V150 S5 geometries
+and twelve 60/300/600-second trajectories. W01/W02 are deliberately
+weak voltage cases (six histories), W03/W04 use the full drive range
+(six histories). Their teacher trajectories were generated after
+checkpoint and hyperparameter selection.
+
+| Metric | Previous V7 | Accepted V9 |
+|---|---:|---:|
+| Mean dynamic port-Z relative L2 | 8.669% | 6.994% |
+| Worst dynamic-Z relative L2 | 19.836% | 17.444% |
+| Mean full complex port-Z relative L2 | 0.000854% | 0.000703% |
+| Mean maximum 3-D temperature error | 1.062 K | 1.062 K |
+| Mean CPU inference per history | 0.689 s | 0.769 s |
+| Worst material energy budget residual | 9.31e-9 W | 9.36e-9 W |
+
+Mean dynamic-Z error improves 19.32% relative on the new cohort.
+Each of W01-W04 also has improved mean dynamic-Z error. All
+five-material energy-budget residuals remain below 1e-8 W.
+W01 weak-drive 600s remains the worst history (17.444%).
+
+Production V9 retains the accepted V7 five-material conserved
+thermal loop and the V7 seawater-skin 3-D temperature output.
+V7 remains the baseline and V8 bulk-seawater reconstruction
+remains an optional temperature-field experiment.
+
+Standalone V9 online inference example:
+
+~~~powershell
+python -m examples.bfzi_geom_neural_infer --anchor runs/bfzi_s5_W01_ultra_v9a_anchor.npz --model runs/geomfrac_et_v4_8g_quality.pt --tangent-model runs/geomfrac_et_v5_tangent_aware.pt --z-fix-model runs/geomfrac_et_v9_ztune.pt --pkg-model runs/geomfrac_et_v6_pkg.pt --lift-model runs/geomfrac_et_v5_lift.npz --lift-feedback --lift-gain 0.2 --skin-output-model runs/geomfrac_et_v7_skin_resid.pt --horizon 600 --step 15 --out runs/geomfrac_et_v9_infer.npz
+~~~
+
+Online CPU timings exclude the offline cold anchor and thermal
+operator construction for a new geometry. The trained surrogate
+uses zero online BFZI directional EM solves and zero full implicit
+heat-FV solves.
+
+Reproduction: runs/geomfrac_et_v9_final.json,
+runs/geomfrac_et_v9_selection.json, physical W01-W04 manifests,
+and examples/bfzi_geom_v9_accept.py.
+
+Next priority: reduce W01-type weak excitation long-time relative
+dynamic-Z error by adding physically generated weak-drive
+teacher histories on the **original 30 training geometries**,
+selecting on the original developer split. Keep the previously
+tested W01-W04 geometries untouched for future model training.

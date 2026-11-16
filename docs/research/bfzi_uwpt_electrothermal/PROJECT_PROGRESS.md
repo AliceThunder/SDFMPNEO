@@ -925,3 +925,23 @@ evaluation. See GEOMFRAC_TRAIN_V9.md.
 ## V9 W01?W04 independent test completed
 
 Frozen geometry-disjoint 12-history BFZI evaluation: mean dynamic-Z V7 8.669% and V9 6.994%; mean 3-D maximum temperature error V7 1.062 K and V9 1.062 K; maximum five-material energy residual V9 9.36e-09 W. See GEOMFRAC_TRAIN_V9.md and geomfrac_et_v9_final.json.
+
+## 2026-11-16 ? V9 accepted on independent W01-W04 physics
+
+The frozen W01-W04 cohort includes 4 new BFZI V150 S5 geometries
+and 12 complete physical teacher histories, including two low-voltage
+geometry groups. Mean dynamic-Z relative L2 improves from V7
+8.669% to V9 6.994%, a 19.32% relative reduction. Worst-history
+dynamic-Z error declines from 19.836% to 17.444%, and all four
+geometry-mean dynamic-Z errors decrease. Mean full complex port-Z
+relative L2 improves 0.000854% -> 0.000703%, mean maximum 3-D
+temperature error stays 1.062 K, material energy-budget residuals
+remain below 1e-8 W and online inference increases from 0.689
+to 0.769 s CPU/history.
+
+**V9 is now the latest accepted electromagnetic-thermal surrogate**;
+V7 remains the baseline, V8 an optional spatial-field experiment.
+Next focus: further reduction of weak-drive long-time impedance
+relative errors using physically computed additional training drives
+on original 30 training geometries, then a newly frozen independent
+evaluation set. See GEOMFRAC_TRAIN_V9.md.
