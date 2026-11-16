@@ -904,3 +904,20 @@ retained as production and V8 remains optional.
 Next mainline: improve weak-signal long-duration
 dynamic port impedance generalization. See
 GEOMFRAC_TRAIN_V8.md.
+
+## 2026-11-16 ? V9 nonlinear sea-Z thermal susceptibility on original train/dev
+
+A 6-component nonlinear geometry/thermal-state sea-impedance
+residual head supplements the original V5 linear tangent.
+Zero thermal state gives exactly zero correction.
+The V7 fractional memory, thermal ROM and conservative
+five-material feedback are unchanged. Trained on the
+original 30 geometries and autonomous V6 histories, it
+reduces developer mean dynamic-Z relative L2 from
+7.516% to 6.559% (12.7% relative improvement).
+The previously examined S04 600s diagnostic improves
+23.128% to 21.506%, and S04 300s 12.639% to 9.540%.
+W01?W04 independent geometry/weak-drive plans are
+frozen, with BFZI S5 physical teachers launched.
+V7 remains the accepted version pending V9 independent
+evaluation. See GEOMFRAC_TRAIN_V9.md.
