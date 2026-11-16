@@ -153,3 +153,18 @@ with a 1mm clearance margin. Only N07, N19 and N24 generated
 geometry definitions changed; T01-T04/N01-N06 remain unmodified.
 N07 and D01 passed the native geometry mesh preflight; their
 600s S5 teacher generation has been relaunched.
+
+## Independent checkpoint evaluation
+
+`examples/bfzi_geom_eval.py` now evaluates any checkpoint on an
+explicit train/val/test manifest split without retraining or changing
+normalization. This permits D01 and future E01-E05 geometries to be
+evaluated as autonomous physics-coupled, never-trained cases.
+
+Example:
+```powershell
+python -m examples.bfzi_geom_eval --model runs/geomfrac_et_v4_8g.pt --manifest runs/geomfrac_s5_v4_8g_manifest.json --split val --out runs/geomfrac_et_v4_8g_eval.json
+```
+
+The 8g checkpoint evaluated on T04 reproduces the original three
+dynamic impedance errors exactly (maximum difference 0.0).

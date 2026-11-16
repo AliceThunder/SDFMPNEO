@@ -1,0 +1,50 @@
+"""Independent autonomous evaluation of a trained cross-geometry surrogate."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from examples.bfzi_geom_multi import prepare
+from examples.bfzi_geom_neural import eval_rollout
+from sdfmpneo_bfzi.geom_neural import GeomFracET
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--model", type=Path, required=True)
+    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--split", choices=("train", "val", "test"), default="val")
+    p.add_argument("--out", type=Path, required=True)
+    a = p.parse_args()
+    torch.set_num_threads(2)
+    ck = torch.load(a.model, map_location="cpu", weights_only=True)
+    cfg = json.loads(a.manifest.read_text(encoding="utf-8-sig"))
+    specs = cfg.get(a.split, [])
+    if not specs:
+        p.error(f"no geometry in split {a.split}")
+    net = GeomFracET(
+        ng=int(ck["ng"]), rank=int(ck["rank"]),
+        soe_quad=ck.get("soe_quad", "trap"),
+        heat_dt=float(ck.get("heat_dt", 1.875)))
+    net.load_state_dict(ck["state"])
+    rows = [r for spec in specs for r in prepare(spec, int(ck["rank"]))]
+    vals = eval_rollout(None, net, ck, rows)
+    out = dict(
+        model=str(a.model), manifest=str(a.manifest), split=a.split,
+        geometries=len(specs), histories=len(vals),
+        dynamic_Z_mean_rel_L2=float(np.mean(
+            [r["dynamic_Z_rel_L2"] for r in vals])),
+        results=vals)
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    a.out.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print("EVAL", a.out, "geometries", len(specs), "histories",
+          len(vals), "dynamic_Z_mean_rel_L2",
+          round(out["dynamic_Z_mean_rel_L2"], 6), flush=True)
+
+
+if __name__ == "__main__":
+    main()
