@@ -95,3 +95,18 @@ checkpoints:
 ```powershell
 python -m examples.bfzi_geom_eval --model runs/geomfrac_et_v4_8g_quality.pt --tangent-model runs/geomfrac_et_v5_tangent.pt --manifest runs/geomfrac_s5_v4_30g_manifest.json --split val --out runs/geomfrac_et_v5_tangent_dev.json
 ```
+
+## Completed thermal-conditioned V5 impedance head
+
+The controlled V5 head-only ablation completed 220 training
+epochs, starting from the best V4 8g model. The five-development-
+geometry, 15-history mean autonomous dynamic-Z relative L2
+decreased from 16.315% to 12.7635%. The underlying SOE trunk
+and neural 32-mode heat head were frozen, so the gain came
+from making impedance directly depend on thermal state.
+
+The geometry-conditioned physical tangent is the preferred
+electromagnetic branch on the same development cohort:
+10.572% autonomous dynamic-Z mean and 2.554% when given true
+teacher thermal states. Subsequent work focuses on refining
+the neural thermal head while freezing the learned tangent.
