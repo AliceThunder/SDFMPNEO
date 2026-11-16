@@ -190,3 +190,15 @@ Mean autonomous dynamic-Z relative L2 8.322%; maximum 14.438%.
 | bfzi_s5_Q05_ultra_v5_drive1 | 6.564% | 0.177 K |
 | bfzi_s5_Q05_ultra_v5_drive2 | 10.072% | 0.807 K |
 | bfzi_s5_Q05_ultra_v5_drive3 | 12.186% | 1.464 K |
+
+## V4 versus frozen V5 on the same unseen Q01-Q05 trajectories
+
+V4 independent Q test average dynamic-Z relative L2 = 18.035%; frozen V5 = 8.322%; relative reduction = 53.86%.
+
+| Geometry | V4 mean dynamic-Z rel L2 | V5 mean dynamic-Z rel L2 |
+|---|---:|---:|
+| Q01 | 22.734% | 11.385% |
+| Q02 | 15.872% | 6.295% |
+| Q03 | 21.540% | 10.259% |
+| Q04 | 13.348% | 4.063% |
+| Q05 | 16.679% | 9.608% |
