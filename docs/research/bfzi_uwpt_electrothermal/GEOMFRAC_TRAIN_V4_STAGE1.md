@@ -124,3 +124,32 @@ enforces a 1 mm reserve, setting N06 core1 to 14 mm. All existing
 T01-T04 and N01-N05 case definitions remain unchanged. V4 plan tests
 pass (2/2). N06/N07/D01 S5 teachers and the 8g training are running;
 their numerical results must be recorded after completion.
+
+## V4 eight-geometry first result and reproducible repair (2026-11-15)
+
+The 8g training on T01/T02/T03/N01-N05 (24 physics histories)
+completed in 120 epochs; best checkpoint at epoch 50.
+Held-out T04 dynamic impedance relative L2 errors were 51.076%,
+54.780% and 39.681% for 60s-1, 60s-2 and 600s-1. This model does not
+improve accuracy over the 5g baseline (19.393%/17.300%/15.813%).
+
+The 8g fit reused 5g neural weights but recomputed all normalization
+scales: the first 6 impedance-output scales increased by factors
+1.94 to 3.10 after adding N03-N05. Thus the inherited weights were
+applied in a changed coordinate system, preventing a controlled
+warm-start comparison. Training now supports `--reuse-scales`, which
+retains the prior checkpoint's source, output and thermal-mode scales.
+The 8g v2 model is being trained from 5g zrel=0 with these scales,
+dynamic-Z loss weight 1, learning rate 1e-4 and the original
+closed-loop/thermal coefficients 0.08/0.05.
+
+N06 completed its 60/300/600s physical teachers, all status candidate.
+Its 600s maximum 32-mode projection error was 8.066 K.
+N07 was initially rejected by the native BFZI minimum inner-bend
+constraint. BFZI computes its effective turn pitch as
+(outer_radius-inner_radius)/turns. The V4 sampler now imposes both
+the straight-core lower bound and a native inner-bend upper bound,
+with a 1mm clearance margin. Only N07, N19 and N24 generated
+geometry definitions changed; T01-T04/N01-N06 remain unmodified.
+N07 and D01 passed the native geometry mesh preflight; their
+600s S5 teacher generation has been relaunched.

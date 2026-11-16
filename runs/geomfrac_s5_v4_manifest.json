@@ -39,6 +39,14 @@
         "runs\\bfzi_s5_N05_ultra_v4_drive2.npz",
         "runs\\bfzi_s5_N05_ultra_v4_drive3.npz"
       ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N06_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N06_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N06_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N06_ultra_v4_drive3.npz"
+      ]
     }
   ],
   "val": [],

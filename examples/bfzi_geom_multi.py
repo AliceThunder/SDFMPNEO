@@ -51,6 +51,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',type=Path,required=True)
     p.add_argument('--init-model',type=Path,default=None)
+    p.add_argument('--reuse-scales',action='store_true',
+                   help='keep source/output/state scales when fine-tuning')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
     p.add_argument('--report',type=Path,default=Path('runs/geomfrac_et_multi.json'))
     p.add_argument('--rank',type=int,default=32,choices=(5,32))
@@ -98,6 +100,12 @@ def main():
     if a.init_model:
         old=torch.load(a.init_model,map_location='cpu',weights_only=True)
         load_init(net,old)
+        if a.reuse_scales:
+            sx=np.asarray(old['src_scale'],dtype=float)
+            sy=np.asarray(old['y_scale'],dtype=float)
+            sa=np.asarray(old['a_scale'],dtype=float)
+    elif a.reuse_scales:
+        p.error('--reuse-scales requires --init-model')
     opt=torch.optim.AdamW(net.parameters(),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -173,6 +181,7 @@ def main():
                  mode='canonical-material-32',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
+                 reuse_scales=a.reuse_scales,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
                  batch_hist=a.batch_hist,val_every=a.val_every,

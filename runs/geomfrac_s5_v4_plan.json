@@ -708,7 +708,7 @@
         "alpha1": 0.776,
         "alpha2": 0.979,
         "core1_mm": 13,
-        "core2_mm": 24,
+        "core2_mm": 19,
         "shift_mm": [
           3,
           97,
@@ -1512,7 +1512,7 @@
         "alpha1": 0.977,
         "alpha2": 0.971,
         "core1_mm": 13,
-        "core2_mm": 22,
+        "core2_mm": 20,
         "shift_mm": [
           -1,
           87,
@@ -1847,7 +1847,7 @@
         "alpha1": 0.757,
         "alpha2": 0.941,
         "core1_mm": 14,
-        "core2_mm": 23,
+        "core2_mm": 21,
         "shift_mm": [
           -8,
           89,
