@@ -848,3 +848,7 @@ Primary coupled V6 selects 20% sea feedback: 7.516% dynamic-Z and
 with conserved material energy budget. The R01-R03 independent
 test geometries are frozen in runs/geomfrac_s5_v6_plan.json and
 physical teachers are being generated. See GEOMFRAC_TRAIN_V6.md.
+
+## V6 R01-R03 frozen independent acceptance
+
+R01-R03 (9 histories) dynamic-Z mean V5 10.137%, V6 pkg 7.725%, V6 coupled 7.738%; mean 3D maximum temperature errors 1.664 K, 1.653 K, 1.388 K. See `runs/geomfrac_et_v6_final.json`.

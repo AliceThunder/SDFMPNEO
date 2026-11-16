@@ -101,3 +101,15 @@ For package-only mode, omit the two lift options. Model fitting:
 - `runs/geomfrac_et_v6_coupled_g02.json`: primary V6 developer metrics.
 - `runs/geomfrac_et_v6_selection.json`: frozen configuration.
 - `runs/geomfrac_s5_v6_plan.json`: frozen new-test geometry cohort.
+
+## Frozen R01-R03 independent physics acceptance
+
+Three geometry-disjoint BFZI V150 S5 teachers, nine trajectories; frozen package and 20% sea-feedback weights chosen on T04/D01-D04, without using R cases.
+
+| Surrogate | Mean dynamic Z rel L2 | Mean max 3D T error | Mean CPU per trajectory | Max energy budget residual |
+|---|---:|---:|---:|---:|
+| V5 | 10.137% | 1.664 K | 0.285 s | 9.22e-09 W |
+| V6_package | 7.725% | 1.653 K | 0.672 s | 9.88e-09 W |
+| V6_coupled | 7.738% | 1.388 K | 0.658 s | 9.91e-09 W |
+
+All values are independent of the V4 training geometries and T04/D01-D04 developer geometry set. Full trajectory results: `runs/geomfrac_et_v6_final.json`.
