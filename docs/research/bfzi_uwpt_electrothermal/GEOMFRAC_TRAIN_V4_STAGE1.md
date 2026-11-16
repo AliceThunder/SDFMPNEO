@@ -195,3 +195,16 @@ New physical teachers N07, N08, N09 and independent D01 are completed, all
 three excitation histories per geometry (60/300/600 s). Their 600s maximum
 32-mode spatial projection errors are: N07=10.812 K, D01=1.499 K, N08=4.665 K, N09=2.255 K.
 N10-N12 physical data generation continues independently.
+
+## Controlled spatial-projection cohort
+
+The long-time 32-mode temperature projection errors are up to
+9.528 K (N05), 8.066 K (N06), and 10.810 K (N07). A controlled
+8-geometry training manifest uses T01/T02/T03/N01/N02/N03/N04/N09
+and the same T04/D01 development validation. Its purpose is to
+test whether high thermal-ROM projection error in N05-N07 is
+driving the poor large-cohort generalization. The neural architecture,
+warm-start checkpoint, fixed scales, training loss weights, and
+autonomous model-selection criterion match the 10g experiment.
+Results from this cohort must be compared with both the 10g model
+and the 5g baseline; the final E01-E05 test geometries remain held out.
