@@ -133,3 +133,17 @@ Mean CPU inference per history 0.332 s; maximum material budget residual 9.75e-0
 The 600s T04 and D04 histories remain largest (22.39% and 18.41%).
 Complete development results: `runs/geomfrac_et_v5_tangent_aware_dev.json`.
 The new Q01-Q05 geometry test cohort was frozen separately; it has not influenced the model.
+
+## Frozen V5 tangent blending check
+
+The initial physical-temperature tangent and the autonomous-aware tangent were compared at fixed convex mixing weights.
+
+| Initial tangent weight | Mean autonomous dynamic-Z error | Worst history |
+|---:|---:|---:|
+| 0.00 | 8.367% | 22.392% |
+| 0.25 | 8.630% | 20.236% |
+| 0.50 | 9.097% | 22.168% |
+| 0.75 | 9.741% | 24.181% |
+| 1.00 | 10.572% | 26.255% |
+
+The autonomous-aware tangent alone retains the lowest mean development error and is frozen for the new Q01-Q05 acceptance.
