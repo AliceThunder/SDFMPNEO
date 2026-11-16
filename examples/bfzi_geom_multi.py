@@ -57,6 +57,10 @@ def main():
                    help='condition seawater impedance directly on thermal ROM state')
     p.add_argument('--head-only',action='store_true',
                    help='only train the new heat-conditioned impedance head')
+    p.add_argument('--heat-only',action='store_true',
+                   help='freeze SOE impedance and train thermal head only')
+    p.add_argument('--tangent-model',type=Path,default=None,
+                   help='evaluate autonomous Z with pretrained geometry tangent')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
     p.add_argument('--report',type=Path,default=Path('runs/geomfrac_et_multi.json'))
     p.add_argument('--rank',type=int,default=32,choices=(5,32))
@@ -114,11 +118,20 @@ def main():
             sa=np.asarray(old['a_scale'],dtype=float)
     elif a.reuse_scales:
         p.error('--reuse-scales requires --init-model')
+    if a.head_only and a.heat_only:
+        p.error('--head-only and --heat-only are exclusive')
     if a.head_only:
         if not a.heat_z or not a.init_model:
             p.error('--head-only requires --heat-z and --init-model')
         for name,param in net.named_parameters():
             param.requires_grad_(name.startswith('heat_z_head.'))
+    if a.heat_only:
+        for name,param in net.named_parameters():
+            param.requires_grad_(name.startswith('heat_head.'))
+    tangent=None
+    if a.tangent_model:
+        from examples.bfzi_z_tangent import restore
+        tangent=restore(a.tangent_model)
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -134,7 +147,7 @@ def main():
     if a.select=='dynamic_z' and a.init_model:
         net.eval()
         with torch.no_grad():
-            init_z=eval_rollout(None,net,eck,val)
+            init_z=eval_rollout(None,net,eck,val,tangent=tangent)
         best=float(np.mean([x['dynamic_Z_rel_L2'] for x in init_z]))
         saved={k:v.detach().clone() for k,v in net.state_dict().items()}
         print('INIT dynamic_z',round(best,6),flush=True)
@@ -187,7 +200,7 @@ def main():
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if a.select=='dynamic_z':
             with torch.no_grad():
-                zval=eval_rollout(None,net,eck,val)
+                zval=eval_rollout(None,net,eck,val,tangent=tangent)
             metric=float(np.mean([x['dynamic_Z_rel_L2'] for x in zval]))
         else:
             metric=v
@@ -231,13 +244,15 @@ def main():
             val_files=[r['file'] for r in val])
     a.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(ck,a.out)
-    autonomous=eval_rollout(None,net,ck,val)
+    autonomous=eval_rollout(None,net,ck,val,tangent=tangent)
     metrics=dict(architecture='GeomFracET-cross-geometry',
                  mode='canonical-material-32',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
                  heat_z=a.heat_z,head_only=a.head_only,
+                 heat_only=a.heat_only,
+                 tangent_model=str(a.tangent_model) if a.tangent_model else None,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
                  batch_hist=a.batch_hist,val_every=a.val_every,

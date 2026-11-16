@@ -76,3 +76,22 @@ The 15-history autonomous mean dynamic-Z error drops from
 Maximum material budget residual 9.75e-09 W; mean CPU 0.367 s per trajectory.
 Tangent teacher-forced and autonomous results: `runs/geomfrac_et_v5_tangent.json`, `runs/geomfrac_et_v5_tangent_dev.json`.
 Main remaining error: D04 600s = 26.25%; next improve neural thermal evolution.
+
+## Next optimization: neural heat evolution with frozen learned tangent
+
+The V5 training CLI now accepts `--heat-only --tangent-model <path>`.
+It freezes the original SOE impedance trunk and updates the 32-state
+neural thermal head against physical temperature/heat residuals.
+Validation checkpoint selection uses actual autonomous impedance
+with the trained, frozen geometry-conditioned thermal tangent,
+rather than the less accurate old SOE seawater-Z head.
+The first thermal refinement uses 30 training geometries with
+projection-aware history sampling and all 5 development geometries
+for selection. It retains the 10.572% pre-training checkpoint
+unless the new network improves the autonomous metric.
+
+Standalone inference and independent evaluation can load both
+checkpoints:
+```powershell
+python -m examples.bfzi_geom_eval --model runs/geomfrac_et_v4_8g_quality.pt --tangent-model runs/geomfrac_et_v5_tangent.pt --manifest runs/geomfrac_s5_v4_30g_manifest.json --split val --out runs/geomfrac_et_v5_tangent_dev.json
+```
