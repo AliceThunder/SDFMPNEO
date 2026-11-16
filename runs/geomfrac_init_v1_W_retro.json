@@ -1,0 +1,58 @@
+{
+  "status": "retrospective unseen W cohort cold/operator prediction",
+  "source_atlas": "runs/geomfrac_init_v1.npz",
+  "dev_cold_Z_relative_L2": 0.023748024867213176,
+  "test_geometries": 4,
+  "mean_cost_per_case_s": 0.00030864999280311167,
+  "results": {
+    "rows": [
+      {
+        "case": "W01",
+        "cold_Z_rel_L2": 0.026161631691472446,
+        "cold_Z_max_abs_ohm": 0.6970796566864088,
+        "air_rel_L2": 0.06381071805250228,
+        "cap_rel_L2": 3.8684381334473775e-05,
+        "heat_K_rel_F": 0.24932702259371523,
+        "heat_K_min_eig": 1.874997576814175e-05,
+        "source_rel_F": 0.14137763059407285
+      },
+      {
+        "case": "W02",
+        "cold_Z_rel_L2": 0.005048398388101466,
+        "cold_Z_max_abs_ohm": 0.12448021505556639,
+        "air_rel_L2": 0.01970601223349609,
+        "cap_rel_L2": 5.80199777600277e-05,
+        "heat_K_rel_F": 0.10332784071711677,
+        "heat_K_min_eig": 1.8749371610384062e-05,
+        "source_rel_F": 0.06117324954746986
+      },
+      {
+        "case": "W03",
+        "cold_Z_rel_L2": 0.01285202780174086,
+        "cold_Z_max_abs_ohm": 0.32871326032472226,
+        "air_rel_L2": 0.03977415514220353,
+        "cap_rel_L2": 9.569840166485844e-05,
+        "heat_K_rel_F": 0.2766424314807664,
+        "heat_K_min_eig": 1.874967384408634e-05,
+        "source_rel_F": 0.0766459346911364
+      },
+      {
+        "case": "W04",
+        "cold_Z_rel_L2": 0.011040966915080944,
+        "cold_Z_max_abs_ohm": 0.2591024533020416,
+        "air_rel_L2": 0.01359095725493473,
+        "cap_rel_L2": 5.9785053207616086e-05,
+        "heat_K_rel_F": 0.06002045763653495,
+        "heat_K_min_eig": 1.875056621021093e-05,
+        "source_rel_F": 0.09865306323819502
+      }
+    ],
+    "cold_Z_rel_L2_mean": 0.013775756199098928,
+    "cold_Z_max_abs_ohm_mean": 0.35234389634218477,
+    "air_rel_L2_mean": 0.03422046067078416,
+    "cap_rel_L2_mean": 6.3046953491744e-05,
+    "heat_K_rel_F_mean": 0.17232943810703336,
+    "heat_K_min_eig_mean": 1.874989685820577e-05,
+    "source_rel_F_mean": 0.09446246951771853
+  }
+}

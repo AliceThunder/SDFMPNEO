@@ -945,3 +945,23 @@ Next focus: further reduction of weak-drive long-time impedance
 relative errors using physically computed additional training drives
 on original 30 training geometries, then a newly frozen independent
 evaluation set. See GEOMFRAC_TRAIN_V9.md.
+
+## 2026-11-16 ? Geometry-only BFZI cold and shared-operator prototype
+
+Following V9 acceptance, development priority shifted to eliminating
+per-new-geometry BFZI cold solves and FV heat-operator/basis preparation.
+Implemented a reusable 18-input geometry/material-only cold surrogate
+and dissipative shared 32/48/64-coordinate thermal K emulator.
+Training uses 30 S5 cold anchors and five developer geometries.
+Developer mean cold-Z relative L2 improves 4.405% -> 2.375%
+with an additional pooled-coil cold-response model.
+Previously tested W01-W04 retrospective mean cold Z 1.378%;
+shared r=32 operator relative Frobenius 17.233%;
+material capacity relative L2 0.0063%.
+BFZI-free single W01 atlas query took 0.0004 s after model load.
+Three targeted tests pass.
+This is a prototype **geometry-only initializer**, not yet a
+replacement for V9's complete EM/thermal autonomous and 3-D
+query pipeline. See GEOMFRAC_GEOMETRY_FREE_V1.md.
+Next task: more independent cold-only training geometries and
+an end-to-end cold-start shared-coordinate reduced dynamic solver.
