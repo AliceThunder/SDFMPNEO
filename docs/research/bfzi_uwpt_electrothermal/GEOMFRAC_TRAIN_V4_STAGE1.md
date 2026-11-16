@@ -208,3 +208,5 @@ warm-start checkpoint, fixed scales, training loss weights, and
 autonomous model-selection criterion match the 10g experiment.
 Results from this cohort must be compared with both the 10g model
 and the 5g baseline; the final E01-E05 test geometries remain held out.
+
+N10 has completed its 60/300/600 s real BFZI S5 teacher histories; the 600 s 32-mode maximum temperature projection error is 0.800 K.
