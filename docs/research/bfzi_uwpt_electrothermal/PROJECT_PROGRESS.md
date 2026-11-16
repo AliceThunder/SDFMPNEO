@@ -756,3 +756,36 @@ python run.py --mode bfzi-convergence --basis-ball-aniso --basis-ball-ablate
 V2 最佳轮 127/140，验证损失 0.5580；V3 从 V2 初始化，提高动态阻抗损失权重 1→3 和闭环权重 0.08→0.15，最佳轮 22/57，验证损失 0.8413（不同损失权重，数值不宜直接比较）。V3 的 T04 最大温度误差依次为 0.863、1.287、1.461 K。V3 改善 60 s，600 s 无实质改善。
 
 **下一项主线工作：补充长时程跨几何教师覆盖。** 当前 `runs/geomfrac_s5_long_manifest.json` 的训练集仅 T01 有 600 s 教师轨迹，T02/T03 仅 60 s；T04 的 600 s 仍是独立留出。优先为 T02、T03 生成新的 600 s 物理直接法教师轨迹，再训练并独立验收 T04；暂不继续单纯放大阻抗损失权重。
+
+## 2026-11-16 ? GeomFracET V4 40-geometry cohort and frozen final acceptance
+
+V4 physical teacher generation is COMPLETE: 30 training, 5 development
+validation and 5 final-test geometries; 108 new BFZI V150 S5 physical
+histories (60/300/600s) completed, status candidate. Full files,
+manifest and per-geometry physical/projection report are archived.
+
+V4 neural training/validation is COMPLETE, and its target is NOT MET.
+Selecting exclusively by all 15 T04/D01-D04 development trajectories
+picked the 8g low-projection-error checkpoint. Development dynamic-Z
+relative L2 mean: 16.315%. The final untouched E01-E05 15-trajectory
+mean: 18.464%; maximum: 33.653% (E05 600s). E04 600s maximum
+3D temperature error: 20.331 K. The V4 10% target has not been met.
+Thirty-geometry full-data and projection-weighted fine-tuning both
+retained the initial 8g checkpoint (best epoch 0). The first 30g
+experiment and projection-weighted counterpart both terminated
+after 90 epochs.
+
+The main observed constraints are (i) seawater impedance prediction:
+teacher-forced source/thermal inputs still yield 16.660% mean dynamic
+impedance error on T04/D01; (ii) the fixed canonical 32-mode thermal
+basis: 600s spatial projection errors reach N26 20.502 K and N24
+14.477 K. The highest priority for the next model is to directly
+condition the seawater-Z network on the thermal ROM state while
+retaining the SOE memory and conservative material balances, then
+improve spatial thermal representation in high-projection-error
+geometries. Keep E01-E05 as the completed V4 final test, and freeze
+new independent geometries before any new final acceptance.
+
+Results: runs/geomfrac_et_v4_final.json,
+runs/geomfrac_s5_v4_teacher_summary.json,
+docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_TRAIN_V4_STAGE1.md.
