@@ -165,3 +165,28 @@ scalar coordinate ranges. All five belong to the original validated
 BFZI design domain and have passed native geometry preflight.
 This coverage statement uses the frozen geometry/thermal plan
 only; no final-test prediction errors were consulted.
+
+## Independent frozen Q01-Q05 physical acceptance
+
+The neural thermal checkpoint and autonomous-state-conditioned thermal tangent were frozen based on T04/D01-D04 development data before evaluating Q01-Q05.
+Five disjoint BFZI S5 geometries, 15 unseen 60/300/600s trajectories.
+
+Mean autonomous dynamic-Z relative L2 8.322%; maximum 14.438%.
+
+| History | Dynamic Z rel L2 | Max 3D T error |
+|---|---:|---:|
+| bfzi_s5_Q01_ultra_v5_drive1 | 8.224% | 1.383 K |
+| bfzi_s5_Q01_ultra_v5_drive2 | 11.494% | 6.329 K |
+| bfzi_s5_Q01_ultra_v5_drive3 | 14.438% | 12.883 K |
+| bfzi_s5_Q02_ultra_v5_drive1 | 6.323% | 0.242 K |
+| bfzi_s5_Q02_ultra_v5_drive2 | 6.179% | 0.551 K |
+| bfzi_s5_Q02_ultra_v5_drive3 | 6.382% | 1.198 K |
+| bfzi_s5_Q03_ultra_v5_drive1 | 7.791% | 3.979 K |
+| bfzi_s5_Q03_ultra_v5_drive2 | 10.454% | 10.019 K |
+| bfzi_s5_Q03_ultra_v5_drive3 | 12.532% | 22.866 K |
+| bfzi_s5_Q04_ultra_v5_drive1 | 5.081% | 0.146 K |
+| bfzi_s5_Q04_ultra_v5_drive2 | 3.419% | 0.777 K |
+| bfzi_s5_Q04_ultra_v5_drive3 | 3.691% | 2.505 K |
+| bfzi_s5_Q05_ultra_v5_drive1 | 6.564% | 0.177 K |
+| bfzi_s5_Q05_ultra_v5_drive2 | 10.072% | 0.807 K |
+| bfzi_s5_Q05_ultra_v5_drive3 | 12.186% | 1.464 K |

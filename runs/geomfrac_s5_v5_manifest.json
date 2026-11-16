@@ -25,6 +25,22 @@
         "runs\\bfzi_s5_Q03_ultra_v5_drive2.npz",
         "runs\\bfzi_s5_Q03_ultra_v5_drive3.npz"
       ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_Q04_ultra_v5_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_Q04_ultra_v5_drive1.npz",
+        "runs\\bfzi_s5_Q04_ultra_v5_drive2.npz",
+        "runs\\bfzi_s5_Q04_ultra_v5_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_Q05_ultra_v5_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_Q05_ultra_v5_drive1.npz",
+        "runs\\bfzi_s5_Q05_ultra_v5_drive2.npz",
+        "runs\\bfzi_s5_Q05_ultra_v5_drive3.npz"
+      ]
     }
   ],
   "canonical": true,

@@ -805,3 +805,8 @@ tangent checkpoint. The new Q01-Q05 physical test cohort has been
 frozen in runs/geomfrac_s5_v5_plan.json and is being generated;
 its final acceptance has not been evaluated. Latest metrics:
 runs/geomfrac_et_v5_tangent_aware_dev.json.
+
+## V5 frozen final acceptance Q01-Q05
+
+Geometry-disjoint 15-history autonomous dynamic-Z mean error 8.322%, maximum 14.438%.
+Complete report: runs/geomfrac_et_v5_final.json.
