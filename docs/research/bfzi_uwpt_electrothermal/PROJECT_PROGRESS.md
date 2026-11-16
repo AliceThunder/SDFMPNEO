@@ -884,3 +884,7 @@ V7 selection is frozen in runs/geomfrac_et_v7_selection.json.
 Independent S01-S04 BFZI V150 S5 physical teachers have
 been launched with 4 geometry-disjoint examples/12 histories;
 see GEOMFRAC_TRAIN_V7.md and bfzi_geom_v7_accept.py.
+
+## V7 S01-S04 frozen independent acceptance closed
+
+12 BFZI V150 S5 unseen physical histories completed. Dynamic Z: V5 8.856%; V6/V7 7.890%. Mean maximum 3D temperature error: V6 3.148 K; V7 2.597 K. Relative V7 temperature improvement 17.50%. Five-material budget max 9.89e-09 W. See geomfrac_et_v7_final.json.

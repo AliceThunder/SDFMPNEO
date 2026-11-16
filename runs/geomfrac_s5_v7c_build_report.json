@@ -1,0 +1,300 @@
+{
+  "cases": {
+    "S03": {
+      "split": "test",
+      "anchor": "runs\\bfzi_s5_S03_ultra_v7c_anchor.npz",
+      "traces": [
+        {
+          "teacher": "runs\\bfzi_s5_S03_ultra_v7c_drive1.npz",
+          "physics": {
+            "status": "candidate",
+            "failed_at": null,
+            "dt_s": 15.0,
+            "inner_step_s": 1.875,
+            "completed_s": 60.0,
+            "elapsed_s": 131.3748260999564,
+            "copper_to_package_G_W_K": [
+              17.139918715480313,
+              16.574883083501987
+            ],
+            "insulation_layer_m": [
+              0.000468,
+              0.000468
+            ],
+            "skin_depth_m": 0.002,
+            "skin_clip_fraction": 0.010182498402472762,
+            "skin_water_capacity_error_J_K": 0.0,
+            "peak_thermal_residual_W": 2.1955143836294155e-07,
+            "peak_global_budget_W": 6.459873702624463e-08,
+            "max_port_power_residual_W": 2.7284841053187847e-12,
+            "max_rel_port_power": 3.243806869078204e-15,
+            "max_rel_q_power": 5.114851688773778e-16,
+            "heat_cap_J_K": {
+              "seawater": 379701.2000000006,
+              "package": 1612.05,
+              "copper": 52.439840921724524
+            },
+            "max_copper_K": 306.48209894655344,
+            "max_package_K": 302.113729951488,
+            "max_water_K": 294.35890140652157,
+            "max_copper_loss_W": 111.03073359879257,
+            "max_lead_loss_W": 30.357323446748413,
+            "max_sea_loss_W": 167.0976538024516,
+            "max_source_power_W": 842.7685798116431,
+            "peak_ambient_loss_W": 0.0540225273950357,
+            "max_storage_rate_W": 277.8184602062864
+          },
+          "basis": {
+            "rank": 32,
+            "ntimes": 5,
+            "nheat": 3729,
+            "global_max_K": 0.5385553645260188,
+            "global_rmse_K": 0.08233599115769441,
+            "material_mean_max_K": 7.1052370690903045e-15,
+            "regions": {
+              "seawater": {
+                "max_abs_K": 0.5385553645260188,
+                "rmse_K": 0.08283913664309642,
+                "hotspot_max_K": 0.39099692694662735
+              },
+              "package_tx": {
+                "max_abs_K": 0.26186911650512457,
+                "rmse_K": 0.06645181177598142,
+                "hotspot_max_K": 0.027926978203993258
+              },
+              "package_rx": {
+                "max_abs_K": 0.023456674717465376,
+                "rmse_K": 0.007288376415549413,
+                "hotspot_max_K": 0.0034280091966252257
+              },
+              "copper_tx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "copper_rx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "sea_bulk": {
+                "max_abs_K": 0.4212839999872813,
+                "rmse_K": 0.02364329502038773,
+                "hotspot_max_K": 0.34665148454269
+              },
+              "sea_skin": {
+                "max_abs_K": 0.5385553645260188,
+                "rmse_K": 0.15200956065538446,
+                "hotspot_max_K": 0.39099692694662735
+              },
+              "skin_tx": {
+                "max_abs_K": 0.5385553645260188,
+                "rmse_K": 0.21377008349374915,
+                "hotspot_max_K": 0.39099692694662735
+              },
+              "skin_rx": {
+                "max_abs_K": 0.06874415554193547,
+                "rmse_K": 0.022719253164695603,
+                "hotspot_max_K": 0.010038476976944821
+              }
+            }
+          }
+        },
+        {
+          "teacher": "runs\\bfzi_s5_S03_ultra_v7c_drive2.npz",
+          "physics": {
+            "status": "candidate",
+            "failed_at": null,
+            "dt_s": 15.0,
+            "inner_step_s": 1.875,
+            "completed_s": 300.0,
+            "elapsed_s": 400.11739689996466,
+            "copper_to_package_G_W_K": [
+              17.139918715480313,
+              16.574883083501987
+            ],
+            "insulation_layer_m": [
+              0.000468,
+              0.000468
+            ],
+            "skin_depth_m": 0.002,
+            "skin_clip_fraction": 0.010182498402472762,
+            "skin_water_capacity_error_J_K": 0.0,
+            "peak_thermal_residual_W": 2.709481435658745e-06,
+            "peak_global_budget_W": 9.288731916967663e-07,
+            "max_port_power_residual_W": 7.275957614183426e-12,
+            "max_rel_port_power": 4.5028532294912656e-15,
+            "max_rel_q_power": 3.5660212937825216e-16,
+            "heat_cap_J_K": {
+              "seawater": 379701.2000000006,
+              "package": 1612.05,
+              "copper": 52.439840921724524
+            },
+            "max_copper_K": 343.25930245867676,
+            "max_package_K": 334.4697666516388,
+            "max_water_K": 304.0044183172211,
+            "max_copper_loss_W": 226.48375183937574,
+            "max_lead_loss_W": 58.20480029224935,
+            "max_sea_loss_W": 328.76305094383355,
+            "max_source_power_W": 1634.890046652709,
+            "peak_ambient_loss_W": 0.33797312423691883,
+            "max_storage_rate_W": 554.0001888100967
+          },
+          "basis": {
+            "rank": 32,
+            "ntimes": 21,
+            "nheat": 3729,
+            "global_max_K": 5.582451855508566,
+            "global_rmse_K": 0.7137099305393138,
+            "material_mean_max_K": 1.2444522152956686e-14,
+            "regions": {
+              "seawater": {
+                "max_abs_K": 5.582451855508566,
+                "rmse_K": 0.7194520116934848,
+                "hotspot_max_K": 2.824731625362972
+              },
+              "package_tx": {
+                "max_abs_K": 1.0459720874131904,
+                "rmse_K": 0.32796875680932325,
+                "hotspot_max_K": 0.4510709792149328
+              },
+              "package_rx": {
+                "max_abs_K": 0.09338187569773027,
+                "rmse_K": 0.03217488321569925,
+                "hotspot_max_K": 0.02786323925221268
+              },
+              "copper_tx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "copper_rx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "sea_bulk": {
+                "max_abs_K": 2.7209170097645483,
+                "rmse_K": 0.16331472926762738,
+                "hotspot_max_K": 2.0576259937660666
+              },
+              "sea_skin": {
+                "max_abs_K": 5.582451855508566,
+                "rmse_K": 1.3352285021726131,
+                "hotspot_max_K": 2.824731625362972
+              },
+              "skin_tx": {
+                "max_abs_K": 5.582451855508566,
+                "rmse_K": 1.8784100288647607,
+                "hotspot_max_K": 2.824731625362972
+              },
+              "skin_rx": {
+                "max_abs_K": 0.6517253735401596,
+                "rmse_K": 0.19299240785204325,
+                "hotspot_max_K": 0.09223674827313744
+              }
+            }
+          }
+        },
+        {
+          "teacher": "runs\\bfzi_s5_S03_ultra_v7c_drive3.npz",
+          "physics": {
+            "status": "candidate",
+            "failed_at": null,
+            "dt_s": 15.0,
+            "inner_step_s": 1.875,
+            "completed_s": 600.0,
+            "elapsed_s": 718.1924863000168,
+            "copper_to_package_G_W_K": [
+              17.139918715480313,
+              16.574883083501987
+            ],
+            "insulation_layer_m": [
+              0.000468,
+              0.000468
+            ],
+            "skin_depth_m": 0.002,
+            "skin_clip_fraction": 0.010182498402472762,
+            "skin_water_capacity_error_J_K": 0.0,
+            "peak_thermal_residual_W": 2.6045902359328466e-06,
+            "peak_global_budget_W": 7.649023814337852e-07,
+            "max_port_power_residual_W": 3.410605131648481e-12,
+            "max_rel_port_power": 2.4182244169520624e-15,
+            "max_rel_q_power": 6.238910507645035e-16,
+            "heat_cap_J_K": {
+              "seawater": 379701.2000000006,
+              "package": 1612.05,
+              "copper": 52.439840921724524
+            },
+            "max_copper_K": 359.89748827437285,
+            "max_package_K": 352.53123541469,
+            "max_water_K": 313.89547970741467,
+            "max_copper_loss_W": 198.77813385691002,
+            "max_lead_loss_W": 49.9013598217711,
+            "max_sea_loss_W": 289.2648785772844,
+            "max_source_power_W": 1410.375773124985,
+            "peak_ambient_loss_W": 0.5960121508012206,
+            "max_storage_rate_W": 486.8132894064348
+          },
+          "basis": {
+            "rank": 32,
+            "ntimes": 41,
+            "nheat": 3729,
+            "global_max_K": 10.55241016260004,
+            "global_rmse_K": 1.392556705680011,
+            "material_mean_max_K": 1.777850182058605e-14,
+            "regions": {
+              "seawater": {
+                "max_abs_K": 10.55241016260004,
+                "rmse_K": 1.4042412033909262,
+                "hotspot_max_K": 4.5830320588394216
+              },
+              "package_tx": {
+                "max_abs_K": 1.410671662595803,
+                "rmse_K": 0.5070650403411158,
+                "hotspot_max_K": 0.8578612034610273
+              },
+              "package_rx": {
+                "max_abs_K": 0.10769533631315653,
+                "rmse_K": 0.042065944314519606,
+                "hotspot_max_K": 0.0557219877737225
+              },
+              "copper_tx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "copper_rx": {
+                "max_abs_K": 0.0,
+                "rmse_K": 0.0,
+                "hotspot_max_K": 0.0
+              },
+              "sea_bulk": {
+                "max_abs_K": 6.399750132988288,
+                "rmse_K": 0.39709999828375453,
+                "hotspot_max_K": 4.889608070601241
+              },
+              "sea_skin": {
+                "max_abs_K": 10.55241016260004,
+                "rmse_K": 2.5782491745474436,
+                "hotspot_max_K": 4.5830320588394216
+              },
+              "skin_tx": {
+                "max_abs_K": 10.55241016260004,
+                "rmse_K": 3.6266911236422072,
+                "hotspot_max_K": 4.5830320588394216
+              },
+              "skin_rx": {
+                "max_abs_K": 1.23728552142137,
+                "rmse_K": 0.37662860460137126,
+                "hotspot_max_K": 0.12043170580381002
+              }
+            }
+          }
+        }
+      ],
+      "seconds": 1270.4867008999572
+    }
+  },
+  "teacher": "BFZI V150 five-point-order S5"
+}

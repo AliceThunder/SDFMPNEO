@@ -1,0 +1,17 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_S02_ultra_v7b_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_S02_ultra_v7b_drive1.npz",
+        "runs\\bfzi_s5_S02_ultra_v7b_drive2.npz",
+        "runs\\bfzi_s5_S02_ultra_v7b_drive3.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 600.0
+}

@@ -92,3 +92,22 @@ Results: runs/geomfrac_et_v7_skin_resid_dev.json,
 runs/geomfrac_et_v7_output_dev.json,
 runs/geomfrac_et_v7_output_rdiag.json, and the frozen
 selection in runs/geomfrac_et_v7_selection.json.
+
+## Frozen S01-S04 independent acceptance
+
+The four unseen BFZI V150 S5 geometries and all twelve 60/300/600-second physics histories are complete. The V7 model and its zero-feedback output-only configuration were frozen before this evaluation.
+
+| Variant | Mean dynamic-Z rel L2 | Mean max 3D T error | Mean CPU / history | Worst energy-budget residual |
+|---|---:|---:|---:|---:|
+| V5 | 8.856% | 4.670 K | 0.306 s | 9.81e-09 W |
+| V6_coupled | 7.890% | 3.148 K | 0.722 s | 9.89e-09 W |
+| V7_skin_output | 7.890% | 2.597 K | 0.743 s | 9.89e-09 W |
+
+| New geometry | V5 Z error | V6 Z error | V7 Z error | V6 mean max 3D T | V7 mean max 3D T |
+|---|---:|---:|---:|---:|---:|
+| S01 | 9.058% | 5.585% | 5.585% | 3.566 K | 2.099 K |
+| S02 | 5.299% | 5.554% | 5.554% | 3.663 K | 3.068 K |
+| S03 | 7.287% | 6.699% | 6.699% | 4.454 K | 4.351 K |
+| S04 | 13.780% | 13.722% | 13.722% | 0.909 K | 0.869 K |
+
+The V7 seawater-only output model changes neither the V6 dynamic impedance nor its five-material energy-balance calculation. Mean temperature error improvement against V6 on this independent cohort: 17.50%.
