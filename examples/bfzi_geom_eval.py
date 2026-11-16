@@ -17,6 +17,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--tangent-model",type=Path,default=None)
+    p.add_argument("--z-fix-model",type=Path,default=None,
+                   help="geometry/thermal-state nonlinear dynamic-Z residual")
     p.add_argument("--pkg-model", type=Path, default=None)
     p.add_argument("--lift-model", type=Path, default=None,
                    help="optional self-consistent sea-skin thermal feedback")
@@ -49,6 +51,9 @@ def main():
     if a.tangent_model:
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
+    if a.z_fix_model:
+        from sdfmpneo_bfzi.geom_ztune import restore
+        tangent=restore(a.z_fix_model)
     pkg=None
     if a.pkg_model:
         from sdfmpneo_bfzi.geom_pkg import restore
@@ -76,6 +81,7 @@ def main():
                         skin_out=skin_out, bulk_out=bulk_out)
     out = dict(
         model=str(a.model),tangent_model=str(a.tangent_model) if a.tangent_model else None,
+        z_fix_model=str(a.z_fix_model) if a.z_fix_model else None,
         pkg_model=str(a.pkg_model) if a.pkg_model else None,
         lift_model=str(a.lift_model) if a.lift_model else None,
         lift_gain=a.lift_gain,

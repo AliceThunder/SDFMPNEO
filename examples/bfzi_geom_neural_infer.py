@@ -20,6 +20,7 @@ def main():
     p.add_argument("--rom-file", type=Path, default=None)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--tangent-model", type=Path, default=None)
+    p.add_argument("--z-fix-model",type=Path,default=None)
     p.add_argument("--lift-model", type=Path, default=None,
                    help="optional 48-mode sea-skin reconstruction")
     p.add_argument("--pkg-model", type=Path, default=None)
@@ -60,6 +61,9 @@ def main():
     if a.tangent_model:
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
+    if a.z_fix_model:
+        from sdfmpneo_bfzi.geom_ztune import restore
+        tangent=restore(a.z_fix_model)
     pkg=None
     if a.pkg_model:
         from sdfmpneo_bfzi.geom_pkg import restore
@@ -104,6 +108,7 @@ def main():
                    max_fv_residual_W=float(np.max(pred["fv_node_residual_W"])),
                    max_dynamic_Z_ohm=float(np.max(abs(pred["z6"]-pred["z6"][0]))),
                    lift_model=str(a.lift_model) if a.lift_model else None,
+                   z_fix_model=str(a.z_fix_model) if a.z_fix_model else None,
                    pkg_model=str(a.pkg_model) if a.pkg_model else None,
                    lift_feedback=a.lift_feedback,
                    lift_gain=a.lift_gain,

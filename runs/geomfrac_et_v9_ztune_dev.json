@@ -1,0 +1,83 @@
+{
+  "architecture": "nonlinear geometry-conditioned sea-Z residual tangent",
+  "best_epoch": 240,
+  "epochs_trained": 240,
+  "baseline_dev_Z_pct": 7.516230959128343,
+  "best_dev_Z_pct": 6.558950404024403,
+  "baseline_dev_T_K": 1.5508539964132788,
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "train_histories": 90,
+  "dev_histories": 15,
+  "history": [
+    {
+      "epoch": 0,
+      "z_pct": 7.516230959128343,
+      "temp_max_K": 1.5508539964132788
+    },
+    {
+      "epoch": 20,
+      "z_pct": 7.479320155873377,
+      "temp_max_K": 1.5509578999750981
+    },
+    {
+      "epoch": 40,
+      "z_pct": 7.421122469641062,
+      "temp_max_K": 1.55093354286156
+    },
+    {
+      "epoch": 60,
+      "z_pct": 7.336983809588624,
+      "temp_max_K": 1.5509657372621253
+    },
+    {
+      "epoch": 80,
+      "z_pct": 7.42722009577455,
+      "temp_max_K": 1.550930449089852
+    },
+    {
+      "epoch": 100,
+      "z_pct": 7.575435683010956,
+      "temp_max_K": 1.550867171555918
+    },
+    {
+      "epoch": 120,
+      "z_pct": 7.548363836974771,
+      "temp_max_K": 1.550833243322063
+    },
+    {
+      "epoch": 140,
+      "z_pct": 7.350029986066706,
+      "temp_max_K": 1.550846008073711
+    },
+    {
+      "epoch": 160,
+      "z_pct": 7.2183033372073435,
+      "temp_max_K": 1.550833656885944
+    },
+    {
+      "epoch": 180,
+      "z_pct": 6.99055434796258,
+      "temp_max_K": 1.5508369211180593
+    },
+    {
+      "epoch": 200,
+      "z_pct": 6.755182671713936,
+      "temp_max_K": 1.5508441097109995
+    },
+    {
+      "epoch": 220,
+      "z_pct": 6.655280392038603,
+      "temp_max_K": 1.5508314691743788
+    },
+    {
+      "epoch": 240,
+      "z_pct": 6.558950404024403,
+      "temp_max_K": 1.5508146286877567
+    }
+  ],
+  "base_tangent": "runs\\geomfrac_et_v5_tangent_aware.pt",
+  "pkg_model": "runs\\geomfrac_et_v6_pkg.pt",
+  "lift_model": "runs\\geomfrac_et_v5_lift.npz",
+  "lift_gain": 0.2
+}

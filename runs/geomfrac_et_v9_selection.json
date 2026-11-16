@@ -1,0 +1,24 @@
+{
+  "description": "V9 geometry-conditioned nonlinear sea-Z residual",
+  "status": "frozen before new W01-W04 physical teacher generation",
+  "geometry_ids": [
+    "W01",
+    "W02",
+    "W03",
+    "W04"
+  ],
+  "plan": "runs/geomfrac_s5_v9_plan.json",
+  "heat_model": "runs/geomfrac_et_v4_8g_quality.pt",
+  "sea_tangent": "runs/geomfrac_et_v5_tangent_aware.pt",
+  "nonlinear_tangent": "runs/geomfrac_et_v9_ztune.pt",
+  "pkg_model": "runs/geomfrac_et_v6_pkg.pt",
+  "sea_lift": "runs/geomfrac_et_v5_lift.npz",
+  "sea_gain": 0.2,
+  "skin_model": "runs/geomfrac_et_v7_skin_resid.pt",
+  "training_geometries": 30,
+  "dev_geometries": 5,
+  "dev_baseline_Z_pct": 7.516230959128343,
+  "dev_selected_Z_pct": 6.558950404024403,
+  "best_epoch": 240,
+  "test_evaluated": false
+}
