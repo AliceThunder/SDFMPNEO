@@ -235,3 +235,21 @@ mean dynamic-Z on the first two development geometries.
 A 30g model has been launched, initialized from the low-projection
 8g checkpoint and selecting by all five development geometries.
 Final E01-E05 histories remain unused in training/model selection.
+
+## Thirty-geometry projection-aware sampling experiment
+
+The all-geometry baseline trains the entire 30-geometry/90-history
+training set with the same 8g low-projection warm start, fixed scales,
+closed-loop loss and dynamic-Z selection over all five development
+geometries. A matched controlled experiment sets `--proj-tau 5`.
+Each teacher history is sampled into the training mini-batch with
+weight `1/(1+(projection_max_K/5)^2)`. This reduces the influence
+of 600s thermal histories whose true fields cannot be accurately
+represented by the fixed canonical 32-mode basis, while preserving
+every geometry in the available training pool. The validation metric
+always uses every T04/D01-D04 history with equal importance; E01-E05
+are not examined until the final checkpoint selection is frozen.
+The experiment does not increase thermal ROM rank or change neural
+architecture; its purpose is to test data-quality weighting as an
+interim solution. The baseline and weighted outcomes must be
+reported separately.

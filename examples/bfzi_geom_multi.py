@@ -77,6 +77,8 @@ def main():
                    help='validate every N training epochs')
     p.add_argument('--select',choices=('loss','dynamic_z'),default='loss',
                    help='best-checkpoint criterion for validation')
+    p.add_argument('--proj-tau',type=float,default=0.,
+                   help='projection quality scale in K for history sampling; 0=uniform')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -127,14 +129,24 @@ def main():
         best=float(np.mean([x['dynamic_Z_rel_L2'] for x in init_z]))
         saved={k:v.detach().clone() for k,v in net.state_dict().items()}
         print('INIT dynamic_z',round(best,6),flush=True)
-    if a.val_every<1 or a.batch_hist<0:
-        p.error('val-every must be positive, batch-hist must be nonnegative')
+    if a.val_every<1 or a.batch_hist<0 or a.proj_tau<0:
+        p.error('invalid validation interval, batch size or projection scale')
+    if a.proj_tau:
+        prob=torch.as_tensor([
+            1./(1.+(r['basis_max_K']/a.proj_tau)**2)
+            for r in train],dtype=torch.float32)
+        print('PROJ_SAMPLING',a.proj_tau,
+              'min',round(float(prob.min()),5),
+              'max',round(float(prob.max()),5),flush=True)
     if a.closed_warmup<0 or a.closed_ramp<=0:
         p.error('closed warmup/ramp must be nonnegative/positive')
     warmup=(a.closed_warmup+a.closed_ramp) if a.closed_weight else 0
     for ep in range(a.epochs):
         if a.batch_hist and a.batch_hist<len(train):
-            ids=torch.randperm(len(train))[:a.batch_hist].tolist()
+            if a.proj_tau:
+                ids=torch.multinomial(prob,a.batch_hist,replacement=False).tolist()
+            else:
+                ids=torch.randperm(len(train))[:a.batch_hist].tolist()
             batch=[train[i] for i in ids]
         else:
             batch=train
@@ -214,7 +226,7 @@ def main():
                  mode='canonical-material-32',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
                  autonomous_src=True,zrel_weight=a.zrel_weight,
-                 reuse_scales=a.reuse_scales,
+                 reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
                  batch_hist=a.batch_hist,val_every=a.val_every,
