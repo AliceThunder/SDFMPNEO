@@ -79,6 +79,142 @@
         "runs\\bfzi_s5_N10_ultra_v4_drive2.npz",
         "runs\\bfzi_s5_N10_ultra_v4_drive3.npz"
       ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N11_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N11_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N11_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N11_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N12_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N12_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N12_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N12_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N13_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N13_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N13_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N13_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N14_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N14_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N14_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N14_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N15_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N15_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N15_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N15_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N16_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N16_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N16_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N16_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N17_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N17_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N17_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N17_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N18_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N18_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N18_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N18_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N19_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N19_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N19_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N19_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N20_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N20_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N20_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N20_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N21_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N21_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N21_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N21_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N22_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N22_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N22_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N22_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N23_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N23_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N23_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N23_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N24_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N24_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N24_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N24_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N25_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N25_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N25_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N25_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N26_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N26_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N26_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N26_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_N27_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_N27_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_N27_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_N27_ultra_v4_drive3.npz"
+      ]
     }
   ],
   "val": [
@@ -89,10 +225,75 @@
         "runs\\bfzi_s5_D01_ultra_v4_drive2.npz",
         "runs\\bfzi_s5_D01_ultra_v4_drive3.npz"
       ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_D02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_D02_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_D02_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_D02_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_D03_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_D03_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_D03_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_D03_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_D04_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_D04_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_D04_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_D04_ultra_v4_drive3.npz"
+      ]
     }
   ],
   "canonical": true,
   "rank": 32,
   "duration_s": 600.0,
-  "test": []
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_E01_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_E01_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_E01_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_E01_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_E02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_E02_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_E02_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_E02_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_E03_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_E03_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_E03_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_E03_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_E04_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_E04_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_E04_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_E04_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_E05_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_E05_ultra_v4_drive1.npz",
+        "runs\\bfzi_s5_E05_ultra_v4_drive2.npz",
+        "runs\\bfzi_s5_E05_ultra_v4_drive3.npz"
+      ]
+    }
+  ]
 }

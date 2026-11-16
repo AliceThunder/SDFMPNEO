@@ -210,3 +210,28 @@ Results from this cohort must be compared with both the 10g model
 and the 5g baseline; the final E01-E05 test geometries remain held out.
 
 N10 has completed its 60/300/600 s real BFZI S5 teacher histories; the 600 s 32-mode maximum temperature projection error is 0.800 K.
+
+## V4 complete physics-cohort generation (2026-11-16)
+
+All 36 new planned geometries (N01-N27, D01-D04 and E01-E05)
+have completed BFZI V150 S5 physical histories of 60s, 300s and
+600s (108 new histories), and are marked candidate by the physical
+teacher. Together with T01-T04, all planned 40 geometry IDs now
+have teacher data: 30 training, 5 development, 5 strictly held-out
+final testing. Source JSON: `runs/geomfrac_s5_v4_teacher_summary.json`;
+full physical run metrics: `runs/geomfrac_s5_v4_build_report.json`.
+The 32-mode heat basis has geometry-dependent spatial projection
+limits, including N26 20.502 K, N24 14.477 K and N07 10.812 K
+on 600s histories. These are projection limitations, not neural
+temperature errors. Training on these cases requires careful
+independent evaluation.
+
+Five-development-geometry (T04 and D01-D04) autonomous dynamic-Z
+relative L2 mean across 15 trajectories:
+5g model: 16.870%; 8g low-projection cohort: 16.315%.
+The 10g model with dynamic-Z checkpoint selection retained the
+5g initialization, while the low-projection 8g model improved
+mean dynamic-Z on the first two development geometries.
+A 30g model has been launched, initialized from the low-projection
+8g checkpoint and selecting by all five development geometries.
+Final E01-E05 histories remain unused in training/model selection.
