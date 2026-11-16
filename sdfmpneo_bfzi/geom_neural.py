@@ -78,14 +78,15 @@ class GeomFracET(GeomFrac):
         return h,y,a
 
 
-def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D):
+def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D, phi=None):
     """Correct five material energy budgets without a ROM implicit solve."""
     if dt <= 0:
         raise ValueError("positive time step required")
     a = np.asarray(pred, float).copy()
+    phi=rom.phi if phi is None else phi
     jac = B[:, :5]/dt + D[:, :5]
     for _ in range(12):
-        theta = rom.phi @ a
+        theta = phi @ a
         sea, z, I = rom.circuit(theta, dsea(a) if callable(dsea) else dsea, voltage)
         heat, q, J, ps, pc = rom.source(theta, I, sea)
         qg = np.array([heat[sl].sum() for sl in groups(rom)])
@@ -93,42 +94,43 @@ def _balance_raw(rom, old, pred, dt, voltage, dsea, B, D):
         if np.max(abs(err)) < 1e-8:
             break
         a[:5] += np.linalg.solve(jac, -err)
-    theta = rom.phi @ a
+    theta = phi @ a
     sea, z, I = rom.circuit(theta, dsea(a) if callable(dsea) else dsea, voltage)
     heat, q, J, ps, pc = rom.source(theta, I, sea)
-    res = rom.cap * (theta - rom.phi @ old)/dt + rom.H @ theta - heat
+    res = rom.cap * (theta - phi @ old)/dt + rom.H @ theta - heat
     budget = np.array([res[sl].sum() for sl in groups(rom)])
     return a, theta, z, I, q, J, ps, pc, res, budget
 
 
-def _pos_beta(rom, a):
+def _pos_beta(rom, a, phi=None):
     """Largest admissible scale of zero-mean spatial thermal modes."""
     if rom.rank <= 5:
         return 1.
-    base=rom.phi[:,:5]@a[:5]
-    fluct=rom.phi[:,5:]@a[5:]
+    phi=rom.phi if phi is None else phi
+    base=phi[:,:5]@a[:5]
+    fluct=phi[:,5:]@a[5:]
     neg=fluct<0.
     if not np.any(neg):
         return 1.
     return min(1.,float(np.min(np.maximum(base[neg],0.)/(-fluct[neg]))))
 
 
-def _balance(rom, old, pred, dt, voltage, dsea, B, D):
+def _balance(rom, old, pred, dt, voltage, dsea, B, D, phi=None):
     """Enforce five energy budgets and nonnegative FV temperature rises."""
-    out=_balance_raw(rom,old,pred,dt,voltage,dsea,B,D)
+    out=_balance_raw(rom,old,pred,dt,voltage,dsea,B,D,phi)
     for _ in range(5):
         a=out[0]
-        beta=_pos_beta(rom,a)
+        beta=_pos_beta(rom,a,phi)
         if beta>=1.-1e-9:
             break
         a=a.copy()
         a[5:]*=max(beta*.999,0.)
-        out=_balance_raw(rom,old,a,dt,voltage,dsea,B,D)
+        out=_balance_raw(rom,old,a,dt,voltage,dsea,B,D,phi)
     return out
 
 
 @torch.no_grad()
-def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None):
+def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None, pkg=None, lift=None):
     """Fully autonomous neural impedance + neural thermal evolution.
 
     Requires a precomputed cold FV anchor and spatial thermal basis, but uses
@@ -149,10 +151,20 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None):
     ac = np.asarray(ck["a_scale"], float)
     if sc.shape != (3,) or ys.shape != (14,) or ac.shape != (rom.rank,):
         raise ValueError("invalid GeomFracET normalization")
-    cap_phi = rom.cap[:, None] * rom.phi
-    h_phi = rom.H @ rom.phi
+    phi=rom.phi
+    if lift is not None:
+        from .geom_lift import lift_basis
+        phi=lift_basis(rom,lift)
+    cap_phi = rom.cap[:, None] * phi
+    h_phi = rom.H @ phi
     B = np.vstack([cap_phi[sl].sum(axis=0) for sl in groups(rom)])
     D = np.vstack([h_phi[sl].sum(axis=0) for sl in groups(rom)])
+    pkg_ref=None
+    if pkg is not None:
+        # A standalone reference trajectory anchors the package target.
+        # Otherwise an absolute residual applied at every step accumulates.
+        pkg_ref=rollout(rom,net,ck,v,t,correct_J=False,
+                        tangent=tangent,pkg=None)["heat_state"]
     h = net.init_state(1)
     a = np.zeros(rom.rank)
     norm = mode_scale(rom, rom.rank) if ck.get('canonical',False) else np.ones(rom.rank)
@@ -177,8 +189,18 @@ def rollout(rom, net, ck, voltage, times, correct_J=False, tangent=None):
                     sea6=tangent(g,state)[0].detach().cpu().numpy()
                     return zmat(sea6)
                 dsea=sea_at
+            prior=a*norm
             a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
-                rom, a*norm, ahat[0].cpu().numpy()*norm, dt, float(v[k-1]), dsea, B, D)
+                rom, prior, ahat[0].cpu().numpy()*norm, dt, float(v[k-1]), dsea, B, D, phi)
+            if pkg is not None:
+                if rom.rank!=32:
+                    raise ValueError("package correction needs 32 thermal modes")
+                ref=torch.as_tensor(pkg_ref[k:k+1],dtype=g.dtype)
+                delta=pkg(g,ref)[0].cpu().numpy()
+                a_new=a_phys.copy()
+                a_new[18:32]=(pkg_ref[k,18:32]+delta)*norm[18:32]
+                a_phys, theta, z, I, q, J, ps, pc, res, budget = _balance(
+                    rom, prior, a_new, dt, float(v[k-1]), dsea, B, D, phi)
             a = a_phys/norm
             if tangent is not None:
                 dsea=sea_at(a_phys)

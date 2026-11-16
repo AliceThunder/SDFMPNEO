@@ -1,0 +1,64 @@
+{
+  "architecture": "GeomFracET V6 package-corrected self-consistent thermal feedback",
+  "primary_mode": "pkg+sea_feedback",
+  "lift_gain": 0.2,
+  "original_heat_model": "runs/geomfrac_et_v4_8g_quality.pt",
+  "sea_impedance_model": "runs/geomfrac_et_v5_tangent_aware.pt",
+  "package_model": "runs/geomfrac_et_v6_pkg.pt",
+  "sea_lift_model": "runs/geomfrac_et_v5_lift.npz",
+  "alternate_mode": "pkg_only",
+  "alternate_lift_gain": 0.0,
+  "development_geometries": [
+    "T04",
+    "D01",
+    "D02",
+    "D03",
+    "D04"
+  ],
+  "test_frozen_plan": "runs/geomfrac_s5_v6_plan.json",
+  "fresh_test_geometries": [
+    "R01",
+    "R02",
+    "R03"
+  ],
+  "fresh_test_evaluated": false,
+  "selection": "Joint improvement on mean dynamic Z and mean max 3D temperature over V5; 0.2 lift gain balances impedance and thermal accuracy on development.",
+  "dev_metrics": {
+    "V5": {
+      "mean_dynamic_Z_rel_L2": 0.08366732876803612,
+      "mean_max_temp_K": 1.8981867778614137,
+      "max_material_budget_W": 9.74984359913833e-09,
+      "mean_infer_s": 0.33165027333113056
+    },
+    "pkg": {
+      "mean_dynamic_Z_rel_L2": 0.06912870395037389,
+      "mean_max_temp_K": 1.6832177837419484,
+      "max_material_budget_W": 9.646825560594152e-09,
+      "mean_infer_s": 0.6371555333375
+    },
+    "lift_02": {
+      "mean_dynamic_Z_rel_L2": 0.07516230959128344,
+      "mean_max_temp_K": 1.5508539964132788,
+      "max_material_budget_W": 9.157702152151614e-09,
+      "mean_infer_s": 0.755771299994861
+    },
+    "lift_04": {
+      "mean_dynamic_Z_rel_L2": 0.08003157581926237,
+      "mean_max_temp_K": 1.4660193199118263,
+      "max_material_budget_W": 8.919712968236126e-09,
+      "mean_infer_s": 0.757844179996755
+    },
+    "lift_06": {
+      "mean_dynamic_Z_rel_L2": 0.08373934984975273,
+      "mean_max_temp_K": 1.4139793285095115,
+      "max_material_budget_W": 9.959450153473881e-09,
+      "mean_infer_s": 0.7624552933266386
+    },
+    "lift_10": {
+      "mean_dynamic_Z_rel_L2": 0.0920113439530959,
+      "mean_max_temp_K": 1.3193943283114626,
+      "max_material_budget_W": 9.961802049929247e-09,
+      "mean_infer_s": 0.7763548000017181
+    }
+  }
+}

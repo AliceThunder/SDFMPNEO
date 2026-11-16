@@ -30,3 +30,20 @@ def reconstruct(head,temp,state,w):
     phi=basis(head,48)[:,32:]
     sc=mode_scale(head,48)[32:]
     return t+((a[:,IDX]@w)*sc)@phi.T
+
+def lift_basis(rom,w):
+    """Effective 32-state thermal basis including the 16 local sea modes.
+
+    Every added mode has zero heat-capacity mean in all five materials;
+    therefore energy conservation can be enforced on the original
+    five material means after including its diffusion/source effect.
+    """
+    w=np.asarray(w,float)
+    if rom.rank!=32 or w.shape!=(14,16):
+        raise ValueError("feedback lifting requires 32 heat states and a 14x16 map")
+    sc=mode_scale(rom,48)
+    ext=basis(rom,48)[:,32:]*sc[32:]
+    mix=np.zeros_like(rom.phi)
+    norm=mode_scale(rom,32)
+    mix[:,IDX]=(ext@w.T)/norm[IDX]
+    return rom.phi+mix

@@ -832,3 +832,19 @@ and does not alter the verified V5 physical feedback loop.
 Next priority is improving package temperature evolution
 and integrating spatial sea-skin corrections into a
 self-consistent thermal time-step solver.
+
+## 2026-11-16 ? GeomFracET V6 package temperature feedback
+
+V6 adds a small 14-mode package thermal correction trained on 30
+geometries/90 histories, anchored to the frozen uncorrected neural
+reference state to prevent recursive correction accumulation. The
+corrected state is fed back through the original five-material
+energy conservation step. Its development (T04/D01-D04, 15 traces)
+mean dynamic Z is 6.913% versus 8.367% for V5, and mean max 3-D
+temperature error 1.683 versus 1.898 K. A self-consistent extension
+of the 16 learned sea-skin modes was tested at feedback gains.
+Primary coupled V6 selects 20% sea feedback: 7.516% dynamic-Z and
+1.551 K mean maximum temperature error on the development cohort,
+with conserved material energy budget. The R01-R03 independent
+test geometries are frozen in runs/geomfrac_s5_v6_plan.json and
+physical teachers are being generated. See GEOMFRAC_TRAIN_V6.md.

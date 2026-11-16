@@ -22,6 +22,10 @@ def main():
     p.add_argument("--tangent-model", type=Path, default=None)
     p.add_argument("--lift-model", type=Path, default=None,
                    help="optional 48-mode sea-skin reconstruction")
+    p.add_argument("--pkg-model", type=Path, default=None)
+    p.add_argument("--lift-feedback", action="store_true",
+                   help="incorporate sea-skin lift in coupled heat balance")
+    p.add_argument("--lift-gain", type=float, default=1.)
     p.add_argument("--out", type=Path, default=Path("runs/geomfrac_et_infer.npz"))
     p.add_argument("--voltage", type=float, default=100.)
     p.add_argument("--heat", type=float, default=240.)
@@ -52,8 +56,18 @@ def main():
     if a.tangent_model:
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
-    pred = rollout(rom, net, ck, v, t, tangent=tangent)
-    if a.lift_model:
+    pkg=None
+    if a.pkg_model:
+        from sdfmpneo_bfzi.geom_pkg import restore
+        pkg=restore(a.pkg_model)
+    lift=None
+    if a.lift_feedback:
+        if a.lift_model is None:
+            p.error("--lift-feedback requires --lift-model")
+        with np.load(a.lift_model) as data:
+            lift=data["w"]*a.lift_gain
+    pred = rollout(rom, net, ck, v, t, tangent=tangent, pkg=pkg, lift=lift)
+    if a.lift_model and not a.lift_feedback:
         from sdfmpneo_bfzi.geom_lift import reconstruct
         with np.load(a.lift_model) as lift:
             pred["temp_lift_K"] = reconstruct(head,pred["temp_K"],
@@ -69,6 +83,9 @@ def main():
                    max_fv_residual_W=float(np.max(pred["fv_node_residual_W"])),
                    max_dynamic_Z_ohm=float(np.max(abs(pred["z6"]-pred["z6"][0]))),
                    lift_model=str(a.lift_model) if a.lift_model else None,
+                   pkg_model=str(a.pkg_model) if a.pkg_model else None,
+                   lift_feedback=a.lift_feedback,
+                   lift_gain=a.lift_gain,
                    neural_heat=True, em_directional_solves_online=0,
                    heat_implicit_solves_online=0)
     print(json.dumps(summary, indent=2), flush=True)

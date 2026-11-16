@@ -67,3 +67,58 @@ def test_rank48_keeps_pretrained_rank32_thermal_dynamics():
     assert torch.allclose(y1,y0,atol=1e-7)
     assert torch.allclose(a1[:,:32],a0,atol=1e-7)
     assert torch.count_nonzero(a1[:,32:])==0
+
+def test_package_correction_still_enforces_five_budgets():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_pkg import PkgFix
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_neural import rollout
+    from test_bfzi_geom_canon import Head
+    head=Head()
+    rom=GeomHeatROM(head,basis(head))
+    def circuit(theta,dsea,voltage):
+        z=np.array([[.2+1j,.05+.2j],[.05+.2j,.2+1j]])+dsea
+        cur=np.linalg.solve(z+rom.ext,np.array([voltage,0.],complex))
+        return z,z,cur
+    def source(theta,cur,sea):
+        heat=np.zeros(len(rom.cap))
+        heat[:rom.ns]=.002*abs(cur[0])**2
+        heat[rom.cu]=.001*abs(cur)**2
+        return heat,np.full(rom.ns,.002*abs(cur[0])**2),np.zeros((rom.ns,3),complex),float(heat[:rom.ns].sum()),heat[rom.cu]
+    rom.circuit=circuit
+    rom.source=source
+    net=GeomFracET(ng=40,rank=32)
+    pkg=PkgFix(ng=40)
+    with torch.no_grad():
+        pkg.net[-1].weight.fill_(.005)
+    ck=dict(src_scale=np.ones(3),y_scale=np.ones(14),
+            a_scale=np.ones(32),port_sea=True)
+    result=rollout(rom,net,ck,[0.,50.,50.,0.],
+                   [0.,15.,30.,45.],pkg=pkg)
+    assert np.max(abs(result["material_budget_W"]))<1e-6
+    assert np.isfinite(result["z6"]).all()
+
+def test_feedback_lift_preserves_material_energy():
+    import numpy as np
+    from sdfmpneo_bfzi.geom_canon import basis
+    from sdfmpneo_bfzi.geom_rom import GeomHeatROM,groups
+    from sdfmpneo_bfzi.geom_lift import lift_basis
+    from sdfmpneo_bfzi.geom_neural import rollout
+    # The S5 sea-skin layout is a property of real anchors; using the
+    # real Q03 basis exercises the physically relevant local shell.
+    from sdfmpneo_bfzi.geom_heat import GeomHeat
+    h=GeomHeat.load('runs/bfzi_s5_Q03_ultra_v5_anchor.npz')
+    rom=GeomHeatROM(h,basis(h,32))
+    w=np.zeros((14,16))
+    w[0,0]=.01
+    eff=lift_basis(rom,w)
+    for sl in groups(rom):
+        assert np.max(abs((rom.cap[sl])@ (eff[sl]-rom.phi[sl])))<1e-6
+    net=GeomFracET(ng=45,rank=32)
+    ck=dict(src_scale=np.ones(3),y_scale=np.ones(14),
+            a_scale=np.ones(32),port_sea=True,canonical=True)
+    base=rollout(rom,net,ck,[0.,50.,0.],[0.,15.,30.])
+    new=rollout(rom,net,ck,[0.,50.,0.],[0.,15.,30.],lift=w)
+    assert np.max(abs(new['material_budget_W']))<1e-6
+    assert np.isfinite(new['temp_K']).all()

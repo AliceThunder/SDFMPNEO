@@ -17,6 +17,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--tangent-model",type=Path,default=None)
+    p.add_argument("--pkg-model", type=Path, default=None)
+    p.add_argument("--lift-model", type=Path, default=None,
+                   help="optional self-consistent sea-skin thermal feedback")
+    p.add_argument("--lift-gain", type=float, default=1.,
+                   help="fraction of learned sea-skin feedback to apply")
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--split", choices=("train", "val", "test"), default="val")
     p.add_argument("--out", type=Path, required=True)
@@ -38,9 +43,20 @@ def main():
     if a.tangent_model:
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
-    vals = eval_rollout(None, net, ck, rows, tangent=tangent)
+    pkg=None
+    if a.pkg_model:
+        from sdfmpneo_bfzi.geom_pkg import restore
+        pkg=restore(a.pkg_model)
+    lift=None
+    if a.lift_model:
+        with np.load(a.lift_model) as data:
+            lift=data['w']*a.lift_gain
+    vals = eval_rollout(None, net, ck, rows, tangent=tangent, pkg=pkg, lift=lift)
     out = dict(
         model=str(a.model),tangent_model=str(a.tangent_model) if a.tangent_model else None,
+        pkg_model=str(a.pkg_model) if a.pkg_model else None,
+        lift_model=str(a.lift_model) if a.lift_model else None,
+        lift_gain=a.lift_gain,
         manifest=str(a.manifest), split=a.split,
         geometries=len(specs), histories=len(vals),
         dynamic_Z_mean_rel_L2=float(np.mean(
