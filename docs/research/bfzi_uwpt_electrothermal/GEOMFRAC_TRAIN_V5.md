@@ -151,3 +151,17 @@ The autonomous-aware tangent alone retains the lowest mean development error and
 ## V5 model frozen before independent testing
 
 A second tangent self-consistency fitting iteration retained its starting checkpoint. Its 15-history development error remained 8.367%. The selected V5 checkpoint is the original autonomous-state-aware tangent; models and acceptance geometry IDs are frozen in `runs/geomfrac_et_v5_selection.json` before any Q01-Q05 evaluation.
+
+## Independent Q01-Q05 geometry coverage (before test evaluation)
+
+The five frozen final cases vary circular/rounded-square shape
+parameters, coil separation and orientation, package dimensions,
+insulation and encapsulation thermal conductivities and package/sea
+heat transfer. Four of the five contain at least one scalar input
+outside the observed minimum/maximum of the 30 training geometries:
+Q01 package/sea convection coefficient, Q02 receiver package size,
+Q03 package conductivity, and Q05 yaw. Q04 is in the observed
+scalar coordinate ranges. All five belong to the original validated
+BFZI design domain and have passed native geometry preflight.
+This coverage statement uses the frozen geometry/thermal plan
+only; no final-test prediction errors were consulted.
