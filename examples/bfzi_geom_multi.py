@@ -61,6 +61,8 @@ def main():
                    help='freeze SOE impedance and train thermal head only')
     p.add_argument('--tangent-model',type=Path,default=None,
                    help='evaluate autonomous Z with pretrained geometry tangent')
+    p.add_argument('--tangent-loss-weight',type=float,default=0.,
+                   help='supervise thermal state via tangent-projected impedance')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
     p.add_argument('--report',type=Path,default=Path('runs/geomfrac_et_multi.json'))
     p.add_argument('--rank',type=int,default=32,choices=(5,32))
@@ -132,6 +134,8 @@ def main():
     if a.tangent_model:
         from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
+    if a.tangent_loss_weight<0 or (a.tangent_loss_weight and tangent is None):
+        p.error('nonnegative tangent loss requires --tangent-model')
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -175,12 +179,12 @@ def main():
         net.train()
         opt.zero_grad(set_to_none=True)
         loss=score(net,batch,None,sx,sy,sa,therm_w=a.therm_weight,
-                   zrel_w=a.zrel_weight,hist_weight=a.history_weight)
+                   zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight)
         if a.closed_weight and ep>=a.closed_warmup:
             mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
             loss+=a.closed_weight*score(net,batch,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=mix,
-                        zrel_w=a.zrel_weight,hist_weight=a.history_weight)
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight)
         if not torch.isfinite(loss):
             raise RuntimeError(f"training diverged at epoch {ep+1}")
         loss.backward()
@@ -191,11 +195,11 @@ def main():
         net.eval()
         with torch.no_grad():
             v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
-                          zrel_w=a.zrel_weight,hist_weight=a.history_weight))
+                          zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
             if a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=1.,
-                        zrel_w=a.zrel_weight,hist_weight=a.history_weight))
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if a.select=='dynamic_z':
@@ -227,12 +231,12 @@ def main():
         with torch.no_grad():
             best_loss=float(score(net,val,None,sx,sy,sa,
                 therm_w=a.therm_weight,zrel_w=a.zrel_weight,
-                hist_weight=a.history_weight))
+                hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
             if a.closed_weight:
                 best_loss+=a.closed_weight*float(score(net,val,None,
                     sx,sy,sa,closed=True,therm_w=a.therm_weight,
                     src_mix=1.,zrel_w=a.zrel_weight,
-                    hist_weight=a.history_weight))
+                    hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
     ck=dict(state=net.state_dict(),ng=net.ng,rank=net.rank,
             src_scale=torch.as_tensor(sx,dtype=torch.float32),
             y_scale=torch.as_tensor(sy,dtype=torch.float32),
@@ -253,6 +257,7 @@ def main():
                  heat_z=a.heat_z,head_only=a.head_only,
                  heat_only=a.heat_only,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
+                 tangent_loss_weight=a.tangent_loss_weight,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
                  batch_hist=a.batch_hist,val_every=a.val_every,

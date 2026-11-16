@@ -110,3 +110,26 @@ electromagnetic branch on the same development cohort:
 10.572% autonomous dynamic-Z mean and 2.554% when given true
 teacher thermal states. Subsequent work focuses on refining
 the neural thermal head while freezing the learned tangent.
+
+## Autonomous-state-aware impedance tangent improves below ten percent
+
+A second geometry-conditioned tangent was initialized from the
+physical-thermal-state tangent, then fine-tuned against a blend of
+the physical teacher and the actual autonomous neural heat states
+generated using the V4 best neural heat checkpoint with the first
+tangent. Training used all 30 geometries, 90 physical histories,
+and a physical-teacher mixing weight of 0.25, retaining canonical
+seawater modes and the cold-zero thermal response. The model
+was selected using only T04/D01-D04 development geometry data.
+
+The teacher-forced, fixed-state development score for this tangent
+is 5.458%. The full 15-history autonomous electrothermal feedback
+evaluation achieves 8.3667% mean dynamic-Z relative L2; V4
+baseline was 16.315%, and the original tangent-coupled V5 was
+10.572%. All three comparisons use the same geometry-disjoint
+development traces. Material budgets are conserved inside the
+self-consistent circuit/heat correction.
+Mean CPU inference per history 0.332 s; maximum material budget residual 9.75e-09 W.
+The 600s T04 and D04 histories remain largest (22.39% and 18.41%).
+Complete development results: `runs/geomfrac_et_v5_tangent_aware_dev.json`.
+The new Q01-Q05 geometry test cohort was frozen separately; it has not influenced the model.

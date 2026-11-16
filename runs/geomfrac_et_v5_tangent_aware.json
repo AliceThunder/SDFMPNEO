@@ -1,0 +1,74 @@
+{
+  "architecture": "geometry-conditioned-linear-sea-tangent",
+  "best_epoch": 255,
+  "epochs_trained": 375,
+  "dev_sea_dynamic_mean_rel_L2": 0.05457929838448763,
+  "dev_results": [
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "dynamic_Z_rel_L2": 0.07645896822214127
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "dynamic_Z_rel_L2": 0.05849820747971535
+    },
+    {
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "dynamic_Z_rel_L2": 0.2141643762588501
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.00790227111428976
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.03222465142607689
+    },
+    {
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.04933231696486473
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.012174117378890514
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.03144017234444618
+    },
+    {
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.036496732383966446
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.01193706039339304
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.028314216062426567
+    },
+    {
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.05333621799945831
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+      "dynamic_Z_rel_L2": 0.02361396513879299
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+      "dynamic_Z_rel_L2": 0.06828250735998154
+    },
+    {
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+      "dynamic_Z_rel_L2": 0.11451369524002075
+    }
+  ],
+  "training_geometries": 30,
+  "dev_geometries": 5,
+  "tau": 5.0,
+  "state_model": "runs\\geomfrac_et_v4_8g_quality.pt",
+  "base_tangent": "runs\\geomfrac_et_v5_tangent.pt",
+  "mix_true": 0.25
+}

@@ -218,7 +218,8 @@ def _zrel_full(rom, row, sea, cu, sy):
 
 
 def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
-          therm_w=0., src_mix=0., zrel_w=0., hist_weight="equal"):
+          therm_w=0., src_mix=0., zrel_w=0., hist_weight="equal",
+          tangent=None, tan_w=0.):
     total, spans = [], []
     for row in rows:
         t = row["time"]
@@ -228,7 +229,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
         asc = torch.as_tensor(sa, dtype=torch.float32)
         h = net.init_state(1)
         pr_z, pr_a = [], []
-        pr_phys,pr_pkg,pr_cu,pr_cuz = [],[],[],[]
+        pr_phys,pr_pkg,pr_cu,pr_cuz,pr_tan = [],[],[],[],[]
         cur = a[0:1]
         zy = torch.zeros((1,14),dtype=a.dtype)
         rr=row.get("rom",rom)
@@ -273,6 +274,11 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             # that autonomous inference returns at the sampling instant.
             pr_z.append(zhat[0])
             pr_a.append((state[0]-a[k])/asc)
+            if tan_w:
+                if tangent is None:
+                    raise ValueError('tangent loss needs pretrained sea tangent')
+                res_t=tangent(gg,state)-tangent(gg,a[k:k+1])
+                pr_tan.append(res_t.square().sum())
             if rr is not None:
                 pred_temp=state[0]@decoder.T
                 pr_pkg.append((pred_temp[:n_pkg]-actual[k,:n_pkg])
@@ -302,8 +308,12 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             if rr is None:
                 raise ValueError("full dynamic impedance needs a heat ROM")
             zrel=_zrel_full(rr,row,pz,torch.stack(pr_cuz),sy)
+        tloss=0.
+        if tan_w:
+            den=float(np.square(row['z6']-row['z6'][0]).sum())
+            tloss=torch.stack(pr_tan).sum()/max(den,1e-12)
         total.append(zerr+0.45*zextra+heat+therm_w*phy
-                     +temp_loss+zrel_w*zrel)
+                     +temp_loss+zrel_w*zrel+tan_w*tloss)
         spans.append(len(t)-1)
     if not total:
         raise ValueError("teacher histories need at least two times")

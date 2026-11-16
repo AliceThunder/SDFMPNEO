@@ -789,3 +789,19 @@ new independent geometries before any new final acceptance.
 Results: runs/geomfrac_et_v4_final.json,
 runs/geomfrac_s5_v4_teacher_summary.json,
 docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_TRAIN_V4_STAGE1.md.
+
+## 2026-11-16 ? GeomFracET V5 autonomous impedance progress
+
+A geometry-dependent 6x14 seawater thermal-susceptibility neural
+surrogate was trained using 30 BFZI S5 geometries and coupled
+to the autonomous neural thermal ROM and five-material energy balance.
+Training the tangent on both physical teacher and autonomous predicted
+temperature coordinates reduced the mean held-out development
+dynamic-Z error to 8.3667% on T04 and D01-D04 (15 trajectories),
+from 16.315% for V4. Max material budget residual remains below
+1e-6 W. V5 first thermal head only yielded 12.7635%; thermal
+refinement and tangent-loss-weighted refinement retained the initial
+tangent checkpoint. The new Q01-Q05 physical test cohort has been
+frozen in runs/geomfrac_s5_v5_plan.json and is being generated;
+its final acceptance has not been evaluated. Latest metrics:
+runs/geomfrac_et_v5_tangent_aware_dev.json.

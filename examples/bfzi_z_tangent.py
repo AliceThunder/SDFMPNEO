@@ -37,6 +37,8 @@ def restore(path):
     net=Tangent(ng=int(ck['ng']),nmode=len(ck['idx']))
     net.load_state_dict(ck['state'])
     net.eval()
+    for v in net.parameters():
+        v.requires_grad_(False)
     ids=list(ck['idx'])
     sc=torch.as_tensor(np.asarray(ck['sa'])[ids],dtype=torch.float32)
     sy=torch.as_tensor(np.asarray(ck['sy'])[:6],dtype=torch.float32)
@@ -46,18 +48,32 @@ def restore(path):
     return predict
 
 
-def load(specs,sa,sy,tau=0):
+def load(specs,sa,sy,tau=0,state_net=None,state_ck=None,
+         base_tangent=None,mix=0.):
     groups=[]
     for spec in specs:
         for r in prepare(spec,32):
             den=max(float(np.linalg.norm(r['z6']-r['z6'][0])),1e-12)
-            groups.append(dict(
-                g=np.repeat(r['geom'][None],len(r['time'])-1,axis=0),
-                a=r['a'][1:,IDX]/sa[IDX],
-                y=r['y'][1:,:6]/sy[:6],
-                den=den,
-                weight=1/(1+(r['basis_max_K']/tau)**2) if tau else 1.,
-                file=r['file']))
+            weight=1/(1+(r['basis_max_K']/tau)**2) if tau else 1.
+            true_a=r['a']
+            if state_net is not None:
+                from sdfmpneo_bfzi.geom_neural import rollout
+                pred=rollout(r['rom'],state_net,state_ck,
+                             r['voltage'],r['time'],tangent=base_tangent)
+                input_a=pred['heat_state']
+            else:
+                input_a=true_a
+            for arr,factor in ([(input_a,1.),(true_a,mix)]
+                                if state_net is not None and mix else
+                                [(input_a,1.)]):
+                groups.append(dict(
+                    g=np.repeat(r['geom'][None],len(r['time'])-1,axis=0),
+                    a=arr[1:,IDX]/sa[IDX],
+                    y=r['y'][1:,:6]/sy[:6],
+                    den=den,
+                    weight=weight*factor,
+                    file=r['file']))
+        print('LOAD_TANGENT',spec['anchor'],flush=True)
     n=len(groups)
     arrays={}
     for k in ('g','a','y'):
@@ -89,6 +105,10 @@ def main():
     p.add_argument('--report',type=Path,required=True)
     p.add_argument('--epochs',type=int,default=700)
     p.add_argument('--tau',type=float,default=5.)
+    p.add_argument('--state-model',type=Path,default=None)
+    p.add_argument('--base-tangent',type=Path,default=None)
+    p.add_argument('--tangent-init',type=Path,default=None)
+    p.add_argument('--mix-true',type=float,default=0.)
     a=p.parse_args()
     torch.manual_seed(41)
     torch.set_num_threads(2)
@@ -96,15 +116,40 @@ def main():
     sa=np.asarray(ck['a_scale'])
     sy=np.asarray(ck['y_scale'])
     mf=json.loads(a.manifest.read_text(encoding='utf-8'))
-    tr=load(mf['train'],sa,sy,a.tau)
-    val=load(mf['val'],sa,sy)
+    state_net=None
+    base_tangent=None
+    if a.state_model:
+        from sdfmpneo_bfzi.geom_neural import GeomFracET
+        state_ck=torch.load(a.state_model,map_location='cpu',weights_only=True)
+        state_net=GeomFracET(ng=int(state_ck['ng']),rank=int(state_ck['rank']),
+                            soe_quad=state_ck.get('soe_quad','trap'),
+                            heat_dt=float(state_ck.get('heat_dt',1.875)),
+                            heat_z=bool(state_ck.get('heat_z',False)))
+        state_net.load_state_dict(state_ck['state'])
+        state_net.eval()
+        if a.base_tangent:
+            base_tangent=restore(a.base_tangent)
+    else:
+        state_ck=None
+    if a.mix_true<0 or a.mix_true>1:
+        p.error('mix-true must be between 0 and 1')
+    tr=load(mf['train'],sa,sy,a.tau,state_net,state_ck,base_tangent,a.mix_true)
+    val=load(mf['val'],sa,sy,0,state_net,state_ck,base_tangent)
     model=Tangent(ng=tr['g'].shape[1])
+    if a.tangent_init:
+        init=torch.load(a.tangent_init,map_location='cpu',weights_only=True)
+        model.load_state_dict(init['state'])
     opt=torch.optim.AdamW(model.parameters(),lr=.003,weight_decay=1e-4)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt,mode='min',factor=.6,patience=10)
     best=float('inf')
     saved=None
     best_ep=0
+    if a.tangent_init:
+        with torch.no_grad():
+            best=float(score(model,val,sy).sqrt().mean())
+        saved={k:v.detach().clone() for k,v in model.state_dict().items()}
+        print('TANGENT_INIT',round(best,6),flush=True)
     train_w=torch.tensor([v['weight'] for v in tr['row']],dtype=torch.float32)
     for ep in range(1,a.epochs+1):
         opt.zero_grad(set_to_none=True)
@@ -137,7 +182,10 @@ def main():
              dev_results=[dict(file=x['file'],dynamic_Z_rel_L2=float(y))
                           for x,y in zip(val['row'],vals)],
              training_geometries=len(mf['train']),
-             dev_geometries=len(mf['val']),tau=a.tau)
+             dev_geometries=len(mf['val']),tau=a.tau,
+             state_model=str(a.state_model) if a.state_model else None,
+             base_tangent=str(a.base_tangent) if a.base_tangent else None,
+             mix_true=a.mix_true)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(dict(state=model.state_dict(),ng=tr['g'].shape[1],
                     sa=torch.as_tensor(sa),sy=torch.as_tensor(sy),idx=IDX,
