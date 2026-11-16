@@ -1,0 +1,53 @@
+{
+  "model": "runs\\geomfrac_et_v4_8g_quality.pt",
+  "tangent_model": "runs\\geomfrac_et_v5_tangent_aware.pt",
+  "pkg_model": "runs\\geomfrac_et_v6_pkg.pt",
+  "lift_model": null,
+  "lift_gain": 1.0,
+  "manifest": "runs\\geomfrac_s5_v6_manifest.json",
+  "split": "test",
+  "geometries": 1,
+  "histories": 3,
+  "dynamic_Z_mean_rel_L2": 0.10452963758671384,
+  "results": [
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive1.npz",
+      "inference_cpu_s": 0.15588649996789172,
+      "dynamic_Z_rel_L2": 0.06921129387066416,
+      "full_Z_rel_L2": 1.6248945921512182e-06,
+      "temperature_max_K": 0.21107851167539593,
+      "copper_max_K": 0.08852398457315758,
+      "package_max_K": 0.21107851167539593,
+      "material_budget_max_W": 9.876508499928605e-09,
+      "fv_residual_max_W": 0.3350917121570707,
+      "dynamic_Z_0_60_rel_L2": 0.06921129387066415
+    },
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive2.npz",
+      "inference_cpu_s": 0.744439699978102,
+      "dynamic_Z_rel_L2": 0.11469041771492565,
+      "full_Z_rel_L2": 9.343314854222608e-06,
+      "temperature_max_K": 1.2344002206982054,
+      "copper_max_K": 0.3401674343245418,
+      "package_max_K": 0.4407394111936469,
+      "material_budget_max_W": 6.48164188987721e-10,
+      "fv_residual_max_W": 0.6505419907865083,
+      "dynamic_Z_0_60_rel_L2": 0.07089157008242283,
+      "dynamic_Z_60_300_rel_L2": 0.11654751046889893
+    },
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive3.npz",
+      "inference_cpu_s": 1.5312133000115864,
+      "dynamic_Z_rel_L2": 0.12968720117455168,
+      "full_Z_rel_L2": 1.556375339950278e-05,
+      "temperature_max_K": 2.431887588225834,
+      "copper_max_K": 0.5381427471929783,
+      "package_max_K": 0.6998663715671682,
+      "material_budget_max_W": 6.892605597386137e-09,
+      "fv_residual_max_W": 0.6102074752781589,
+      "dynamic_Z_0_60_rel_L2": 0.07052770260757381,
+      "dynamic_Z_60_300_rel_L2": 0.11768389206304626,
+      "dynamic_Z_300_600_rel_L2": 0.13369589636733697
+    }
+  ]
+}

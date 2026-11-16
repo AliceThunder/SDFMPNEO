@@ -1,0 +1,53 @@
+{
+  "model": "runs\\geomfrac_et_v4_8g_quality.pt",
+  "tangent_model": "runs\\geomfrac_et_v5_tangent_aware.pt",
+  "pkg_model": "runs\\geomfrac_et_v6_pkg.pt",
+  "lift_model": "runs\\geomfrac_et_v5_lift.npz",
+  "lift_gain": 0.2,
+  "manifest": "runs\\geomfrac_s5_v6_manifest.json",
+  "split": "test",
+  "geometries": 1,
+  "histories": 3,
+  "dynamic_Z_mean_rel_L2": 0.10402666303473034,
+  "results": [
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive1.npz",
+      "inference_cpu_s": 0.1691135999863036,
+      "dynamic_Z_rel_L2": 0.06837021525105762,
+      "full_Z_rel_L2": 1.6051483336413488e-06,
+      "temperature_max_K": 0.21105579999215252,
+      "copper_max_K": 0.08852342556912163,
+      "package_max_K": 0.21105579999215252,
+      "material_budget_max_W": 9.907015652288464e-09,
+      "fv_residual_max_W": 0.3361562295809426,
+      "dynamic_Z_0_60_rel_L2": 0.06837021525105762
+    },
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive2.npz",
+      "inference_cpu_s": 0.7019889000221156,
+      "dynamic_Z_rel_L2": 0.11453588342774175,
+      "full_Z_rel_L2": 9.330725637706534e-06,
+      "temperature_max_K": 0.9509142044256578,
+      "copper_max_K": 0.3373304812553215,
+      "package_max_K": 0.4399496213147245,
+      "material_budget_max_W": 6.552767217726796e-10,
+      "fv_residual_max_W": 0.6530640570855559,
+      "dynamic_Z_0_60_rel_L2": 0.07029046445890261,
+      "dynamic_Z_60_300_rel_L2": 0.1164066620746468
+    },
+    {
+      "file": "runs/bfzi_s5_R01_ultra_v6_drive3.npz",
+      "inference_cpu_s": 1.4198485999950208,
+      "dynamic_Z_rel_L2": 0.12917389042539165,
+      "full_Z_rel_L2": 1.5502151006630657e-05,
+      "temperature_max_K": 1.8896960092170048,
+      "copper_max_K": 0.5310138230046277,
+      "package_max_K": 0.6930834000620507,
+      "material_budget_max_W": 6.039392985712766e-09,
+      "fv_residual_max_W": 0.6143603368998308,
+      "dynamic_Z_0_60_rel_L2": 0.06999841863571689,
+      "dynamic_Z_60_300_rel_L2": 0.11739605131306939,
+      "dynamic_Z_300_600_rel_L2": 0.1331234615980553
+    }
+  ]
+}
