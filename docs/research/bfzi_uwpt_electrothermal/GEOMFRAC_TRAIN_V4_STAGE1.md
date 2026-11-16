@@ -267,3 +267,35 @@ Because oracle teacher inputs alone do not remove the dynamic-Z error,
 the learned seawater impedance mapping itself is also a priority
 for subsequent architecture/loss refinement. Probe numeric results:
 `runs/geomfrac_et_v4_open_loop_probe.json`.
+
+## Frozen V4 independent final-test acceptance
+
+Checkpoint selection was performed exclusively on the 15 autonomous development histories across T04/D01-D04.
+
+- 5g: development mean dynamic-Z relative L2 = 16.870%
+- 8g_quality: development mean dynamic-Z relative L2 = 16.315%
+- 30g: development mean dynamic-Z relative L2 = 16.315%
+- 30g_quality: development mean dynamic-Z relative L2 = 16.315%
+
+Frozen checkpoint: `runs/geomfrac_et_v4_8g_quality.pt`.
+Final 5-geometry E01-E05 mean dynamic-Z relative L2 = 18.464%; maximum trajectory error = 33.653%.
+
+| Unseen physics teacher | dynamic Z rel L2 | max temperature error |
+|---|---:|---:|
+| bfzi_s5_E01_ultra_v4_drive1 | 13.559% | 0.517 K |
+| bfzi_s5_E01_ultra_v4_drive2 | 10.236% | 5.135 K |
+| bfzi_s5_E01_ultra_v4_drive3 | 16.200% | 9.230 K |
+| bfzi_s5_E02_ultra_v4_drive1 | 14.260% | 0.235 K |
+| bfzi_s5_E02_ultra_v4_drive2 | 16.474% | 0.897 K |
+| bfzi_s5_E02_ultra_v4_drive3 | 25.380% | 1.633 K |
+| bfzi_s5_E03_ultra_v4_drive1 | 13.885% | 0.411 K |
+| bfzi_s5_E03_ultra_v4_drive2 | 15.316% | 1.193 K |
+| bfzi_s5_E03_ultra_v4_drive3 | 24.175% | 1.679 K |
+| bfzi_s5_E04_ultra_v4_drive1 | 13.304% | 2.700 K |
+| bfzi_s5_E04_ultra_v4_drive2 | 19.444% | 6.748 K |
+| bfzi_s5_E04_ultra_v4_drive3 | 25.153% | 20.331 K |
+| bfzi_s5_E05_ultra_v4_drive1 | 13.470% | 0.573 K |
+| bfzi_s5_E05_ultra_v4_drive2 | 22.460% | 1.897 K |
+| bfzi_s5_E05_ultra_v4_drive3 | 33.653% | 3.446 K |
+
+The final test geometries were excluded from training, checkpoint choice and all prior model-development comparisons.
