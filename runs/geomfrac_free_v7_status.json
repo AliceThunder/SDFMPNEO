@@ -66,5 +66,14 @@
     "repeat_inference_s": 0.20657198890047665
   },
   "dominant_error": "RX self dynamic impedance: R22 20.32%, X22 11.15%; R12/X12 mutual terms below 0.6%",
-  "next": "Improve RX thermal impedance tangent and separate sea/copper source corrections using development data only; preserve Y01-Y06 blind set"
+  "next": "Develop physically structured RX-port thermal impedance tangent using training/development geometries; keep Y01-Y06 sealed",
+  "dynamic_candidate": {
+    "path": "runs/geomfrac_free_dyn_rx_v1_blind_eval.json",
+    "dev_best_epoch": 120,
+    "dev_dynamic_z_pct": 22.01180589241538,
+    "blind_dynamic_z_pct": 32.8510653147255,
+    "baseline_blind_dynamic_z_pct": 26.41593804689918,
+    "accepted": false,
+    "reason": "blind cross-geometry dynamic impedance worsened"
+  }
 }
