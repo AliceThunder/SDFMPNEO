@@ -75,7 +75,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g1"
     },
     "AA02": {
       "family": "g2",
@@ -141,7 +142,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g2"
     },
     "AA03": {
       "family": "g1",
@@ -207,7 +209,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g1"
     },
     "AA04": {
       "family": "g2",
@@ -273,7 +276,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g2"
     },
     "AA05": {
       "family": "g1",
@@ -339,7 +343,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g1"
     },
     "AA06": {
       "family": "g2",
@@ -405,7 +410,8 @@
           ],
           "duration": 600
         }
-      ]
+      ],
+      "donor": "g2"
     }
   },
   "seed": 261118,
