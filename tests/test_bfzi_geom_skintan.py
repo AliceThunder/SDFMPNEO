@@ -41,7 +41,7 @@ def test_time_conditioned_tangent_receives_interval_voltage():
         return torch.zeros((len(a),6),dtype=a.dtype)
     tan.time_conditioned=True
     init=dict(z0=np.array([1.,0.,0.,0.,1.,0.]),
-              air=np.zeros(3),cap=np.ones(32),
+              air=np.zeros(3),cap=np.ones(5),
               ext=np.zeros((2,2),complex))
     circuit(np.zeros(32),init,Port(),np.zeros(32),tan,
             torch.zeros((1,45)),np.ones(32),12.,293.15,
