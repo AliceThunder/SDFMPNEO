@@ -42,7 +42,8 @@ def geometry(case,init):
     return a,feat
 
 
-def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,tm=0.):
+def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,
+            tm=0.,heat_voltage=None):
     """Nonlinear two-port circuit with temperature-sensitive sea and copper."""
     mean=state[:5]/np.sqrt(init['cap'])
     cu=port.copper(ambient+mean[3:5])
@@ -54,7 +55,12 @@ def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,tm=0.):
         dsea=np.zeros((2,2),complex)
     else:
         st=torch.as_tensor((state/scale)[None],dtype=g.dtype)
-        dsea=zmat(tan(g,st)[0].detach().cpu().numpy())
+        if getattr(tan,"time_conditioned",False):
+            hv=voltage if heat_voltage is None else heat_voltage
+            dz=tan(g,st,float(tm),float(hv))
+        else:
+            dz=tan(g,st)
+        dsea=zmat(dz[0].detach().cpu().numpy())
     if extra is not None:
         corr=extra(torch.as_tensor((state/scale)[None],dtype=g.dtype),
                    tm,voltage)
@@ -201,8 +207,9 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
             old=full.copy()
         else:
             budget=np.zeros(5)
+        hv=float(v[i-1]) if i else 0.
         z,I,ps,pc,_=circuit(full,init,port,full,tan,g,scale,
-                            float(v[i]),ambient,ext_fn,tm)
+                            float(v[i]),ambient,ext_fn,tm,hv)
         zprev=z
         for key,val in (
             ('z6',pack(z)),('current_A',I),
