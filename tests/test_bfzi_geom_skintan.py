@@ -94,3 +94,17 @@ def test_v3_physical_encoder_omits_pose_and_cold_z():
     assert torch.count_nonzero(net(g,a,skin))==0
     y=net(g,torch.rand_like(a),torch.rand_like(skin))
     assert y.shape==(2,6) and torch.isfinite(y).all()
+
+
+def test_v4_tangent_ignores_geometry_and_keeps_port_heads():
+    from sdfmpneo_bfzi.geom_skintan import SkinTanV4
+    net=SkinTanV4(ng=45,sa=np.ones(32),ss=np.ones(16))
+    g=torch.randn(3,45); g2=torch.randn(3,45)
+    a=torch.rand(3,32); skin=torch.rand(3,16)
+    with torch.no_grad():
+        for head in (net.tx,net.mx,net.rx):
+            head[-1].weight.fill_(.01)
+    y=net(g,a,skin); y2=net(g2,a,skin)
+    assert y.shape==(3,6)
+    assert torch.allclose(y,y2,atol=1e-7,rtol=0)
+    assert torch.isfinite(y).all()
