@@ -40,9 +40,9 @@ def metric(pred,row):
         raise ValueError('physical matched-current shape mismatch')
     names=('sea','pkg_tx','pkg_rx','cu_tx','cu_rx')
     mdiff=pred['temp_group_K']-tm
-    material={name+'_mean_rmse_K':float(np.sqrt(np.mean(mdiff[:,j]**2)))
+    material={'material_'+name+'_rmse_K':float(np.sqrt(np.mean(mdiff[:,j]**2)))
               for j,name in enumerate(names)}
-    material.update({name+'_mean_max_K':float(np.max(abs(mdiff[:,j])))
+    material.update({'material_'+name+'_max_K':float(np.max(abs(mdiff[:,j])))
               for j,name in enumerate(names)})
     zden=max(float(np.linalg.norm(dr)),1e-12)
     parts=('R11','X11','R12','X12','R22','X22')
