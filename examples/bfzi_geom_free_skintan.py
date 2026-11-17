@@ -192,7 +192,9 @@ def main():
         source=str(args.source_model))
     args.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),
-        sa=np.asarray(ck["a_scale"]),ss=ss,sy=np.asarray(ck["y_scale"])[:6],
+        sa=torch.as_tensor(np.asarray(ck["a_scale"]),dtype=torch.float32),
+        ss=torch.as_tensor(ss,dtype=torch.float32),
+        sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32),
         best_epoch=best_ep,shape_mix=args.shape_mix,
         train_names=sorted({r["name"] for r in tr}),
         dev_names=sorted({r["name"] for r in va})),args.out)
