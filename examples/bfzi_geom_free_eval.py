@@ -170,6 +170,7 @@ def main():
     p.add_argument('--field-atlas',type=Path,default=None)
     p.add_argument('--dyn-model',type=Path,default=None)
     p.add_argument('--skin-model',type=Path,default=None)
+    p.add_argument('--skin-tangent-model',type=Path,default=None)
     p.add_argument('--port-self-model',type=Path,default=None)
     p.add_argument('--mutual-model',type=Path,default=None)
     p.add_argument('--source-model',type=Path,default=None)
@@ -187,6 +188,12 @@ def main():
     atlas=GeomInit.load(args.atlas)
     extra=GeomInit.load(args.cold_atlas) if args.cold_atlas else None
     tan=load_z(args.z_fix_model)
+    if args.skin_tangent_model:
+        if not args.skin_model:
+            p.error('--skin-tangent-model requires --skin-model')
+        from sdfmpneo_bfzi.geom_skintan import restore as load_skin_tan
+        tan=load_skin_tan(args.skin_tangent_model,args.z_fix_model,
+                          args.skin_model)
     field=None
     if args.field_atlas:
         from sdfmpneo_bfzi.geom_field import FieldAtlas
