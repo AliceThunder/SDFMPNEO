@@ -42,13 +42,15 @@
   "xenergy": {
     "device": "XEnergy-Zhucy",
     "repo": "D:\\work\\geomfrac-train",
-    "training_pid": 32332,
-    "holdout_generation_pid": 12904,
+    "training_pid": 35588,
+    "holdout_generation_pid": 30576,
     "training_log": "runs/v5_pose_train.log",
     "training_stderr": "runs/v5_pose_train.err",
     "holdout_log": "runs/free9_build.log",
     "holdout_stderr": "runs/free9_build.err",
-    "failure_policy": "per-history physical reference generation continues after an individual failure and persists each attempt"
+    "failure_policy": "per-history physical reference generation continues after an individual failure and persists each attempt",
+    "training_wrapper_pid": 32332,
+    "holdout_wrapper_pid": 12904
   },
   "decision": "V1-V4 local tangent variants are not promoted; V6 remains formal until V5 base-model AA holdout acceptance.",
   "holdout_generation": {
