@@ -1,0 +1,33 @@
+{
+  "description": "Frozen BFZI-free V6 geometry-disjoint independent acceptance; never fit or tune on Y cases",
+  "plan": "runs/geomfrac_s5_free7_plan.json",
+  "manifest": "runs/geomfrac_s5_free7_manifest.json",
+  "physical_report": "runs/geomfrac_s5_free7_build_report.json",
+  "out": "runs/geomfrac_free_v7_accept.json",
+  "test": [
+    "Y01",
+    "Y02",
+    "Y03",
+    "Y04",
+    "Y05",
+    "Y06"
+  ],
+  "durations_s": [
+    60,
+    300,
+    600
+  ],
+  "physics": "BFZI V150 S5 source_order=5 ultra inner_step=1.875s",
+  "atlas": "runs/geomfrac_init_v1.npz",
+  "heat_model": "runs/geomfrac_et_v7_skin_resid.pt",
+  "z_fix_model": "runs/geomfrac_et_v9_ztune.pt",
+  "field_atlas": "runs/geomfrac_field_v2.npz",
+  "skin_model": "runs/geomfrac_et_v7_skin_resid.pt",
+  "port_self_model": "runs/geomfrac_portself_v5.npz",
+  "mutual_model": "runs/geomfrac_mutual_v6.npz",
+  "source_model": "runs/geomfrac_src_v6.npz",
+  "shape_mix": 0.5,
+  "cold_BFZI_online": 0,
+  "geometry_specific_heat_basis_builds": 0,
+  "status": "frozen_pending_physical_teacher"
+}
