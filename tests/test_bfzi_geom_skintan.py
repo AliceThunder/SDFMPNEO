@@ -76,3 +76,21 @@ def test_v2_tangent_is_cold_zero_and_finite():
     assert torch.count_nonzero(net(g,a,s))==0
     y=net(g,torch.rand_like(a),torch.rand_like(s))
     assert y.shape==(3,6) and torch.isfinite(y).all()
+
+
+def test_v3_physical_encoder_omits_pose_and_cold_z():
+    from sdfmpneo_bfzi.geom_skintan import encode_geom_v3,SkinTanV3
+    from sdfmpneo_bfzi.pose import _rot
+    g=torch.zeros((2,45))
+    g[0,25:34]=torch.as_tensor(np.eye(3).reshape(-1),dtype=torch.float32)
+    r=_rot('z',25.)@_rot('y',-12.)@_rot('x',8.)
+    g[1,25:34]=torch.as_tensor(r.reshape(-1),dtype=torch.float32)
+    g[1,16:22]=2.
+    x=encode_geom_v3(g)
+    assert x.shape==(2,30)
+    assert torch.allclose(x[0],x[1])
+    net=SkinTanV3(ng=45,sa=np.ones(32),ss=np.ones(16))
+    a=torch.zeros((2,32)); skin=torch.zeros((2,16))
+    assert torch.count_nonzero(net(g,a,skin))==0
+    y=net(g,torch.rand_like(a),torch.rand_like(skin))
+    assert y.shape==(2,6) and torch.isfinite(y).all()
