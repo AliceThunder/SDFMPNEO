@@ -41,12 +41,13 @@ def records(mf,pl,atlas,net,ck,tan,split,report=True):
     return rows
 
 
-def objective(model,rows):
+def objective(model,rows,weights):
     errs=[];reg=[]
+    w=torch.as_tensor(weights,dtype=torch.float32)
     for r in rows:
         z=model(r['g'],r['a'],r['t'],r['v'])
-        errs.append(z.sub(r['target']).square().sum()/r['den']**2)
-        reg.append(z.square().sum()/r['den']**2)
+        errs.append((z.sub(r['target']).square()*w).sum()/r['den']**2)
+        reg.append((z.square()*w).sum()/r['den']**2)
     return torch.stack(errs).mean()+.01*torch.stack(reg).mean()
 
 
@@ -87,6 +88,8 @@ def main():
     parser.add_argument('--epochs',type=int,default=240)
     parser.add_argument('--eval-every',type=int,default=40)
     parser.add_argument('--lr',type=float,default=.0006)
+    parser.add_argument('--rx-r-weight',type=float,default=1.)
+    parser.add_argument('--rx-x-weight',type=float,default=1.)
     args=parser.parse_args()
     torch.set_num_threads(2)
     torch.manual_seed(91)
@@ -117,6 +120,9 @@ def main():
         np.asarray(ck['a_scale']),np.asarray(ck['y_scale'])[:6],
         geom_strength=args.geom_strength)
     opt=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=.002)
+    if args.rx_r_weight<=0 or args.rx_x_weight<=0:
+        raise ValueError("RX loss weights must be positive")
+    weights=[1.,1.,1.,1.,args.rx_r_weight,args.rx_x_weight]
     best_score=float('inf');best_ep=0
     saved={k:v.detach().clone() for k,v in model.state_dict().items()}
     history=[]
@@ -147,7 +153,7 @@ def main():
     for epoch in range(1,args.epochs+1):
         model.train()
         opt.zero_grad(set_to_none=True)
-        loss=objective(model,train)
+        loss=objective(model,train,weights)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(),2.)
         opt.step()
@@ -158,7 +164,7 @@ def main():
         status='development-selected geometry-only causal dynamic Z head',
         train_geometries=len(training['train']),dev_geometries=len(mf['val']),
         hold_geometries=len(hold)//3,geom_strength=args.geom_strength,
-        train_histories=len(train),dev_histories=len(dev),
+        train_histories=len(train),dev_histories=len(dev),rx_r_weight=args.rx_r_weight,rx_x_weight=args.rx_x_weight,
         best_epoch=best_ep,baseline_dev_dynamic_Z_pct=history[0]['dynamic_Z_pct'],
         best_dev_dynamic_Z_pct=next(x['dynamic_Z_pct']
                     for x in history if x['epoch']==best_ep),
