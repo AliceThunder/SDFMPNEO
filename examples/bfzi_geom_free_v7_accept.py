@@ -91,6 +91,8 @@ def group(rows,keys):
             field_rmse_K=float(np.mean([r["temperature_rmse_K"] for r in a])),
             field_max_K=float(max(r["temperature_max_K"] for r in a)),
             first_new_geometry_s=a[0]["first_new_geometry_s"],
+            first_new_geometry_full_s=a[0]["first_new_geometry_full_s"],
+            field_decode_mean_s=float(np.mean([r["field_decode_s"] for r in a])),
             repeat_infer_s=float(np.mean([r["repeat_s"] for r in a])))
     return out
 
@@ -124,6 +126,9 @@ def main():
             result["history_count"]!=18):
         raise ValueError("not all frozen geometries and histories were evaluated")
     rows=result["rows"]
+    if not rows or any(not np.isfinite(v) for r in rows
+                       for v in r.values() if isinstance(v,(int,float))):
+        raise ValueError("non-finite BFZI-free independent acceptance metric")
     for key in sel["test"]:
         if sorted(int(round(float(r["file"].split("_drive")[1].split(".")[0])))
                   for r in rows if r["geometry"]==key)!=[1,2,3]:
@@ -131,7 +136,7 @@ def main():
     per_geo=group(rows,sel["test"])
     sm=result["summary"]
     source=dict(
-        primary="dynamic thermal impedance and circuit coupling",
+        primary="pending_attribution",
         cold_z_mean=sm["cold_z_rel_L2_mean"],
         dynamic_z_mean=sm["dynamic_z_rel_L2_mean"],
         current_mean=sm["current_rel_L2_mean"],
@@ -146,7 +151,9 @@ def main():
              model="BFZI-free V6 with 32D shared heat, 48-mode 3D field",
              shape_mix=sel["shape_mix"],
              cold_BFZI_online=0,geometry_specific_heat_basis_builds=0,
-             evaluation_wall_s=wall,metrics=sm,
+             evaluation_wall_s=wall,
+             energy_budget_max_W=float(max(r["energy_budget_W"] for r in rows)),
+             metrics=sm,
              source_diagnostics=source,
              per_geometry=per_geo,rows=rows)
     path.parent.mkdir(parents=True,exist_ok=True)
