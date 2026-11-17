@@ -140,11 +140,41 @@ class SkinTanV3(SkinTan):
         return torch.cat((tx,mx,rx),dim=-1)
 
 
+class SkinTanV4(SkinTan):
+    """V4 geometry-free local thermal correction; base tangent carries geometry."""
+    def __init__(self,ng=45,sa=None,ss=None,hidden=32):
+        if ng!=45:
+            raise ValueError("V4 expects the original 45-D geometry descriptor")
+        nn.Module.__init__(self)
+        aa=np.ones(32) if sa is None else np.asarray(sa,float)
+        sk=np.ones(16) if ss is None else np.asarray(ss,float)
+        if aa.shape!=(32,) or sk.shape!=(16,) or np.min(aa)<=0 or np.min(sk)<=0:
+            raise ValueError("invalid thermal feature scales")
+        self.ng=45
+        self.register_buffer("sa",torch.as_tensor(aa[IDX],dtype=torch.float32))
+        self.register_buffer("ss",torch.as_tensor(sk,dtype=torch.float32))
+        self.tx=_head(14+8,hidden)
+        self.mx=_head(14+16,hidden)
+        self.rx=_head(14+8,hidden)
+
+    def forward(self,g,a,skin):
+        if (g.ndim!=2 or g.shape[1]!=45 or a.shape!=(len(g),32) or
+                skin.shape!=(len(g),16)):
+            raise ValueError("skin tangent V4 expects [B,45], [B,32], [B,16]")
+        xg=g.new_zeros((len(g),0))
+        aa=a[:,IDX]/self.sa
+        ss=skin/self.ss
+        tx=self._run(self.tx,xg,aa,ss[:,:8])
+        mx=self._run(self.mx,xg,aa,ss)
+        rx=self._run(self.rx,xg,aa,ss[:,8:])
+        return torch.cat((tx,mx,rx),dim=-1)
+
+
 def restore(path,base_path,skin_path):
     from .geom_ztune import restore as load_base
     from .geom_skin import restore as load_skin
     ck=torch.load(Path(path),map_location="cpu",weights_only=True)
-    cls={"v2":SkinTanV2,"v3":SkinTanV3}.get(ck.get("model_version"),SkinTan)
+    cls={"v2":SkinTanV2,"v3":SkinTanV3,"v4":SkinTanV4}.get(ck.get("model_version"),SkinTan)
     net=cls(ng=int(ck["ng"]),sa=np.asarray(ck["sa"]),
             ss=np.asarray(ck["ss"]))
     net.load_state_dict(ck["state"])
