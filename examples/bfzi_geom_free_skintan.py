@@ -184,7 +184,7 @@ def main():
             break
     model.load_state_dict(saved)
     final=closed(va,model,base,skin,sy,atlas,net,ck,args.shape_mix)
-    result=dict(status="development-selected port-factorized local-skin tangent V2" if args.v2 else "development-selected port-factorized local-skin tangent V1",
+    result=dict(status=("development-selected port-factorized local-skin tangent V3" if args.v3 else ("development-selected port-factorized local-skin tangent V2" if args.v2 else "development-selected port-factorized local-skin tangent V1")),
         model_version="v3" if args.v3 else ("v2" if args.v2 else "v1"),
         train_geometries=len(mf["train"]),dev_geometries=len(mf["val"]),
         train_histories=len(tr),dev_histories=len(va),
