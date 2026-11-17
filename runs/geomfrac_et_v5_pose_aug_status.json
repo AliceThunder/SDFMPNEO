@@ -50,5 +50,20 @@
     "holdout_stderr": "runs/free9_build.err",
     "failure_policy": "per-history physical reference generation continues after an individual failure and persists each attempt"
   },
-  "decision": "V1-V4 local tangent variants are not promoted; V6 remains formal until V5 base-model AA holdout acceptance."
+  "decision": "V1-V4 local tangent variants are not promoted; V6 remains formal until V5 base-model AA holdout acceptance.",
+  "holdout_generation": {
+    "completed_histories": 1,
+    "failed_histories": 0,
+    "last_completed": "AA01/60s",
+    "current_geometry": "AA01",
+    "process_id": 30576,
+    "log": "D:\\work\\geomfrac-train\\runs\\free9_build.log",
+    "status": "running"
+  },
+  "training_process": {
+    "process_id": 35588,
+    "log": "D:\\work\\geomfrac-train\\runs\\v5_pose_train.log",
+    "status": "running",
+    "initial_dev_dynamic_z": 0.163145
+  }
 }
