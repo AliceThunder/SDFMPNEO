@@ -1,0 +1,335 @@
+{
+  "train": [
+    {
+      "anchor": "runs/bfzi_s5_T01_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T01_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T01_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T01_ultra_long600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_T02_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T02_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T02_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T02_ultra_train600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_T03_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T03_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T03_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T03_ultra_train600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N01_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N01_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N01_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N01_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N02_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N02_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N02_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N03_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N03_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N03_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N03_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N04_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N04_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N04_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N04_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N05_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N05_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N05_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N05_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N06_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N06_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N06_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N06_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N07_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N07_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N07_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N07_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N08_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N08_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N08_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N08_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N09_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N09_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N09_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N09_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N10_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N10_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N10_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N10_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N11_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N11_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N11_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N11_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N12_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N12_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N12_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N12_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N13_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N13_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N13_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N13_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N14_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N14_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N14_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N14_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N15_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N15_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N15_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N15_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N16_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N16_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N16_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N16_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N17_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N17_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N17_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N17_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N18_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N18_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N18_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N18_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N19_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N19_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N19_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N19_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N20_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N20_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N20_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N20_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N21_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N21_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N21_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N21_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N22_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N22_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N22_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N22_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N23_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N23_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N23_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N23_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N24_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N24_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N24_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N24_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N25_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N25_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N25_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N25_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N26_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N26_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N26_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N26_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_N27_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_N27_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_N27_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_N27_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z01_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z01_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z01_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z01_ultra_free8_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z02_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z02_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z02_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z02_ultra_free8_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z03_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z03_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z03_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z03_ultra_free8_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z04_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z04_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z04_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z04_ultra_free8_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z05_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z05_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z05_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z05_ultra_free8_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_Z06_ultra_free8_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_Z06_ultra_free8_drive1.npz",
+        "runs/bfzi_s5_Z06_ultra_free8_drive2.npz",
+        "runs/bfzi_s5_Z06_ultra_free8_drive3.npz"
+      ]
+    }
+  ],
+  "val": [
+    {
+      "anchor": "runs/bfzi_s5_T04_ultra_pilot60_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+        "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+        "runs/bfzi_s5_T04_ultra_long600_drive1.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_D01_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_D01_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_D02_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_D02_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_D03_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_D03_ultra_v4_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs/bfzi_s5_D04_ultra_v4_anchor.npz",
+      "teacher": [
+        "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+        "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+        "runs/bfzi_s5_D04_ultra_v4_drive3.npz"
+      ]
+    }
+  ],
+  "description": "Pose-augmented V5 base-model training: original 30 training geometries plus the now-diagnostic Z01-Z06; retain original five-geometry development set. Z is no longer a holdout."
+}
