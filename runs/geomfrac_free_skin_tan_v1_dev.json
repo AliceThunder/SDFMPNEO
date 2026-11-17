@@ -1,0 +1,58 @@
+{
+  "status": "development_selected_pending_fresh_holdout",
+  "method": "port-factorized local seawater-skin impedance tangent",
+  "architecture": {
+    "global_features": "14 sea modes from shared 32D heat state",
+    "local_features": "16 V7 seawater skin modes",
+    "heads": {
+      "tx": "TX local 8 skin modes + global sea state + geometry -> R11/X11",
+      "mutual": "TX/RX local 16 skin modes + global sea state + geometry -> R12/X12",
+      "rx": "RX local 8 skin modes + global sea state + geometry -> R22/X22"
+    },
+    "cold_zero": "each head subtracts its zero-state output",
+    "copper": "existing analytic temperature-dependent BFZI conductor model unchanged",
+    "causality": "skin modes use previous-interval voltage at each output time"
+  },
+  "data": {
+    "train_geometries": 30,
+    "dev_geometries": 5,
+    "train_histories": 90,
+    "dev_histories": 15,
+    "sealed_test_geometries": 5,
+    "blind_geometries_used": 0
+  },
+  "selection": {
+    "shape_mix": 0.5,
+    "epochs_run": 140,
+    "best_epoch": 80,
+    "criterion": "closed-loop dev dynamic impedance error"
+  },
+  "baseline_dev": {
+    "dynamic_z_pct": 12.204559292681521,
+    "current_pct": 6.900938015576605,
+    "temp_rmse_K": 0.3543219911811963,
+    "temp_max_K": 0.9837544451321908,
+    "budget_W": 1.0084497623410055e-11
+  },
+  "best_dev": {
+    "dynamic_z_pct": 10.877213990632677,
+    "current_pct": 6.902101679542394,
+    "temp_rmse_K": 0.3544164453965149,
+    "temp_max_K": 0.9845912067034116,
+    "budget_W": 1.0130587649111197e-11
+  },
+  "relative_dynamic_z_improvement_pct": -10.875815096779348,
+  "validation": {
+    "py_compile": "passed",
+    "pytest": "5 passed",
+    "test_files": [
+      "tests/test_bfzi_geom_free.py",
+      "tests/test_bfzi_geom_skintan.py",
+      "tests/test_bfzi_geom_ztune.py"
+    ]
+  },
+  "checkpoint_local_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1.pt",
+  "report_local_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1_dev.json",
+  "checkpoint_committed": false,
+  "next": "Generate a fresh sealed S5 geometry set Z01-Z06. Y01-Y06 has already informed method selection and must not be reused as a blind set for this candidate."
+}
