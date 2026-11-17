@@ -34,9 +34,31 @@ def metric(pred,row):
             itrue=np.array([np.linalg.solve(zmat(zz)+row['rom'].ext,
                         np.array([vv,0.],complex))
                         for zz,vv in zip(truth,row['voltage'])])
+        psea=np.asarray(raw['Psea_W']) if 'Psea_W' in raw else None
+        pcu=np.asarray(raw['Pcu_W']) if 'Pcu_W' in raw else None
     if itrue.shape!=pred['current_A'].shape:
         raise ValueError('physical matched-current shape mismatch')
-    return dict(
+    names=('sea','pkg_tx','pkg_rx','cu_tx','cu_rx')
+    mdiff=pred['temp_group_K']-tm
+    material={name+'_mean_rmse_K':float(np.sqrt(np.mean(mdiff[:,j]**2)))
+              for j,name in enumerate(names)}
+    material.update({name+'_mean_max_K':float(np.max(abs(mdiff[:,j])))
+              for j,name in enumerate(names)})
+    zden=max(float(np.linalg.norm(dr)),1e-12)
+    parts=('R11','X11','R12','X12','R22','X22')
+    impedance={name+'_dynamic_error_L2_over_total_delta':
+               float(np.linalg.norm((dz-dr)[:,j])/zden)
+               for j,name in enumerate(parts)}
+    powers={}
+    if psea is not None:
+        powers['sea_power_rel_L2']=float(
+            np.linalg.norm(pred['Psea_W']-psea)/
+            max(np.linalg.norm(psea),1e-12))
+    if pcu is not None:
+        powers['copper_power_rel_L2']=float(
+            np.linalg.norm(pred['Pcu_W']-pcu)/
+            max(np.linalg.norm(pcu),1e-12))
+    return dict(**material,**impedance,**powers,
         file=row['file'],
         cold_z_rel_L2=float(np.linalg.norm(z[0]-truth[0])/
                             max(np.linalg.norm(truth[0]),1e-15)),
