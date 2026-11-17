@@ -3,14 +3,38 @@ from __future__ import annotations
 
 import argparse
 import json
+import itertools
 from pathlib import Path
 
 import numpy as np
 
 from sdfmpneo_bfzi.geom_init import GeomInit,encode
 from sdfmpneo_bfzi.geom_heat import GeomHeat
-from sdfmpneo_bfzi.geom_canon import make_rom
+from sdfmpneo_bfzi.geom_canon import make_rom,labels
 from sdfmpneo_bfzi.geom_rom import groups
+
+
+def pack(head,case,name,rank=32):
+    rom=make_rom(head,rank)
+    y=np.r_[head.z0,head.geom[11:14],
+            np.log([head.cap[span].sum() for span in groups(head)])]
+    src=np.zeros((rank,3))
+    for j,(a,b) in enumerate(((0,0),(0,1),(1,1))):
+        force=np.zeros(len(head.cap))
+        force[:head.ns]=head.weak[:,a,b]*head.vol
+        src[:,j]=rom.phi.T@force
+    lab=labels(rank)
+    phi=rom.phi*np.sqrt(np.exp(y[9:])[lab])[None,:]
+    sl=groups(head)
+    guard=[]
+    for j in range(5,rank):
+        a,b=sl[lab[j]].start,sl[lab[j]].stop
+        q=phi[a:b,j]
+        guard.extend([phi[a+np.argmax(q),5:],
+                      phi[a+np.argmin(q),5:]])
+    return dict(name=name,x=encode(case),y=y,
+                k=rom.K,src=src,ext=head.ext,case=case,
+                guard=np.asarray(guard),cap=np.exp(y[9:]))
 
 
 def records(plan,manifest,split,rank=32):
@@ -19,17 +43,7 @@ def records(plan,manifest,split,rank=32):
         ident=Path(spec['anchor']).stem.split('_')[2]
         case=plan['cases'][ident]
         head=GeomHeat.load(spec['anchor'])
-        rom=make_rom(head,rank)
-        y=np.r_[head.z0,head.geom[11:14],
-                np.log([head.cap[span].sum() for span in groups(head)])]
-        src=np.zeros((rank,3))
-        for j,(a,b) in enumerate(((0,0),(0,1),(1,1))):
-            force=np.zeros(len(head.cap))
-            force[:head.ns]=head.weak[:,a,b]*head.vol
-            src[:,j]=rom.phi.T@force
-        out.append(dict(name=ident,x=encode(case),y=y,
-                        k=rom.K,src=src,ext=head.ext,case=case,
-                        cap=np.exp(y[9:])))
+        out.append(pack(head,case,ident,rank))
     return out
 
 
@@ -60,6 +74,10 @@ def main():
     p.add_argument('--manifest',type=Path,
                    default=Path('runs/geomfrac_s5_v4_30g_manifest.json'))
     p.add_argument('--rank',type=int,choices=(32,48,64),default=32)
+    p.add_argument('--cold-plan',type=Path,default=None,
+                   help="optional geometry-disjoint cold-only extra training plan")
+    p.add_argument('--cold-dir',type=Path,default=None,
+                   help="directory of compact cold-only anchors")
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_init_v1.npz'))
     p.add_argument('--report',type=Path,
                    default=Path('runs/geomfrac_init_v1_dev.json'))
@@ -68,11 +86,23 @@ def main():
     mf=json.loads(a.manifest.read_text(encoding='utf-8'))
     tr=records(plan,mf,'train',a.rank)
     dev=records(plan,mf,'val',a.rank)
+    if a.cold_plan and a.cold_dir:
+        extra=json.loads(a.cold_plan.read_text(encoding='utf-8'))
+        for name in extra['train']:
+            f=a.cold_dir/f'cold_{name}_{a.rank}.npz'
+            with np.load(f) as data:
+                item={key:data[key] for key in ('x','y','k','src','ext','guard')}
+            item['name']=name
+            item['case']=extra['cases'][name]
+            item['cap']=np.exp(item['y'][9:])
+            tr.append(item)
+        print('COLD_ONLY_EXTRA',len(extra['train']),flush=True)
     x=np.stack([r['x'] for r in tr])
     y=np.stack([r['y'] for r in tr])
     k=np.stack([r['k'] for r in tr])
     src=np.stack([r['src'] for r in tr])
     ext=np.stack([r['ext'] for r in tr])
+    guard=np.stack([r['guard'] for r in tr])
     best=None
     for ell in (.6,1.,1.7,2.8,4.,6.):
         for lam in (.003,.03,.2):
@@ -86,23 +116,47 @@ def main():
     _,ell,lam,_=best
     model=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam)
     raw=report(model,dev)
-    best_self=(raw['cold_Z_rel_L2_mean'],None,None)
-    for sl in (1.2,1.8,2.5,3.5,5.):
-        for sr in (.001,.01,.05,.1):
-            candidate=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam)
-            candidate.fit_self(tr,sl,sr)
-            devs=report(candidate,dev)
-            if devs['cold_Z_rel_L2_mean']<best_self[0]:
-                best_self=(devs['cold_Z_rel_L2_mean'],sl,sr)
+    from sdfmpneo_bfzi.frac_memory import zmat
+    def current_err(candidate):
+        errs=[]
+        for row in dev:
+            guess=candidate.predict(row['case'])
+            target=np.linalg.solve(zmat(row['y'][:6])+row['ext'],[1.,0.])
+            got=np.linalg.solve(zmat(guess['z0'])+guess['ext'],[1.,0.])
+            errs.append(np.linalg.norm(got-target)/max(np.linalg.norm(target),1e-12))
+        return float(np.mean(errs))
+    baseline_current=current_err(model)
+    best_self=(baseline_current,None,None,None)
+    for dim in (2,3):
+        for sl in (.75,1.,1.5,2.,3.,5.):
+            for sr in (.01,.05,.1,.3):
+                candidate=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam)
+                candidate.fit_self(tr,sl,sr,dims=dim)
+                cur=current_err(candidate)
+                if cur<best_self[0]:
+                    best_self=(cur,dim,sl,sr)
     if best_self[1] is not None:
-        model.fit_self(tr,best_self[1],best_self[2])
+        model.fit_self(tr,best_self[2],best_self[3],dims=best_self[1])
+    model.set_guard(guard)
+    best_k=(float('inf'),None)
+    for exp in itertools.product((0.,.25,.5,1.),repeat=3):
+        model.set_kscale(exp)
+        err=np.mean([np.linalg.norm(model.predict(r['case'])['k']-r['k'])/
+                     np.linalg.norm(r['k']) for r in dev])
+        if err<best_k[0]:
+            best_k=(err,exp)
+    model.set_kscale(best_k[1])
     devres=report(model,dev)
     trainres=report(model,tr)
     data=dict(status='first geometry-only cold and shared-operator emulator',
               train_geometries=len(tr),dev_geometries=len(dev),
               rank=a.rank,
-              ell=ell,lam=lam,self_ell=best_self[1],
-              self_lambda=best_self[2],baseline_dev_Z_rel_L2=raw['cold_Z_rel_L2_mean'],
+              ell=ell,lam=lam,thermal_scale_exp=list(best_k[1]),
+              self_dims=best_self[1],self_ell=best_self[2],
+              self_lambda=best_self[3],
+              baseline_dev_current_rel_L2=baseline_current,
+              selected_dev_current_rel_L2=best_self[0],
+              baseline_dev_Z_rel_L2=raw['cold_Z_rel_L2_mean'],
               train=trainres,dev=devres,
               requires_BFZI_at_query=False,
               requires_FV_operator_at_query=False,

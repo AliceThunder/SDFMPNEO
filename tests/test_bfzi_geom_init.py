@@ -54,3 +54,57 @@ def test_shared_modal_order_accepts_64_coordinates():
     assert pred['k'].shape==(64,64)
     assert pred['src'].shape==(64,3)
     assert np.linalg.eigvalsh(pred['k'])[0]>0
+
+def test_physical_thermal_scaling_preserves_dissipation():
+    cases=[_case(.8),_case(.9),_case(.95)]
+    x=np.stack([encode(c) for c in cases])
+    y=np.zeros((3,14));y[:,9:]=np.log([1e5,400,400,20,20])
+    k=np.stack([np.eye(32)*v for v in (.01,.02,.03)])
+    src=np.ones((3,32,3))
+    ext=np.stack([np.eye(2,dtype=complex)]*3)
+    atlas=GeomInit.fit(x,y,k,src,ext).set_kscale((.5,.25,1.))
+    for c in cases:
+        op=atlas.predict(c)['k']
+        assert np.linalg.eigvalsh(op)[0]>0
+        assert np.allclose(op,op.T)
+
+
+def test_two_input_coil_predictor_preserves_cold_and_load(tmp_path):
+    cases=[_case(.8),_case(.9),_case(.95)]
+    x=np.stack([encode(c) for c in cases])
+    y=np.zeros((3,14))
+    y[:,0]=[.15,.17,.18]
+    y[:,1]=[19,18,17]
+    y[:,4]=[.14,.16,.17]
+    y[:,5]=[18,17,16]
+    y[:,9:]=np.log([1e5,400,400,20,20])
+    k=np.stack([np.eye(32)*v for v in (.01,.02,.03)])
+    src=np.ones((3,32,3))
+    ext=np.stack([np.eye(2,dtype=complex)]*3)
+    rows=[dict(case=c,y=t) for c,t in zip(cases,y)]
+    m=GeomInit.fit(x,y,k,src,ext).fit_self(rows,1.5,.1,dims=2)
+    z=m.predict(_case(.86))['z0']
+    assert z.shape==(6,) and np.isfinite(z).all()
+    assert m.sx.shape==(6,2)
+    m.save(tmp_path/'model.npz')
+    assert np.allclose(GeomInit.load(tmp_path/'model.npz').predict(_case(.86))['z0'],z)
+
+
+def test_cold_mix_keeps_material_conservation_operator():
+    from sdfmpneo_bfzi.geom_init import mix_init
+    cases=[_case(.8),_case(.9)]
+    x=np.stack([encode(c) for c in cases])
+    y=np.zeros((2,14));y[:,1]=[15,18]
+    y[:,9:]=np.log([1e5,400,400,20,20])
+    k=np.stack([np.eye(32)*v for v in (.01,.02)])
+    src=np.ones((2,32,3))
+    ext=np.stack([np.eye(2,dtype=complex)]*2)
+    a=GeomInit.fit(x,y,k,src,ext)
+    b=GeomInit.fit(x,y+0.01,k,src,ext)
+    base=a.predict(cases[0])
+    val=mix_init(cases[0],a,b,.2)
+    assert np.allclose(val['z0'],.8*base['z0']+.2*b.predict(cases[0])['z0'])
+    assert np.allclose(val['k'],base['k'])
+    assert np.allclose(val['src'],base['src'])
+    with pytest.raises(ValueError):
+        mix_init(cases[0],a,b,1.2)

@@ -1,0 +1,60 @@
+{
+  "geometry_count": 1,
+  "history_count": 3,
+  "rows": [
+    {
+      "file": "runs/bfzi_s5_W02_ultra_v9b_drive1.npz",
+      "cold_z_rel_L2": 0.005863836039142384,
+      "dynamic_z_rel_L2": 0.08562885885077919,
+      "full_z_rel_L2": 0.005863945108479673,
+      "material_mean_max_K": 0.05215936531817533,
+      "material_mean_rmse_K": 0.01923506302221599,
+      "sea_mean_max_K": 0.0012973575934438486,
+      "pkg_mean_max_K": 0.0378206547753166,
+      "copper_max_K": 0.05215936531817533,
+      "energy_budget_W": 1.8154864710664912e-12,
+      "seconds": 0.041386600001715124,
+      "geometry": "W02"
+    },
+    {
+      "file": "runs/bfzi_s5_W02_ultra_v9b_drive2.npz",
+      "cold_z_rel_L2": 0.005863836039142384,
+      "dynamic_z_rel_L2": 0.13216140839422263,
+      "full_z_rel_L2": 0.005864565455536919,
+      "material_mean_max_K": 0.32506186571117723,
+      "material_mean_rmse_K": 0.098025018521833,
+      "sea_mean_max_K": 0.007331061231752756,
+      "pkg_mean_max_K": 0.1566803968390218,
+      "copper_max_K": 0.32506186571117723,
+      "energy_budget_W": 1.2977634944753371e-13,
+      "seconds": 0.17113939998671412,
+      "geometry": "W02"
+    },
+    {
+      "file": "runs/bfzi_s5_W02_ultra_v9b_drive3.npz",
+      "cold_z_rel_L2": 0.005863836039142384,
+      "dynamic_z_rel_L2": 0.1352214220854266,
+      "full_z_rel_L2": 0.00586539904737274,
+      "material_mean_max_K": 0.6242754042711454,
+      "material_mean_rmse_K": 0.18495342104959311,
+      "sea_mean_max_K": 0.012166373720276624,
+      "pkg_mean_max_K": 0.32461272511881134,
+      "copper_max_K": 0.6242754042711454,
+      "energy_budget_W": 2.3935815847558487e-13,
+      "seconds": 0.33368600002722815,
+      "geometry": "W02"
+    }
+  ],
+  "summary": {
+    "cold_z_rel_L2_mean": 0.005863836039142384,
+    "dynamic_z_rel_L2_mean": 0.1176705631101428,
+    "full_z_rel_L2_mean": 0.005864636537129778,
+    "material_mean_max_K_mean": 0.33383221176683264,
+    "material_mean_rmse_K_mean": 0.1007378341978807,
+    "sea_mean_max_K_mean": 0.006931597515157743,
+    "pkg_mean_max_K_mean": 0.17303792557771658,
+    "copper_max_K_mean": 0.33383221176683264,
+    "energy_budget_W_mean": 7.282069929965366e-13,
+    "seconds_mean": 0.1820706666718858
+  }
+}

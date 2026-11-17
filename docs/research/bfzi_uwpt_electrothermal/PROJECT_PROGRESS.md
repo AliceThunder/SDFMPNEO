@@ -965,3 +965,23 @@ replacement for V9's complete EM/thermal autonomous and 3-D
 query pipeline. See GEOMFRAC_GEOMETRY_FREE_V1.md.
 Next task: more independent cold-only training geometries and
 an end-to-end cold-start shared-coordinate reduced dynamic solver.
+
+## 2026-11-16 ? BFZI-free shared-coordinate autonomous temporal surrogate
+
+Added geometry-only cold atlas training on 24 extra independent cold
+geometries (total 54), compact cold-only dataset generation, a fully
+BFZI-free 32-mode conservative electrothermal time loop, matched-current
+cold-port training, material-parameter-normalized positive thermal K,
+and a developer-selected optional 20% cold-port blend. Developer K
+relative Frobenius 17.719% -> 5.100%. Best 30-geometry full
+BFZI-free loop: dynamic Z 33.006%, 5-material temperature mean
+max-error mean 2.697 K. Optional blend: dynamic Z 32.506% with
+slightly higher group-temperature error. Previously seen W retrospective
+dynamic-Z mean 19.993% -> 19.004%, with W03/W04 regressions.
+First W01 600 s Python process including model loading and file save
+ran in 0.382 s without BFZI cold solve, geometry FV grid/basis
+or implicit full-field solve. Material energy residual <1e-12 W.
+This V2 prototype outputs 5 material mean temperatures; the
+anchor-free 3D spatial reconstruction and joint training are still
+open. Accepted production model remains anchored V9.
+See GEOMFRAC_GEOMETRY_FREE_V2.md.

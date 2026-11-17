@@ -1,0 +1,840 @@
+{
+  "results": [
+    {
+      "case": "T04",
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.5033795109302949,
+          "full_z_rel_L2": 0.016758403960071645,
+          "material_mean_max_K": 2.2010502615025302,
+          "material_mean_rmse_K": 0.7627335825818644,
+          "sea_mean_max_K": 0.005741356386408825,
+          "pkg_mean_max_K": 0.6493561827161898,
+          "copper_max_K": 2.2010502615025302,
+          "energy_budget_W": 2.1266932607784358e-13
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.09561155369002258,
+          "full_z_rel_L2": 3.408950965105969e-06,
+          "material_mean_max_K": 0.4052663421286411,
+          "material_mean_rmse_K": 0.12073359855899699,
+          "sea_mean_max_K": 0.0017453147717674256,
+          "pkg_mean_max_K": 0.05296599626939269,
+          "copper_max_K": 0.4052663421286411,
+          "energy_budget_W": 8.45972026348842e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.3506364670942873,
+          "full_z_rel_L2": 0.016757407445904256,
+          "material_mean_max_K": 1.5866827216104298,
+          "material_mean_rmse_K": 0.5569659707476697,
+          "sea_mean_max_K": 0.005814731987356936,
+          "pkg_mean_max_K": 0.6368993672817851,
+          "copper_max_K": 1.5866827216104298,
+          "energy_budget_W": 1.2945089413433958e-13
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.07048167945166854,
+          "full_z_rel_L2": 2.512966058139005e-06,
+          "material_mean_max_K": 0.21601218545180245,
+          "material_mean_rmse_K": 0.07114889952808594,
+          "sea_mean_max_K": 0.0017714997907205543,
+          "pkg_mean_max_K": 0.015657643138411004,
+          "copper_max_K": 0.21601218545180245,
+          "energy_budget_W": 6.44240235450272e-12
+        }
+      }
+    },
+    {
+      "case": "T04",
+      "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.5119483267696588,
+          "full_z_rel_L2": 0.016759356172984137,
+          "material_mean_max_K": 4.142056248761378,
+          "material_mean_rmse_K": 1.666002626383916,
+          "sea_mean_max_K": 0.013790940708815924,
+          "pkg_mean_max_K": 1.5639241353431999,
+          "copper_max_K": 4.142056248761378,
+          "energy_budget_W": 4.7526971132178955e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.0898443311155743,
+          "full_z_rel_L2": 6.875711095325803e-06,
+          "material_mean_max_K": 0.7518246141527811,
+          "material_mean_rmse_K": 0.2695818767966674,
+          "sea_mean_max_K": 0.004162838935258151,
+          "pkg_mean_max_K": 0.11563846911917608,
+          "copper_max_K": 0.7518246141527811,
+          "energy_budget_W": 1.3851629881975546e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.3614966456441977,
+          "full_z_rel_L2": 0.016757092201347527,
+          "material_mean_max_K": 3.1154422180232473,
+          "material_mean_rmse_K": 1.2267339110867395,
+          "sea_mean_max_K": 0.013948041798528266,
+          "pkg_mean_max_K": 1.5338884504950556,
+          "copper_max_K": 3.1154422180232473,
+          "energy_budget_W": 2.4225810187997835e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.055451688948092825,
+          "full_z_rel_L2": 4.243671116705217e-06,
+          "material_mean_max_K": 0.33098528779657954,
+          "material_mean_rmse_K": 0.12281252087755536,
+          "sea_mean_max_K": 0.004243503617942679,
+          "pkg_mean_max_K": 0.035278098476567266,
+          "copper_max_K": 0.33098528779657954,
+          "energy_budget_W": 5.949693372123724e-13
+        }
+      }
+    },
+    {
+      "case": "T04",
+      "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.49647913798924526,
+          "full_z_rel_L2": 0.0167594990917642,
+          "material_mean_max_K": 3.32789667622842,
+          "material_mean_rmse_K": 1.057395975357389,
+          "sea_mean_max_K": 0.019283256159781104,
+          "pkg_mean_max_K": 1.460886037498085,
+          "copper_max_K": 3.32789667622842,
+          "energy_budget_W": 4.957656117963915e-13
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.13663201829542157,
+          "full_z_rel_L2": 6.742796313171074e-06,
+          "material_mean_max_K": 0.7540516912613953,
+          "material_mean_rmse_K": 0.18525573361995964,
+          "sea_mean_max_K": 0.005054564576767007,
+          "pkg_mean_max_K": 0.17389548106416441,
+          "copper_max_K": 0.7540516912613953,
+          "energy_budget_W": 8.45972026348842e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+          "cold_z_rel_L2": 0.016758020853804782,
+          "dynamic_z_rel_L2": 0.4206231845930826,
+          "full_z_rel_L2": 0.016758350338680672,
+          "material_mean_max_K": 2.629776163458132,
+          "material_mean_rmse_K": 0.8910226753414063,
+          "sea_mean_max_K": 0.01986247024547083,
+          "pkg_mean_max_K": 1.3729868961038392,
+          "copper_max_K": 2.629776163458132,
+          "energy_budget_W": 1.0032444295411316e-11
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+          "cold_z_rel_L2": 2.179319169096971e-18,
+          "dynamic_z_rel_L2": 0.11093813793722924,
+          "full_z_rel_L2": 5.474802149638319e-06,
+          "material_mean_max_K": 0.32689295760894765,
+          "material_mean_rmse_K": 0.09269174081176636,
+          "sea_mean_max_K": 0.005376940840847055,
+          "pkg_mean_max_K": 0.18966307440575747,
+          "copper_max_K": 0.32689295760894765,
+          "energy_budget_W": 6.44240235450272e-12
+        }
+      }
+    },
+    {
+      "case": "D01",
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.5371301878294172,
+          "full_z_rel_L2": 0.03768248742124671,
+          "material_mean_max_K": 0.877766437874584,
+          "material_mean_rmse_K": 0.3890260905193383,
+          "sea_mean_max_K": 0.0034891229897198173,
+          "pkg_mean_max_K": 0.44103031800858616,
+          "copper_max_K": 0.877766437874584,
+          "energy_budget_W": 3.0362464458944204e-13
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.08255174365169529,
+          "full_z_rel_L2": 1.465488484432099e-06,
+          "material_mean_max_K": 0.15184350244834377,
+          "material_mean_rmse_K": 0.057164445665468154,
+          "sea_mean_max_K": 0.0009060991845331046,
+          "pkg_mean_max_K": 0.01934722031074898,
+          "copper_max_K": 0.15184350244834377,
+          "energy_budget_W": 4.6347123733155675e-14
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.584965305200623,
+          "full_z_rel_L2": 0.037682389436325854,
+          "material_mean_max_K": 0.9888262355336224,
+          "material_mean_rmse_K": 0.42264613960076336,
+          "sea_mean_max_K": 0.0034314050576540467,
+          "pkg_mean_max_K": 0.4820010178663665,
+          "copper_max_K": 0.9888262355336224,
+          "energy_budget_W": 2.943536630752606e-13
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.06887174138619229,
+          "full_z_rel_L2": 1.2226361241996125e-06,
+          "material_mean_max_K": 0.12897869096411796,
+          "material_mean_rmse_K": 0.04443668375547829,
+          "sea_mean_max_K": 0.0008713283434644836,
+          "pkg_mean_max_K": 0.0065418634075058435,
+          "copper_max_K": 0.12897869096411796,
+          "energy_budget_W": 7.415539797304908e-14
+        }
+      }
+    },
+    {
+      "case": "D01",
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.5796426749477318,
+          "full_z_rel_L2": 0.037682649986902864,
+          "material_mean_max_K": 3.1744716522268277,
+          "material_mean_rmse_K": 1.3258354819702638,
+          "sea_mean_max_K": 0.02235875321838421,
+          "pkg_mean_max_K": 2.1202186402895222,
+          "copper_max_K": 3.1744716522268277,
+          "energy_budget_W": 7.611475823142958e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.08345043448786303,
+          "full_z_rel_L2": 4.626311359168871e-06,
+          "material_mean_max_K": 0.468935486977216,
+          "material_mean_rmse_K": 0.1306210824599085,
+          "sea_mean_max_K": 0.0055850524310017136,
+          "pkg_mean_max_K": 0.17361204948451814,
+          "copper_max_K": 0.468935486977216,
+          "energy_budget_W": 1.1169656819690518e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.6231932899681303,
+          "full_z_rel_L2": 0.03768162263766566,
+          "material_mean_max_K": 3.7033038857754264,
+          "material_mean_rmse_K": 1.4545918666218747,
+          "sea_mean_max_K": 0.021444543422717288,
+          "pkg_mean_max_K": 2.4402545738076924,
+          "copper_max_K": 3.7033038857754264,
+          "energy_budget_W": 7.263814016361155e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.08970199171974634,
+          "full_z_rel_L2": 4.972884153089778e-06,
+          "material_mean_max_K": 0.41823119783214224,
+          "material_mean_rmse_K": 0.11816124505756852,
+          "sea_mean_max_K": 0.005026136421747651,
+          "pkg_mean_max_K": 0.09678498390121604,
+          "copper_max_K": 0.41823119783214224,
+          "energy_budget_W": 1.3440665882615147e-12
+        }
+      }
+    },
+    {
+      "case": "D01",
+      "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.6363719267158381,
+          "full_z_rel_L2": 0.037682765018792294,
+          "material_mean_max_K": 4.396123247903176,
+          "material_mean_rmse_K": 1.8765985772749998,
+          "sea_mean_max_K": 0.040919166168521315,
+          "pkg_mean_max_K": 3.1871391792400345,
+          "copper_max_K": 4.396123247903176,
+          "energy_budget_W": 3.370001780404952e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.12670168020482303,
+          "full_z_rel_L2": 9.872329953299652e-06,
+          "material_mean_max_K": 0.5473838556699206,
+          "material_mean_rmse_K": 0.19453485339788448,
+          "sea_mean_max_K": 0.009688393731380529,
+          "pkg_mean_max_K": 0.5473838556699206,
+          "copper_max_K": 0.5003678864085259,
+          "energy_budget_W": 4.959142239447657e-13
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.03768263456342442,
+          "dynamic_z_rel_L2": 0.6879692920397327,
+          "full_z_rel_L2": 0.03768135430430406,
+          "material_mean_max_K": 5.20919442479169,
+          "material_mean_rmse_K": 2.1254113478627437,
+          "sea_mean_max_K": 0.0391168118772498,
+          "pkg_mean_max_K": 3.7225708883523225,
+          "copper_max_K": 5.20919442479169,
+          "energy_budget_W": 3.94016714352711e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.189052967536134e-18,
+          "dynamic_z_rel_L2": 0.13240614293824865,
+          "full_z_rel_L2": 1.0316809759878863e-05,
+          "material_mean_max_K": 0.502831162062364,
+          "material_mean_rmse_K": 0.16702151206544222,
+          "sea_mean_max_K": 0.008562297268667862,
+          "pkg_mean_max_K": 0.27098819464418966,
+          "copper_max_K": 0.502831162062364,
+          "energy_budget_W": 5.654349095444993e-13
+        }
+      }
+    },
+    {
+      "case": "D02",
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.10498060859624003,
+          "full_z_rel_L2": 0.015725585605199446,
+          "material_mean_max_K": 0.5871586404595632,
+          "material_mean_rmse_K": 0.2683207765307934,
+          "sea_mean_max_K": 0.01041886542532211,
+          "pkg_mean_max_K": 0.5871586404595632,
+          "copper_max_K": 0.5774796633504593,
+          "energy_budget_W": 5.890305284606056e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.14854340005799524,
+          "full_z_rel_L2": 1.0560005113477574e-05,
+          "material_mean_max_K": 1.0288944687685557,
+          "material_mean_rmse_K": 0.4214820806453141,
+          "sea_mean_max_K": 0.0031669458370515713,
+          "pkg_mean_max_K": 0.03862662066075018,
+          "copper_max_K": 1.0288944687685557,
+          "energy_budget_W": 2.456217152953549e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.19800408070360326,
+          "full_z_rel_L2": 0.01572072647715126,
+          "material_mean_max_K": 1.0963201957450224,
+          "material_mean_rmse_K": 0.49434405152921956,
+          "sea_mean_max_K": 0.010555809999289067,
+          "pkg_mean_max_K": 0.5297484114753956,
+          "copper_max_K": 1.0963201957450224,
+          "energy_budget_W": 4.516822518711999e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.05431879264493303,
+          "full_z_rel_L2": 3.861543009413641e-06,
+          "material_mean_max_K": 0.46076041181243,
+          "material_mean_rmse_K": 0.13459482827468605,
+          "sea_mean_max_K": 0.0032850811542175506,
+          "pkg_mean_max_K": 0.044166129604946036,
+          "copper_max_K": 0.46076041181243,
+          "energy_budget_W": 4.349166462560608e-12
+        }
+      }
+    },
+    {
+      "case": "D02",
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.24727674415196393,
+          "full_z_rel_L2": 0.015715226953293682,
+          "material_mean_max_K": 3.20048093089099,
+          "material_mean_rmse_K": 1.5043053979976124,
+          "sea_mean_max_K": 0.0592497247066035,
+          "pkg_mean_max_K": 3.011608945299031,
+          "copper_max_K": 3.20048093089099,
+          "energy_budget_W": 3.189429778519085e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.12992049813526776,
+          "full_z_rel_L2": 2.7920088096649903e-05,
+          "material_mean_max_K": 2.339519823002206,
+          "material_mean_rmse_K": 0.7498011577806583,
+          "sea_mean_max_K": 0.016038231899074162,
+          "pkg_mean_max_K": 0.8010593638512091,
+          "copper_max_K": 2.339519823002206,
+          "energy_budget_W": 1.3887784203165931e-11
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.2751306550393248,
+          "full_z_rel_L2": 0.015710320088220573,
+          "material_mean_max_K": 3.6438793722659852,
+          "material_mean_rmse_K": 1.5974549813145147,
+          "sea_mean_max_K": 0.061621597024611674,
+          "pkg_mean_max_K": 2.6640664404123413,
+          "copper_max_K": 3.6438793722659852,
+          "energy_budget_W": 8.812412914058513e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.11322772030319807,
+          "full_z_rel_L2": 2.433278790662236e-05,
+          "material_mean_max_K": 1.6666848011108755,
+          "material_mean_rmse_K": 0.41898356714143253,
+          "sea_mean_max_K": 0.017963725480456105,
+          "pkg_mean_max_K": 0.5335777010389506,
+          "copper_max_K": 1.6666848011108755,
+          "energy_budget_W": 5.3925970576123034e-12
+        }
+      }
+    },
+    {
+      "case": "D02",
+      "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.2806286556188384,
+          "full_z_rel_L2": 0.015707895061565186,
+          "material_mean_max_K": 5.3718984811550285,
+          "material_mean_rmse_K": 2.4494726793366315,
+          "sea_mean_max_K": 0.10017982168432127,
+          "pkg_mean_max_K": 5.3718984811550285,
+          "copper_max_K": 4.869564436866995,
+          "energy_budget_W": 1.3163311340246397e-11
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.10301762654285654,
+          "full_z_rel_L2": 3.086733634843202e-05,
+          "material_mean_max_K": 1.905521559709598,
+          "material_mean_rmse_K": 0.7811690511524699,
+          "sea_mean_max_K": 0.0251284460360921,
+          "pkg_mean_max_K": 1.6707651434680315,
+          "copper_max_K": 1.905521559709598,
+          "energy_budget_W": 1.301979769046806e-11
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.015726619913756523,
+          "dynamic_z_rel_L2": 0.2848904974700045,
+          "full_z_rel_L2": 0.015706597710618796,
+          "material_mean_max_K": 4.664803192669808,
+          "material_mean_rmse_K": 2.189347062427879,
+          "sea_mean_max_K": 0.1053599997579795,
+          "pkg_mean_max_K": 4.51521128869723,
+          "copper_max_K": 4.664803192669808,
+          "energy_budget_W": 2.3413733056180565e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.147973665240717e-18,
+          "dynamic_z_rel_L2": 0.10007054878281689,
+          "full_z_rel_L2": 2.998429872160165e-05,
+          "material_mean_max_K": 1.6294401032069459,
+          "material_mean_rmse_K": 0.5661989736117312,
+          "sea_mean_max_K": 0.02927009495948596,
+          "pkg_mean_max_K": 1.0418511249798712,
+          "copper_max_K": 1.6294401032069459,
+          "energy_budget_W": 1.2004068792630126e-11
+        }
+      }
+    },
+    {
+      "case": "D03",
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.2826519741034584,
+          "full_z_rel_L2": 0.016102803596643935,
+          "material_mean_max_K": 0.6291344166018007,
+          "material_mean_rmse_K": 0.26701042691606053,
+          "sea_mean_max_K": 0.0020900258444385145,
+          "pkg_mean_max_K": 0.159208170302918,
+          "copper_max_K": 0.6291344166018007,
+          "energy_budget_W": 1.7999382997321677e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.13747939003521417,
+          "full_z_rel_L2": 3.1331005174271487e-06,
+          "material_mean_max_K": 0.40432700037160885,
+          "material_mean_rmse_K": 0.13827319362402735,
+          "sea_mean_max_K": 0.0012392828128326983,
+          "pkg_mean_max_K": 0.02957788458320465,
+          "copper_max_K": 0.40432700037160885,
+          "energy_budget_W": 1.370388847569857e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.13559696577841115,
+          "full_z_rel_L2": 0.01610241327500172,
+          "material_mean_max_K": 0.37372038585874634,
+          "material_mean_rmse_K": 0.13291307766343416,
+          "sea_mean_max_K": 0.002244842917832557,
+          "pkg_mean_max_K": 0.18146387941987996,
+          "copper_max_K": 0.37372038585874634,
+          "energy_budget_W": 7.740667299366317e-13
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.03798692748718835,
+          "full_z_rel_L2": 8.657069407627244e-07,
+          "material_mean_max_K": 0.09791820418570296,
+          "material_mean_rmse_K": 0.02840930877857957,
+          "sea_mean_max_K": 0.0013723402118444028,
+          "pkg_mean_max_K": 0.03527054035959054,
+          "copper_max_K": 0.09791820418570296,
+          "energy_budget_W": 6.085455560394958e-13
+        }
+      }
+    },
+    {
+      "case": "D03",
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.2582614728506367,
+          "full_z_rel_L2": 0.016102011182391313,
+          "material_mean_max_K": 2.4432786920804688,
+          "material_mean_rmse_K": 0.8785335054037579,
+          "sea_mean_max_K": 0.012383906090292385,
+          "pkg_mean_max_K": 0.8617069363953647,
+          "copper_max_K": 2.4432786920804688,
+          "energy_budget_W": 4.756313641779304e-13
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.10782379394776767,
+          "full_z_rel_L2": 8.230388295269892e-06,
+          "material_mean_max_K": 1.4754134196327868,
+          "material_mean_rmse_K": 0.40397195647062784,
+          "sea_mean_max_K": 0.006917940937171352,
+          "pkg_mean_max_K": 0.21886943170238737,
+          "copper_max_K": 1.4754134196327868,
+          "energy_budget_W": 7.562688284216024e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.16877013947356176,
+          "full_z_rel_L2": 0.016100588255411302,
+          "material_mean_max_K": 1.2563877447306595,
+          "material_mean_rmse_K": 0.5269698151757405,
+          "sea_mean_max_K": 0.014635701184317895,
+          "pkg_mean_max_K": 0.6201833818456635,
+          "copper_max_K": 1.2563877447306595,
+          "energy_budget_W": 1.0379955065294833e-11
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.027063243491182512,
+          "full_z_rel_L2": 2.0657870986213594e-06,
+          "material_mean_max_K": 0.511466679440332,
+          "material_mean_rmse_K": 0.13979860125376933,
+          "sea_mean_max_K": 0.008890608437866376,
+          "pkg_mean_max_K": 0.511466679440332,
+          "copper_max_K": 0.29562188260786115,
+          "energy_budget_W": 6.224817138113926e-12
+        }
+      }
+    },
+    {
+      "case": "D03",
+      "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.2275316452877826,
+          "full_z_rel_L2": 0.016101979859835493,
+          "material_mean_max_K": 2.845964798593741,
+          "material_mean_rmse_K": 0.975391856525875,
+          "sea_mean_max_K": 0.02401616091140113,
+          "pkg_mean_max_K": 0.8422205900669724,
+          "copper_max_K": 2.845964798593741,
+          "energy_budget_W": 8.262929189444045e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.0990791895211852,
+          "full_z_rel_L2": 1.0783339251567365e-05,
+          "material_mean_max_K": 1.5474710938211729,
+          "material_mean_rmse_K": 0.44234689776068364,
+          "sea_mean_max_K": 0.01323644070237151,
+          "pkg_mean_max_K": 0.45259487665407505,
+          "copper_max_K": 1.5474710938211729,
+          "energy_budget_W": 4.840492132772172e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.016103625475693124,
+          "dynamic_z_rel_L2": 0.1366488865984683,
+          "full_z_rel_L2": 0.0161001880207111,
+          "material_mean_max_K": 1.2008866004924812,
+          "material_mean_rmse_K": 0.506269441727942,
+          "sea_mean_max_K": 0.02876969875217128,
+          "pkg_mean_max_K": 0.7374187635014096,
+          "copper_max_K": 1.2008866004924812,
+          "energy_budget_W": 8.304896662753862e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.0841913709223042e-18,
+          "dynamic_z_rel_L2": 0.041263350641637525,
+          "full_z_rel_L2": 4.490919947724566e-06,
+          "material_mean_max_K": 1.5814753460116435,
+          "material_mean_rmse_K": 0.43222642216075624,
+          "sea_mean_max_K": 0.01733811855615386,
+          "pkg_mean_max_K": 1.5814753460116435,
+          "copper_max_K": 0.8025816037443292,
+          "energy_budget_W": 7.074922762199634e-12
+        }
+      }
+    },
+    {
+      "case": "D04",
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.36532035546150105,
+          "full_z_rel_L2": 0.032471779345687485,
+          "material_mean_max_K": 0.6303280641159859,
+          "material_mean_rmse_K": 0.22062798585039067,
+          "sea_mean_max_K": 0.0020461248952301503,
+          "pkg_mean_max_K": 0.32243612229365226,
+          "copper_max_K": 0.6303280641159859,
+          "energy_budget_W": 3.4471162171756813e-14
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.04535991275735006,
+          "full_z_rel_L2": 8.129221423130096e-07,
+          "material_mean_max_K": 0.038013881104234315,
+          "material_mean_rmse_K": 0.018547993584367897,
+          "sea_mean_max_K": 0.0008503232405132621,
+          "pkg_mean_max_K": 0.02947915145227853,
+          "copper_max_K": 0.038013881104234315,
+          "energy_budget_W": 2.7789794993797616e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.26813345432897995,
+          "full_z_rel_L2": 0.03247104046169036,
+          "material_mean_max_K": 0.4275766513549115,
+          "material_mean_rmse_K": 0.15757082842643821,
+          "sea_mean_max_K": 0.002093334140965908,
+          "pkg_mean_max_K": 0.25653987037247816,
+          "copper_max_K": 0.4275766513549115,
+          "energy_budget_W": 8.54799499149455e-14
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.045362267811101496,
+          "full_z_rel_L2": 8.129643486413695e-07,
+          "material_mean_max_K": 0.11495801187396637,
+          "material_mean_rmse_K": 0.03807466920655967,
+          "sea_mean_max_K": 0.0008892143291632237,
+          "pkg_mean_max_K": 0.018423917685140623,
+          "copper_max_K": 0.11495801187396637,
+          "energy_budget_W": 2.6239584936719488e-12
+        }
+      }
+    },
+    {
+      "case": "D04",
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.366440651155821,
+          "full_z_rel_L2": 0.03247680709080458,
+          "material_mean_max_K": 2.333469770616091,
+          "material_mean_rmse_K": 0.7446578273749954,
+          "sea_mean_max_K": 0.012252414916531507,
+          "pkg_mean_max_K": 1.4590519136394278,
+          "copper_max_K": 2.333469770616091,
+          "energy_budget_W": 5.239616650107035e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.07991949547567583,
+          "full_z_rel_L2": 4.623137763962076e-06,
+          "material_mean_max_K": 0.366167868290006,
+          "material_mean_rmse_K": 0.10635234841420708,
+          "sea_mean_max_K": 0.004772151205543196,
+          "pkg_mean_max_K": 0.1016348348926499,
+          "copper_max_K": 0.366167868290006,
+          "energy_budget_W": 2.7630214546745456e-12
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.2630208521981477,
+          "full_z_rel_L2": 0.032473926141164865,
+          "material_mean_max_K": 1.412031733393917,
+          "material_mean_rmse_K": 0.4837127920462065,
+          "sea_mean_max_K": 0.01297047967528897,
+          "pkg_mean_max_K": 0.9612239446849458,
+          "copper_max_K": 1.412031733393917,
+          "energy_budget_W": 3.649347035249988e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.071393169211916,
+          "full_z_rel_L2": 4.1299116655834985e-06,
+          "material_mean_max_K": 0.418950924041269,
+          "material_mean_rmse_K": 0.1347337267751341,
+          "sea_mean_max_K": 0.00533902893459981,
+          "pkg_mean_max_K": 0.29328415778161343,
+          "copper_max_K": 0.418950924041269,
+          "energy_budget_W": 4.641511288545689e-12
+        }
+      }
+    },
+    {
+      "case": "D04",
+      "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+      "by_model": {
+        "all_pred": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.37867051234749477,
+          "full_z_rel_L2": 0.032478503536415716,
+          "material_mean_max_K": 2.913589078880534,
+          "material_mean_rmse_K": 0.9850198635485017,
+          "sea_mean_max_K": 0.02152736421459167,
+          "pkg_mean_max_K": 1.677132175755844,
+          "copper_max_K": 2.913589078880534,
+          "energy_budget_W": 4.067597136267304e-12
+        },
+        "cold_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.16333116468007608,
+          "full_z_rel_L2": 1.348472042064767e-05,
+          "material_mean_max_K": 0.9984756763045652,
+          "material_mean_rmse_K": 0.2582026455069577,
+          "sea_mean_max_K": 0.007985054381720147,
+          "pkg_mean_max_K": 0.5137524743931863,
+          "copper_max_K": 0.9984756763045652,
+          "energy_budget_W": 2.4681340763182746e-13
+        },
+        "heat_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 0.032469223529387,
+          "dynamic_z_rel_L2": 0.28788492257320347,
+          "full_z_rel_L2": 0.03247393641057057,
+          "material_mean_max_K": 1.5615392766576406,
+          "material_mean_rmse_K": 0.5719608039502244,
+          "sea_mean_max_K": 0.022993779838316186,
+          "pkg_mean_max_K": 0.9365653363847173,
+          "copper_max_K": 1.5615392766576406,
+          "energy_budget_W": 6.0715206971854335e-12
+        },
+        "all_true": {
+          "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+          "cold_z_rel_L2": 2.5450276577909107e-18,
+          "dynamic_z_rel_L2": 0.17390803239943547,
+          "full_z_rel_L2": 1.435795306061046e-05,
+          "material_mean_max_K": 0.885904348349527,
+          "material_mean_rmse_K": 0.331743856117522,
+          "sea_mean_max_K": 0.009036351552651922,
+          "pkg_mean_max_K": 0.885904348349527,
+          "copper_max_K": 0.8543814183697691,
+          "energy_budget_W": 2.6497716490343383e-13
+        }
+      }
+    }
+  ],
+  "summary": {
+    "all_pred": {
+      "dynamic_z_rel_L2_mean": 0.3851142923170615,
+      "material_mean_max_K_mean": 2.6049778265260746,
+      "copper_max_K_mean": 2.5708436250995987,
+      "energy_budget_W_mean": 3.9246309669667504e-12
+    },
+    "cold_true": {
+      "dynamic_z_rel_L2_mean": 0.10861774883991923,
+      "material_mean_max_K_mean": 0.8788740189095354,
+      "copper_max_K_mean": 0.8757396209587758,
+      "energy_budget_W_mean": 4.592667547843541e-12
+    },
+    "heat_true": {
+      "dynamic_z_rel_L2_mean": 0.3364643092469173,
+      "material_mean_max_K_mean": 2.1913580534907813,
+      "copper_max_K_mean": 2.1913580534907813,
+      "energy_budget_W_mean": 4.6012457273355485e-12
+    },
+    "all_true": {
+      "dynamic_z_rel_L2_mean": 0.07949636234363915,
+      "material_mean_max_K_mean": 0.6194326874499098,
+      "copper_max_K_mean": 0.5510152561779402,
+      "energy_budget_W_mean": 3.90986637721827e-12
+    }
+  }
+}
