@@ -28,7 +28,7 @@
   "Y01_Y06": "previous Y error analysis informed method design; no fitting data were taken from Y, but Y is not treated as blind for this candidate",
   "next": "Allow all 18 S5 teachers to finish, then run the frozen local-skin tangent candidate once on Z01-Z06.",
   "checkpoint_path": "runs/geomfrac_free_skin_tan_v1.pt",
-  "checkpoint_commit": "50a20c7812f72f1edc58d490acc661d4cf1eb6e5",
+  "checkpoint_commit": "09913f3c494d9c5cf12fb89ad42c864083ff3f6a",
   "physics_generation": {
     "device": "XEnergy-Zhucy",
     "repo_path": "D:\\work\\geomfrac-train",
@@ -57,6 +57,8 @@
       "max_global_budget_W": 3.413020976950065e-10,
       "max_port_power_residual_W": 9.947598300641403e-14,
       "skin_clip_fraction": 0
-    }
-  }
+    },
+    "checkpoint_restore_test": "passed; restore() returned time-conditioned tangent"
+  },
+  "checkpoint_safe_load": "passed with torch.load(weights_only=True); sa/ss/sy stored as float32 tensors"
 }
