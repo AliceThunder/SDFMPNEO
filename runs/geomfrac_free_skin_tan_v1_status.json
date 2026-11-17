@@ -1,5 +1,5 @@
 {
-  "status": "fresh_holdout_physics_running",
+  "status": "local_skin_tangent_v1_v4_diagnostic_complete_not_selected",
   "candidate": "port-factorized local-skin impedance tangent",
   "best_epoch": 80,
   "train_geometries": 30,
@@ -24,9 +24,9 @@
     "Z06"
   ],
   "fresh_holdout_histories": 18,
-  "fresh_holdout_physics": "pending",
+  "fresh_holdout_physics": "completed_candidate_18_of_18",
   "Y01_Y06": "previous Y error analysis informed method design; no fitting data were taken from Y, but Y is not treated as blind for this candidate",
-  "next": "Allow all 18 S5 teachers to finish, then run the frozen local-skin tangent candidate once on Z01-Z06.",
+  "next": "Investigate the frozen V6 base seawater dynamic-impedance predictor and V7 local-skin mode teacher/decoder error before trying another residual head. Z01-Z06 are diagnostic only; freeze a new holdout after selecting the next method.",
   "checkpoint_path": "runs/geomfrac_free_skin_tan_v1.pt",
   "checkpoint_commit": "09913f3c494d9c5cf12fb89ad42c864083ff3f6a",
   "physics_generation": {
@@ -39,13 +39,13 @@
     "inner_step_s": 1.875,
     "log": "runs/free8_build.log",
     "stderr": "runs/free8_build.err",
-    "completed_histories": 2,
+    "completed_histories": 18,
     "failed_histories": 0,
     "first_completed": "Z01/60s",
     "failure_policy": "per-history failure is recorded and the next excitation/geometry continues",
     "resume": "candidate histories are skipped; failed and incomplete histories are retried",
     "current_geometry": "Z01",
-    "last_completed": "Z01/300s",
+    "last_completed": "Z06/600s",
     "first_teacher_quality": {
       "geometry": "Z01",
       "duration_s": 60,
@@ -58,7 +58,40 @@
       "max_port_power_residual_W": 9.947598300641403e-14,
       "skin_clip_fraction": 0
     },
-    "checkpoint_restore_test": "passed; restore() returned time-conditioned tangent"
+    "checkpoint_restore_test": "passed; restore() returned time-conditioned tangent",
+    "completed_geometries": [
+      "Z01",
+      "Z02",
+      "Z03",
+      "Z04",
+      "Z05",
+      "Z06"
+    ]
   },
-  "checkpoint_safe_load": "passed with torch.load(weights_only=True); sa/ss/sy stored as float32 tensors"
+  "checkpoint_safe_load": "passed with torch.load(weights_only=True); sa/ss/sy stored as float32 tensors",
+  "v2_v4_summary": "runs/geomfrac_free_skin_tan_v2_v4_summary.json",
+  "v2_v4_document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_FREE_SKINTAN_V2_V4.md",
+  "variants": {
+    "v1": {
+      "dev_dynamic_z_pct": 10.877213990632677,
+      "z_diagnostic_dynamic_z_pct": 40.15248,
+      "best_epoch": 80
+    },
+    "v2": {
+      "dev_dynamic_z_pct": 10.929512816891602,
+      "z_diagnostic_dynamic_z_pct": 40.412765,
+      "best_epoch": 90
+    },
+    "v3": {
+      "dev_dynamic_z_pct": 11.026335803859604,
+      "z_diagnostic_dynamic_z_pct": 40.3501,
+      "best_epoch": 80
+    },
+    "v4": {
+      "dev_dynamic_z_pct": 10.817390803241334,
+      "z_diagnostic_dynamic_z_pct": 40.1966,
+      "best_epoch": 130
+    }
+  },
+  "formal_decision": "retain V6; none of V1-V4 improves aggregate Z01-Z06 dynamic impedance error over V6 baseline 40.093686%"
 }
