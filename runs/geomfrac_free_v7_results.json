@@ -1,0 +1,162 @@
+{
+  "status": "complete_18_of_18_candidate",
+  "physics": {
+    "geometry_count": 6,
+    "histories": 18,
+    "durations_s": [
+      60,
+      300,
+      600
+    ],
+    "failed": 0,
+    "failed_reasons": [],
+    "total_teacher_build_s": 4715.73168940004,
+    "max_teacher_elapsed_s": 475.2673469000147
+  },
+  "v6_shape_mix_0_5": {
+    "metrics": {
+      "material_sea_rmse_K_mean": 0.0023395886346510575,
+      "material_pkg_tx_rmse_K_mean": 0.6551573493643579,
+      "material_pkg_rx_rmse_K_mean": 0.7293277079662109,
+      "material_cu_tx_rmse_K_mean": 1.197997585660565,
+      "material_cu_rx_rmse_K_mean": 1.3719152105646355,
+      "material_sea_max_K_mean": 0.003991442109878562,
+      "material_pkg_tx_max_K_mean": 1.0578556828684182,
+      "material_pkg_rx_max_K_mean": 1.1676165201972486,
+      "material_cu_tx_max_K_mean": 1.9478305312777466,
+      "material_cu_rx_max_K_mean": 2.2005643184152084,
+      "R11_dynamic_error_L2_over_total_delta_mean": 0.0776117863335261,
+      "X11_dynamic_error_L2_over_total_delta_mean": 0.09200410874739158,
+      "R12_dynamic_error_L2_over_total_delta_mean": 0.005386209544254266,
+      "X12_dynamic_error_L2_over_total_delta_mean": 0.00035306111242479213,
+      "R22_dynamic_error_L2_over_total_delta_mean": 0.20321005996900668,
+      "X22_dynamic_error_L2_over_total_delta_mean": 0.1114537164146217,
+      "sea_power_rel_L2_mean": 0.1506106298370572,
+      "copper_power_rel_L2_mean": 0.09660093974073762,
+      "cold_z_rel_L2_mean": 0.00819815202350368,
+      "dynamic_z_rel_L2_mean": 0.2641593804689918,
+      "full_z_rel_L2_mean": 0.008195530918932211,
+      "current_rel_L2_mean": 0.09230436425961215,
+      "current_max_abs_A_mean": 2.3313740798534806,
+      "material_mean_max_K_mean": 2.254477610062272,
+      "material_mean_rmse_K_mean": 0.9357509163886734,
+      "sea_mean_max_K_mean": 0.003991442109878562,
+      "pkg_mean_max_K_mean": 1.213557787970861,
+      "copper_max_K_mean": 2.2516913012319058,
+      "energy_budget_W_mean": 1.3719695323734225e-12,
+      "repeat_s_mean": 0.20657198890047665,
+      "geometry_prepare_s_mean": 0.00017944999530704485,
+      "first_new_geometry_s_mean": 0.0455625499986733,
+      "temperature_max_K_mean": 2.2551281104034206,
+      "temperature_rmse_K_mean": 0.16354031187650206,
+      "sea_wet_rmse_K_mean": 0.03155796361453257,
+      "sea_wet_max_K_mean": 0.494012083771818,
+      "sea_skin_rmse_K_mean": 0.22429367335743,
+      "sea_skin_max_K_mean": 0.7269387746464228,
+      "package_tx_rmse_K_mean": 0.7464061332444404,
+      "package_tx_max_K_mean": 1.883373313715203,
+      "package_rx_rmse_K_mean": 0.8067286676611289,
+      "package_rx_max_K_mean": 2.1377408740974193,
+      "field_decode_s_mean": 0.006412372229129283,
+      "field_query_points_mean": 3752.3333333333335,
+      "first_new_geometry_full_s_mean": 0.0507853333450233,
+      "seconds_mean": 0.2148860055539343
+    },
+    "per_geometry": {
+      "Y01": {
+        "dynamic_z_rel_L2": 0.0437602266111241,
+        "cold_z_rel_L2": 0.007629902969345442,
+        "current_rel_L2": 0.14950436431339156,
+        "field_rmse_K": 0.10221194932726403,
+        "field_max_K": 1.631903454150006,
+        "first_new_geometry_s": 0.04364389996044338,
+        "first_new_geometry_full_s": 0.04937889997381717,
+        "field_decode_mean_s": 0.006882866669911891,
+        "repeat_infer_s": 0.1968205333299314
+      },
+      "Y02": {
+        "dynamic_z_rel_L2": 0.3618129248765512,
+        "cold_z_rel_L2": 0.011611167655905762,
+        "current_rel_L2": 0.12754252981809502,
+        "field_rmse_K": 0.2787942567074316,
+        "field_max_K": 7.950881263891802,
+        "first_new_geometry_s": 0.043657700007315725,
+        "first_new_geometry_full_s": 0.04885260004084557,
+        "field_decode_mean_s": 0.006426300038583577,
+        "repeat_infer_s": 0.20342863335584602
+      },
+      "Y03": {
+        "dynamic_z_rel_L2": 0.3065388892168523,
+        "cold_z_rel_L2": 0.0030910345635937597,
+        "current_rel_L2": 0.02321332478847384,
+        "field_rmse_K": 0.2045426016044569,
+        "field_max_K": 4.560788602511764,
+        "first_new_geometry_s": 0.04336969996802509,
+        "first_new_geometry_full_s": 0.04762899997876957,
+        "field_decode_mean_s": 0.006169533318219085,
+        "repeat_infer_s": 0.21195383334998041
+      },
+      "Y04": {
+        "dynamic_z_rel_L2": 0.3781177069407869,
+        "cold_z_rel_L2": 0.014769427178046869,
+        "current_rel_L2": 0.09991356015669918,
+        "field_rmse_K": 0.08559662220311808,
+        "field_max_K": 1.8190978023442312,
+        "first_new_geometry_s": 0.046555700013414025,
+        "first_new_geometry_full_s": 0.05296400003135204,
+        "field_decode_mean_s": 0.0070170000156698125,
+        "repeat_infer_s": 0.20190293334114054
+      },
+      "Y05": {
+        "dynamic_z_rel_L2": 0.212285658549927,
+        "cold_z_rel_L2": 0.0055117084015054284,
+        "current_rel_L2": 0.04745134413081923,
+        "field_rmse_K": 0.12774601647377837,
+        "field_max_K": 1.941267948230177,
+        "first_new_geometry_s": 0.048993200063705444,
+        "first_new_geometry_full_s": 0.05418380006449297,
+        "field_decode_mean_s": 0.006041066662874073,
+        "repeat_infer_s": 0.22061000001849607
+      },
+      "Y06": {
+        "dynamic_z_rel_L2": 0.2824408766187092,
+        "cold_z_rel_L2": 0.00657567137262483,
+        "current_rel_L2": 0.1062010623501941,
+        "field_rmse_K": 0.18235042494296336,
+        "field_max_K": 3.680097670169232,
+        "first_new_geometry_s": 0.04715509997913614,
+        "first_new_geometry_full_s": 0.05170369998086244,
+        "field_decode_mean_s": 0.005937466669517259,
+        "repeat_infer_s": 0.20471600000746548
+      }
+    }
+  },
+  "shape_mix_0_sensitivity_only": {
+    "dynamic_z_rel_L2": 0.258886802799416,
+    "current_rel_L2": 0.09229851241609834,
+    "temperature_rmse_K": 0.16842511965654533,
+    "r22_component": 0.18949115114940407
+  },
+  "dyn_head_ablation": {
+    "dynamic_z_rel_L2": 0.3306581054261823,
+    "current_rel_L2": 0.09228969445080393,
+    "temperature_rmse_K": 0.16355558598949305
+  },
+  "interpretation": {
+    "cold_z_pct": 0.819815202350368,
+    "dynamic_z_pct": 26.41593804689918,
+    "current_pct": 9.230436425961216,
+    "temperature_rmse_K": 0.16354031187650206,
+    "temperature_max_K": 2.2551281104034206,
+    "energy_budget_W": 1.3719695323734225e-12,
+    "first_geometry_full_s": 0.0507853333450233,
+    "repeat_rollout_s": 0.20657198890047665,
+    "field_points": 3752.3333333333335
+  },
+  "model_selection": "unchanged frozen V6 shape_mix=0.5; test set not used to tune model",
+  "files": {
+    "full": "runs/geomfrac_free_v7_accept.json",
+    "shape0": "runs/geomfrac_free7_accept_shape0.json",
+    "dyn_ab": "runs/geomfrac_free7_accept_dyn_ab.json"
+  }
+}
