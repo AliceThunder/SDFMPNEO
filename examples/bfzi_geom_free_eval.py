@@ -26,6 +26,16 @@ def metric(pred,row):
     z=pred['z6']
     dz=z-z[0]
     dr=truth-truth[0]
+    with np.load(row['file'].split('#')[0]) as raw:
+        if 'currents_A' in raw:
+            itrue=np.asarray(raw['currents_A'])
+        else:
+            from sdfmpneo_bfzi.frac_memory import zmat
+            itrue=np.array([np.linalg.solve(zmat(zz)+row['rom'].ext,
+                        np.array([vv,0.],complex))
+                        for zz,vv in zip(truth,row['voltage'])])
+    if itrue.shape!=pred['current_A'].shape:
+        raise ValueError('physical matched-current shape mismatch')
     return dict(
         file=row['file'],
         cold_z_rel_L2=float(np.linalg.norm(z[0]-truth[0])/
@@ -34,6 +44,9 @@ def metric(pred,row):
                                max(np.linalg.norm(dr),1e-12)),
         full_z_rel_L2=float(np.linalg.norm(z-truth)/
                             max(np.linalg.norm(truth),1e-12)),
+        current_rel_L2=float(np.linalg.norm(pred['current_A']-itrue)/
+                             max(np.linalg.norm(itrue),1e-12)),
+        current_max_abs_A=float(np.max(abs(pred['current_A']-itrue))),
         material_mean_max_K=float(np.max(abs(pred['temp_group_K']-tm))),
         material_mean_rmse_K=float(np.sqrt(np.mean((pred['temp_group_K']-tm)**2))),
         sea_mean_max_K=float(np.max(abs(pred['temp_group_K'][:,0]-tm[:,0]))),
@@ -47,6 +60,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
         case=plan['cases'][name]
+        tprep=time.perf_counter()
         init=mix_init(case,atlas,extra,weight)
         if port_self is not None:
             init=port_self.apply(case,init)
@@ -54,12 +68,21 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
             init=mutual.apply(case,init)
         if source is not None:
             init=source.apply(case,init)
-        for hist in prepare(spec,32):
+        prep_s=time.perf_counter()-tprep
+        for hi,hist in enumerate(prepare(spec,32)):
             t0=time.perf_counter()
             pred=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
                          init_override=init,extra=dyn,shape_mix=shape_mix)
             dt=time.perf_counter()-t0
             result=metric(pred,hist)
+            t2=time.perf_counter()
+            rep=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
+                        init_override=init,extra=dyn,shape_mix=shape_mix)
+            result['repeat_s']=time.perf_counter()-t2
+            if not np.allclose(rep['z6'],pred['z6'],atol=1e-10,rtol=1e-10):
+                raise RuntimeError(f'{name}: repeated rollout differs')
+            result['geometry_prepare_s']=prep_s if hi==0 else 0.
+            result['first_new_geometry_s']=prep_s+dt if hi==0 else None
             if field is not None:
                 rom=hist['rom']
                 xyz=np.concatenate((rom.xyz,*rom.pkg_xyz),axis=0)
@@ -82,8 +105,18 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
                         pred['ambient'],weights=rom.cap[:len(xyz)],skin=sea_skin)
                 actual=hist['temp_K'][:,:len(xyz)]
                 result['temperature_max_K']=float(np.max(abs(field_t-actual)))
+                diff=field_t-actual
                 result['temperature_rmse_K']=float(
-                    np.sqrt(np.mean((field_t-actual)**2)))
+                    np.sqrt(np.mean(diff**2)))
+                for label,mask in (
+                    ('sea_wet',regs==0),
+                    ('sea_skin',np.isin(regs,[5,6])),
+                    ('package_tx',regs==1),
+                    ('package_rx',regs==2)):
+                    if np.any(mask):
+                        result[label+'_rmse_K']=float(
+                            np.sqrt(np.mean(diff[:,mask]**2)))
+                        result[label+'_max_K']=float(np.max(abs(diff[:,mask])))
             result['seconds']=dt
             result['geometry']=name
             rows.append(result)
@@ -94,7 +127,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
     return dict(
         geometry_count=len(manifest[split]),history_count=len(rows),
         rows=rows,
-        summary={k+'_mean':float(np.mean([r[k] for r in rows]))
+        summary={k+'_mean':float(np.mean([r[k] for r in rows if r.get(k) is not None]))
           for k in rows[0] if k not in ('file','geometry')})
 
 
