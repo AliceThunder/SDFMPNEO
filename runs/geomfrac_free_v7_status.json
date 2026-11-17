@@ -1,0 +1,29 @@
+{
+  "status": "OPEN",
+  "phase": "frozen independent geometry reference generation pending",
+  "basis_commit": "07fdb083",
+  "new_geometry_ids": [
+    "Y01",
+    "Y02",
+    "Y03",
+    "Y04",
+    "Y05",
+    "Y06"
+  ],
+  "geometries_frozen": 6,
+  "histories_planned": 18,
+  "physical_s5_histories_completed": 0,
+  "independent_surrogate_histories_evaluated": 0,
+  "physical_reference": "BFZI V150 S5 ultra, source_order=5, inner_step_s=1.875",
+  "model_selection": "runs/geomfrac_free_v7_selection.json",
+  "test_plan": "runs/geomfrac_s5_free7_plan.json",
+  "acceptance_entry": "examples/bfzi_geom_free_v7_accept.py",
+  "observed_dynamic_z_rel_L2": null,
+  "observed_current_rel_L2": null,
+  "observed_3d_temperature_rmse_K": null,
+  "observed_repeat_inference_s": null,
+  "blocking_input": "new Y01-Y06 complete BFZI V150 S5 physical teachers",
+  "previous_V6_developer_dynamic_z_rel_L2": 0.12242100176661695,
+  "previous_W_retrospective_dynamic_z_rel_L2": 0.17739,
+  "new_independent_result_available": false
+}
