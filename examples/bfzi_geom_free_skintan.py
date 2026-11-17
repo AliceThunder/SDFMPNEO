@@ -135,8 +135,12 @@ def main():
     src=SrcFix.load(args.source_model) if args.source_model else None
     plan=json.loads(args.plan.read_text(encoding="utf-8"))
     mf=json.loads(args.manifest.read_text(encoding="utf-8"))
-    if not mf.get("train") or not mf.get("val") or mf.get("test"):
-        raise ValueError("training manifest must contain train/val only")
+    trset={str(x["anchor"]).replace("\\\\","/") for x in mf["train"]}
+    vaset={str(x["anchor"]).replace("\\\\","/") for x in mf["val"]}
+    teset={str(x["anchor"]).replace("\\\\","/") for x in mf.get("test",[])}
+    if (not trset or not vaset or trset&vaset or
+            trset&teset or vaset&teset):
+        raise ValueError("train, dev and sealed test geometries must be disjoint")
     tr=collect(mf["train"],plan,atlas,net,ck,base,skin,ps,mu,src,args.shape_mix)
     va=collect(mf["val"],plan,atlas,net,ck,base,skin,ps,mu,src,args.shape_mix)
     sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32)
