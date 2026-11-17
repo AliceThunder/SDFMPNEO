@@ -45,6 +45,18 @@
     "failure_policy": "per-history failure is recorded and the next excitation/geometry continues",
     "resume": "candidate histories are skipped; failed and incomplete histories are retried",
     "current_geometry": "Z01",
-    "last_completed": "Z01/300s"
+    "last_completed": "Z01/300s",
+    "first_teacher_quality": {
+      "geometry": "Z01",
+      "duration_s": 60,
+      "elapsed_s": 77.5267980999779,
+      "basis_global_rmse_K": 0.012228105809705531,
+      "basis_global_max_K": 0.07197455847500578,
+      "skin_rx_rmse_K": 0.02738256636035993,
+      "peak_thermal_residual_W": 1.319087061801838e-9,
+      "max_global_budget_W": 3.413020976950065e-10,
+      "max_port_power_residual_W": 9.947598300641403e-14,
+      "skin_clip_fraction": 0
+    }
   }
 }
