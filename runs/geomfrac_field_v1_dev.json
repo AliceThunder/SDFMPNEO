@@ -1,0 +1,146 @@
+{
+  "status": "geometry-only continuous spatial fields",
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "input_states": "teacher projected 32-mode states, spatial decoder isolated",
+  "dev": {
+    "histories": 15,
+    "rows": [
+      {
+        "case": "T04",
+        "file": "runs/bfzi_s5_T04_ultra_pilot60_drive1.npz",
+        "max_K": 0.3013282978541838,
+        "rmse_K": 0.039361560299147384
+      },
+      {
+        "case": "T04",
+        "file": "runs/bfzi_s5_T04_ultra_pilot60_drive2.npz",
+        "max_K": 0.7187674242450157,
+        "rmse_K": 0.08175161127508997
+      },
+      {
+        "case": "T04",
+        "file": "runs/bfzi_s5_T04_ultra_long600_drive1.npz",
+        "max_K": 0.8206284343377774,
+        "rmse_K": 0.17362681816368217
+      },
+      {
+        "case": "D01",
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive1.npz",
+        "max_K": 0.18477005587601525,
+        "rmse_K": 0.014238165306594348
+      },
+      {
+        "case": "D01",
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive2.npz",
+        "max_K": 0.839762569830782,
+        "rmse_K": 0.12244943263987958
+      },
+      {
+        "case": "D01",
+        "file": "runs/bfzi_s5_D01_ultra_v4_drive3.npz",
+        "max_K": 1.5623484985153482,
+        "rmse_K": 0.23596906439475998
+      },
+      {
+        "case": "D02",
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive1.npz",
+        "max_K": 0.523191879947035,
+        "rmse_K": 0.054927651310475646
+      },
+      {
+        "case": "D02",
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive2.npz",
+        "max_K": 3.4237320251376673,
+        "rmse_K": 0.525560642569478
+      },
+      {
+        "case": "D02",
+        "file": "runs/bfzi_s5_D02_ultra_v4_drive3.npz",
+        "max_K": 6.132752065082059,
+        "rmse_K": 0.9910818534016473
+      },
+      {
+        "case": "D03",
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive1.npz",
+        "max_K": 0.23094865154445188,
+        "rmse_K": 0.02712069112895835
+      },
+      {
+        "case": "D03",
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive2.npz",
+        "max_K": 1.724373344151843,
+        "rmse_K": 0.24037334532051388
+      },
+      {
+        "case": "D03",
+        "file": "runs/bfzi_s5_D03_ultra_v4_drive3.npz",
+        "max_K": 2.9007690704181073,
+        "rmse_K": 0.43114612169682937
+      },
+      {
+        "case": "D04",
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive1.npz",
+        "max_K": 0.16218353816759645,
+        "rmse_K": 0.015209474754687763
+      },
+      {
+        "case": "D04",
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive2.npz",
+        "max_K": 0.9074697411241459,
+        "rmse_K": 0.1377602298943525
+      },
+      {
+        "case": "D04",
+        "file": "runs/bfzi_s5_D04_ultra_v4_drive3.npz",
+        "max_K": 1.5944294639517125,
+        "rmse_K": 0.25583090080680304
+      }
+    ],
+    "mean_max_K": 1.4684970040122494,
+    "mean_rmse_K": 0.22309383753085996
+  },
+  "train_subset": {
+    "histories": 6,
+    "rows": [
+      {
+        "case": "T01",
+        "file": "runs/bfzi_s5_T01_ultra_pilot60_drive1.npz",
+        "max_K": 1.6635990866515158,
+        "rmse_K": 0.15683855821875997
+      },
+      {
+        "case": "T01",
+        "file": "runs/bfzi_s5_T01_ultra_pilot60_drive2.npz",
+        "max_K": 4.336994532690426,
+        "rmse_K": 0.3549214649763559
+      },
+      {
+        "case": "T01",
+        "file": "runs/bfzi_s5_T01_ultra_long600_drive1.npz",
+        "max_K": 4.122339416148861,
+        "rmse_K": 0.6837761857928192
+      },
+      {
+        "case": "T02",
+        "file": "runs/bfzi_s5_T02_ultra_pilot60_drive1.npz",
+        "max_K": 0.2044737857137875,
+        "rmse_K": 0.010857244159668194
+      },
+      {
+        "case": "T02",
+        "file": "runs/bfzi_s5_T02_ultra_pilot60_drive2.npz",
+        "max_K": 0.5060039566506589,
+        "rmse_K": 0.023407996882248837
+      },
+      {
+        "case": "T02",
+        "file": "runs/bfzi_s5_T02_ultra_train600_drive1.npz",
+        "max_K": 0.3828548073693696,
+        "rmse_K": 0.04742422994181935
+      }
+    ],
+    "mean_max_K": 1.8693775975374365,
+    "mean_rmse_K": 0.21287094666194525
+  }
+}

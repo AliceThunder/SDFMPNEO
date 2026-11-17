@@ -20,6 +20,10 @@ def main():
     p.add_argument('--atlas',type=Path,default=Path('runs/geomfrac_init_v1.npz'))
     p.add_argument('--cold-atlas',type=Path,default=None)
     p.add_argument('--cold-weight',type=float,default=0.)
+    p.add_argument('--field-atlas',type=Path,default=None,
+                   help="continuous 3D temperature decoder from cold training geometries")
+    p.add_argument('--point-file',type=Path,default=None,
+                   help="NPZ containing xyz [n,3] and region [n] (0 wet, 5/6 sea skin, 1/2 package, 3/4 copper)")
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,
                    default=Path('runs/geomfrac_et_v9_ztune.pt'))
@@ -46,6 +50,20 @@ def main():
     voltage=np.full(len(times),a.voltage)
     result=rollout(case,atlas,net,ck,times,voltage,tangent,
                    init_override=init)
+    if a.point_file or a.field_atlas:
+        if not a.point_file or not a.field_atlas:
+            p.error("--point-file and --field-atlas are required together")
+        from sdfmpneo_bfzi.geom_field import FieldAtlas
+        with np.load(a.point_file) as pts:
+            xyz=np.asarray(pts['xyz'],float)
+            region=np.asarray(pts['region'],int)
+            weights=np.asarray(pts['cap'],float) if 'cap' in pts else None
+        field=FieldAtlas.load(a.field_atlas)
+        result['temp_points_K']=field.query(case,xyz,region,
+                               result['heat_state'],result['ambient'],
+                               weights=weights)
+        result['point_xyz']=xyz
+        result['point_region']=region
     infer=time.perf_counter()-loaded
     a.out.parent.mkdir(parents=True,exist_ok=True)
     np.savez_compressed(a.out,**{k:v for k,v in result.items()
@@ -58,6 +76,7 @@ def main():
         cold_BFZI_solves=0,new_geometry_heat_basis_builds=0,
         online_full_FV_solves=0,
         budget_max_W=float(np.max(abs(result['material_budget_W']))),
+        spatial_query_points=int(len(result.get('point_xyz',[]))),
         final_port_Z6=result['z6'][-1].tolist(),
         final_material_T=result['temp_group_K'][-1].tolist()),indent=2))
 
