@@ -1,0 +1,101 @@
+{
+  "status": "diagnostic_complete_not_selected",
+  "candidate_family": "port-factorized local-skin impedance residual",
+  "data": {
+    "train_geometries": 30,
+    "dev_geometries": 5,
+    "train_histories": 90,
+    "dev_histories": 15,
+    "diagnostic_geometries": [
+      "Z01",
+      "Z02",
+      "Z03",
+      "Z04",
+      "Z05",
+      "Z06"
+    ],
+    "diagnostic_histories": 18,
+    "diagnostic_role": "Z01-Z06 were inspected for V1 and informed V2-V4; results are diagnostic, not a blind acceptance set"
+  },
+  "development_dynamic_z_pct": {
+    "v6_base": 12.204559292681521,
+    "v1_raw_geometry": 10.877213990632677,
+    "v2_periodic_euler": 10.929512816891602,
+    "v3_compact_physical": 11.026335803859604,
+    "v4_geometry_free": 10.817390803241334
+  },
+  "diagnostic_dynamic_z_pct": {
+    "v6_base": 40.093686,
+    "v1_raw_geometry": 40.15248,
+    "v2_periodic_euler": 40.412765,
+    "v3_compact_physical": 40.3501,
+    "v4_geometry_free": 40.1966
+  },
+  "diagnostic_per_geometry_pct": {
+    "v6_base": {
+      "Z01": 78.08,
+      "Z02": 17.28,
+      "Z03": 22.21,
+      "Z04": 51.04,
+      "Z05": 47.63,
+      "Z06": 24.32
+    },
+    "v1": {
+      "Z01": 74.28,
+      "Z02": 18.5,
+      "Z03": 23.92,
+      "Z04": 51.95,
+      "Z05": 45.09,
+      "Z06": 27.18
+    },
+    "v2": {
+      "Z01": 74.61,
+      "Z02": 18.92,
+      "Z03": 24.41,
+      "Z04": 52.46,
+      "Z05": 44.99,
+      "Z06": 27.09
+    },
+    "v3": {
+      "Z01": 73.94,
+      "Z02": 18.93,
+      "Z03": 24.33,
+      "Z04": 52.51,
+      "Z05": 45.08,
+      "Z06": 27.31
+    },
+    "v4": {
+      "Z01": 74.21,
+      "Z02": 18.69,
+      "Z03": 24.32,
+      "Z04": 51.97,
+      "Z05": 44.92,
+      "Z06": 27.06
+    }
+  },
+  "v4_closed_loop": {
+    "current_error_pct": 14.7914,
+    "material_mean_rmse_K": 1.05203,
+    "full_3d_temperature_rmse_K": 0.18167,
+    "first_new_geometry_full_s": 0.086,
+    "repeat_inference_s": 0.33373,
+    "development_energy_budget_W": 1.0204331690233027e-11,
+    "best_epoch": 130
+  },
+  "component_dynamic_error_pct_v4": {
+    "R11": 17.07,
+    "X11": 16.09,
+    "R12": 0.95,
+    "X12": 0.07,
+    "R22": 27.22,
+    "X22": 13.44
+  },
+  "tests": {
+    "v2": "7 passed",
+    "v3": "8 passed",
+    "v4": "9 passed",
+    "compile": "passed"
+  },
+  "conclusion": "V1-V4 improve the existing development set but none improves aggregate Z01-Z06 dynamic impedance error over frozen V6. Keep V6 as formal mainline; do not promote local-skin residual candidates.",
+  "next": "Investigate the base V6 geometry-conditioned sea-impedance response and local skin-mode teacher error. Use Z01-Z06 only for diagnostics. Freeze a new independent geometry set after selecting the next method."
+}
