@@ -43,6 +43,8 @@
     "failed_histories": 0,
     "first_completed": "Z01/60s",
     "failure_policy": "per-history failure is recorded and the next excitation/geometry continues",
-    "resume": "candidate histories are skipped; failed and incomplete histories are retried"
+    "resume": "candidate histories are skipped; failed and incomplete histories are retried",
+    "current_geometry": "Z01",
+    "last_completed": "Z01/60s"
   }
 }
