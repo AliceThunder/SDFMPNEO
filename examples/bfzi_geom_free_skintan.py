@@ -196,7 +196,7 @@ def main():
         port_self=str(args.port_self_model),mutual=str(args.mutual_model),
         source=str(args.source_model))
     args.out.parent.mkdir(parents=True,exist_ok=True)
-    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version="v3" if args.v3 else ("v2" if args.v2 else "v1"),
+    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version="v4" if args.v4 else ("v3" if args.v3 else ("v2" if args.v2 else "v1")),
         sa=torch.as_tensor(np.asarray(ck["a_scale"]),dtype=torch.float32),
         ss=torch.as_tensor(ss,dtype=torch.float32),
         sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32),
