@@ -47,3 +47,32 @@ def test_time_conditioned_tangent_receives_interval_voltage():
             torch.zeros((1,45)),np.ones(32),12.,293.15,
             tm=30.,heat_voltage=8.)
     assert seen=={"time":30.,"voltage":8.}
+
+
+def test_v2_periodic_rotation_encoding():
+    from sdfmpneo_bfzi.geom_skintan import encode_geom
+    from sdfmpneo_bfzi.pose import _rot
+    angles=[(23.,-11.,17.),(383.,349.,377.)]
+    g=torch.zeros((2,45))
+    for i,(yaw,pitch,tilt) in enumerate(angles):
+        r=_rot('z',yaw)@_rot('y',pitch)@_rot('x',tilt)
+        g[i,25:34]=torch.as_tensor(r.reshape(-1),dtype=torch.float32)
+    x=encode_geom(g)
+    assert x.shape==(2,42)
+    assert torch.allclose(x[0,25:31],x[1,25:31],atol=2e-6,rtol=0)
+    assert torch.allclose(x[:,:25],g[:,:25])
+    assert torch.allclose(x[:,31:],g[:,34:])
+
+
+def test_v2_tangent_is_cold_zero_and_finite():
+    from sdfmpneo_bfzi.geom_skintan import SkinTanV2
+    from sdfmpneo_bfzi.pose import _rot
+    net=SkinTanV2(ng=45,sa=np.ones(32),ss=np.ones(16))
+    g=torch.zeros((3,45))
+    for i,(yaw,pitch,tilt) in enumerate(((0.,0.,0.),(15.,-8.,12.),(-20.,10.,-5.))):
+        r=_rot('z',yaw)@_rot('y',pitch)@_rot('x',tilt)
+        g[i,25:34]=torch.as_tensor(r.reshape(-1),dtype=torch.float32)
+    a=torch.zeros((3,32)); s=torch.zeros((3,16))
+    assert torch.count_nonzero(net(g,a,s))==0
+    y=net(g,torch.rand_like(a),torch.rand_like(s))
+    assert y.shape==(3,6) and torch.isfinite(y).all()
