@@ -1,6 +1,6 @@
 {
   "status": "OPEN",
-  "phase": "S5 reference generation running on XEnergy; first Y01/60s candidate complete",
+  "phase": "complete_independent_acceptance",
   "basis_commit": "07fdb083",
   "new_geometry_ids": [
     "Y01",
@@ -12,8 +12,8 @@
   ],
   "geometries_frozen": 6,
   "histories_planned": 18,
-  "physical_s5_histories_completed": 1,
-  "independent_surrogate_histories_evaluated": 0,
+  "physical_s5_histories_completed": 18,
+  "independent_surrogate_histories_evaluated": 18,
   "physical_reference": "BFZI V150 S5 ultra, source_order=5, inner_step_s=1.875",
   "model_selection": "runs/geomfrac_free_v7_selection.json",
   "test_plan": "runs/geomfrac_s5_free7_plan.json",
@@ -34,7 +34,10 @@
     "stdout": "runs/free7_build.log",
     "stderr": "runs/free7_build.err",
     "resume_skips_candidates": true,
-    "continues_after_geometry_or_drive_failure": true
+    "continues_after_geometry_or_drive_failure": true,
+    "process_state": "finished_success",
+    "success": 18,
+    "failed": 0
   },
   "preliminary_pilot": {
     "status": "Y01 60 s only; not final acceptance",
@@ -47,5 +50,21 @@
     "energy_budget_W": 3.1854906914101e-14,
     "field_points": 3760,
     "first_geometry_full_s": 0.062333399953786284
-  }
+  },
+  "physical_failures": 0,
+  "physical_teacher_total_build_s": 4715.73168940004,
+  "metrics": {
+    "cold_z_rel_L2": 0.00819815202350368,
+    "dynamic_z_rel_L2": 0.2641593804689918,
+    "current_rel_L2": 0.09230436425961215,
+    "temperature_rmse_K": 0.16354031187650206,
+    "temperature_max_K_mean": 2.2551281104034206,
+    "energy_budget_W": 1.3719695323734225e-12,
+    "sea_power_rel_L2": 0.1506106298370572,
+    "copper_power_rel_L2": 0.09660093974073762,
+    "first_new_geometry_full_s": 0.0507853333450233,
+    "repeat_inference_s": 0.20657198890047665
+  },
+  "dominant_error": "RX self dynamic impedance: R22 20.32%, X22 11.15%; R12/X12 mutual terms below 0.6%",
+  "next": "Improve RX thermal impedance tangent and separate sea/copper source corrections using development data only; preserve Y01-Y06 blind set"
 }
