@@ -1,0 +1,83 @@
+{
+  "status": "development-selected geometry-only causal dynamic Z head",
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "hold_geometries": 0,
+  "geom_strength": 1,
+  "train_histories": 90,
+  "dev_histories": 15,
+  "rx_r_weight": 2.5,
+  "rx_x_weight": 1.5,
+  "best_epoch": 120,
+  "baseline_dev_dynamic_Z_pct": 33.005694182552745,
+  "best_dev_dynamic_Z_pct": 22.01180589241538,
+  "best_selection_Z_pct": 22.01180589241538,
+  "baseline_dev_temp_group_K": 2.6969287111568407,
+  "history": [
+    {
+      "epoch": 0,
+      "dynamic_Z_pct": 33.005694182552745,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.6969287111568407,
+      "budget_W": 1.0711321972945598e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 33.005694182552745
+    },
+    {
+      "epoch": 40,
+      "dynamic_Z_pct": 25.836070416546598,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7179995351254735,
+      "budget_W": 1.1651558497248912e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 25.836070416546598
+    },
+    {
+      "epoch": 80,
+      "dynamic_Z_pct": 22.225348399491576,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7099181963340926,
+      "budget_W": 1.1725302538370741e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 22.225348399491576
+    },
+    {
+      "epoch": 120,
+      "dynamic_Z_pct": 22.01180589241538,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.71346726631942,
+      "budget_W": 1.2813027144917712e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 22.01180589241538
+    },
+    {
+      "epoch": 160,
+      "dynamic_Z_pct": 22.512344655279975,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7150915252614594,
+      "budget_W": 1.2813027144917712e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 22.512344655279975
+    },
+    {
+      "epoch": 200,
+      "dynamic_Z_pct": 22.492891095338425,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7166519097975046,
+      "budget_W": 1.3347671443050968e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 22.492891095338425
+    },
+    {
+      "epoch": 240,
+      "dynamic_Z_pct": 24.13666178508194,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7191624531145977,
+      "budget_W": 1.714548956082514e-11,
+      "hold_Z_pct": null,
+      "selection_Z_pct": 24.13666178508194
+    }
+  ],
+  "atlas": "runs\\geomfrac_init_v1.npz",
+  "head": "runs\\geomfrac_free_dyn_rx_v1.pt"
+}
