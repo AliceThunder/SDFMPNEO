@@ -1,6 +1,6 @@
 {
   "status": "OPEN",
-  "phase": "frozen independent geometry reference generation pending",
+  "phase": "S5 reference generation running on XEnergy; first Y01/60s candidate complete",
   "basis_commit": "07fdb083",
   "new_geometry_ids": [
     "Y01",
@@ -12,7 +12,7 @@
   ],
   "geometries_frozen": 6,
   "histories_planned": 18,
-  "physical_s5_histories_completed": 0,
+  "physical_s5_histories_completed": 1,
   "independent_surrogate_histories_evaluated": 0,
   "physical_reference": "BFZI V150 S5 ultra, source_order=5, inner_step_s=1.875",
   "model_selection": "runs/geomfrac_free_v7_selection.json",
@@ -25,5 +25,27 @@
   "blocking_input": "new Y01-Y06 complete BFZI V150 S5 physical teachers",
   "previous_V6_developer_dynamic_z_rel_L2": 0.12242100176661695,
   "previous_W_retrospective_dynamic_z_rel_L2": 0.17739,
-  "new_independent_result_available": false
+  "new_independent_result_available": false,
+  "teacher_generation": {
+    "device": "XEnergy-Zhucy",
+    "repo_path": "D:\\work\\geomfrac-train",
+    "bfzi_path": "D:\\work\\geomfrac-s5-BFZI",
+    "python_pid": 37148,
+    "stdout": "runs/free7_build.log",
+    "stderr": "runs/free7_build.err",
+    "resume_skips_candidates": true,
+    "continues_after_geometry_or_drive_failure": true
+  },
+  "preliminary_pilot": {
+    "status": "Y01 60 s only; not final acceptance",
+    "path": "runs/geomfrac_free7_pilot.json",
+    "dynamic_z_rel_L2": 0.051330411710742645,
+    "cold_z_rel_L2": 0.007629902969345442,
+    "current_rel_L2": 0.1497195283698249,
+    "temperature_rmse_K": 0.017110636256728744,
+    "temperature_max_K": 0.44445392918174775,
+    "energy_budget_W": 3.1854906914101e-14,
+    "field_points": 3760,
+    "first_geometry_full_s": 0.062333399953786284
+  }
 }
