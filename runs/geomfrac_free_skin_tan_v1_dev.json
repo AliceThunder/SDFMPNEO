@@ -41,7 +41,7 @@
     "temp_max_K": 0.9845912067034116,
     "budget_W": 1.0130587649111197e-11
   },
-  "relative_dynamic_z_improvement_pct": -10.875815096779348,
+  "relative_dynamic_z_improvement_pct": 10.87581509677935,
   "validation": {
     "py_compile": "passed",
     "pytest": "5 passed",
@@ -61,5 +61,13 @@
     "fresh_holdout": "runs/geomfrac_s5_free8_plan.json",
     "fresh_holdout_geometries": 6,
     "fresh_holdout_histories": 18
+  },
+  "checkpoint": "runs/geomfrac_free_skin_tan_v1.pt",
+  "checkpoint_metadata": {
+    "sa": "float32 tensor",
+    "ss": "float32 tensor",
+    "sy": "float32 tensor",
+    "safe_load": "torch.load(weights_only=True) passed",
+    "restore": "geom_skintan.restore passed"
   }
 }
