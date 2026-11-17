@@ -1040,3 +1040,35 @@ Previously evaluated W01-W04 dynamic retrospective
 regressions. V5 remains optional in BFZI-free branch, accepted
 V9 with geometry anchor remains unchanged.
 See GEOMFRAC_GEOMETRY_FREE_V5.md.
+
+## 2026-11-16 ? BFZI-free V6 shared 27D physical spatial correction
+
+Implemented dipole/area-conditioned cold mutual-port head.
+Developer mutual error 2.939% to
+0.836%, frozen R01-R06 new cold mutual
+error 1.312% to
+0.528%.
+Current and full dynamic effects small; mutual model remains optional.
+
+Implemented 32x3 seawater Joule-source surrogate trained on existing
+54 cold anchors from physical geometry only, reducing developer
+source relative error 8.936% to
+1.454%, and R retrospective
+9.083% to 1.975%.
+Found the old 27 spatial heat modes were not using the source
+shape projections. Added source-forced, shared dissipative 27D
+implicit thermal update mixed with fractional SOE forecast at
+beta=0.5. Developer dynamic Z 12.691%
+to 12.242%;
+3D temperature RMSE 0.2261 K to
+0.1796 K.
+W01-W04 historical retrospective dynamic Z
+19.149% to
+17.739%;
+3D RMSE 0.2119 K to
+0.1681 K.
+W01 complete 600s/41-step/6-point inference 0.420s,
+5-material budget max ~3.11e-12W.
+Unseen complete dynamic cohort is the next acceptance gate;
+anchored V9 retains formal acceptance.
+See GEOMFRAC_GEOMETRY_FREE_V6.md.

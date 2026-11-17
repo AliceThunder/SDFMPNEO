@@ -23,6 +23,9 @@ def main():
     p.add_argument('--dyn-model',type=Path,default=None)
     p.add_argument('--skin-model',type=Path,default=None)
     p.add_argument('--port-self-model',type=Path,default=None)
+    p.add_argument('--mutual-model',type=Path,default=None)
+    p.add_argument('--source-model',type=Path,default=None)
+    p.add_argument('--shape-mix',type=float,default=0.)
     p.add_argument('--field-atlas',type=Path,default=None,
                    help="continuous 3D temperature decoder from cold training geometries")
     p.add_argument('--point-file',type=Path,default=None,
@@ -44,6 +47,12 @@ def main():
     if a.port_self_model:
         from sdfmpneo_bfzi.geom_portself import PortSelf
         init=PortSelf.load(a.port_self_model).apply(case,init)
+    if a.mutual_model:
+        from sdfmpneo_bfzi.geom_mutual import MutFix
+        init=MutFix.load(a.mutual_model).apply(case,init)
+    if a.source_model:
+        from sdfmpneo_bfzi.geom_srcfix import SrcFix
+        init=SrcFix.load(a.source_model).apply(case,init)
     ck=torch.load(a.model,map_location='cpu',weights_only=True)
     net=GeomFracET(ng=int(ck['ng']),rank=int(ck['rank']),
         soe_quad=ck.get('soe_quad','trap'),heat_dt=float(ck.get('heat_dt',1.875)),
@@ -59,7 +68,7 @@ def main():
     times=np.arange(0,a.horizon+a.step*.5,a.step)
     voltage=np.full(len(times),a.voltage)
     result=rollout(case,atlas,net,ck,times,voltage,tangent,
-                   init_override=init,extra=extra)
+                   init_override=init,extra=extra,shape_mix=a.shape_mix)
     if a.point_file or a.field_atlas:
         if not a.point_file or not a.field_atlas:
             p.error("--point-file and --field-atlas are required together")

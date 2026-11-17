@@ -1,0 +1,31 @@
+{
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "input_feature_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "physical_trend": "dipole-factor times both coil enclosed areas",
+  "ell": 12.0,
+  "lam": 0.0001,
+  "baseline": {
+    "current": 0.07241106171315467,
+    "mutual": 0.029389550246986508,
+    "air": 2.561944712047492e-08
+  },
+  "chosen": {
+    "current": 0.06901684575337746,
+    "mutual": 0.008364694320236442,
+    "air": 7.101185807405553e-09
+  },
+  "requires_BFZI_online": false
+}

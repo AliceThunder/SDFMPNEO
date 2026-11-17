@@ -82,6 +82,25 @@ def positivity(a,init,scale):
         np.maximum(mean[mat[bad]],0.)/(-fluctu[bad]))))
 
 
+def shape_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
+    """Shared physically forced thermal shape: 27D implicit dissipative step."""
+    z,cur,ps,pc,sea=circuit(guess,init,port,guess,tan,g,scale,
+                            voltage,amb,extra,tm)
+    amp=np.array([.5*abs(cur[0])**2,
+                  (cur[0].conjugate()*cur[1]).real,
+                  .5*abs(cur[1])**2])
+    q=init['src']@amp
+    oldsea=q[0]*np.sqrt(init['cap'][0])
+    if oldsea<=1e-20:
+        q[:]=0.
+    else:
+        q*=ps/oldsea
+    k=init['k']
+    mat=np.eye(len(guess)-5)/dt+k[5:,5:]
+    rhs=prev[5:]/dt+q[5:]-k[5:,:5]@guess[:5]
+    return np.linalg.solve(mat,rhs)
+
+
 def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
     """Implicit correction of five budgets, explicit neural shape coordinates."""
     cap=init['cap']
@@ -122,12 +141,14 @@ def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0
 
 @torch.no_grad()
 def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
-            init_override=None,extra=None):
+            init_override=None,extra=None,shape_mix=0.):
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
     if atlas.rank!=32 or net.rank!=32 or not ck.get('canonical',False):
         raise ValueError("current autonomous shared-coordinate head uses 32 modes")
+    if not 0.<=shape_mix<=1.:
+        raise ValueError("thermal shape mixing coefficient must be in [0,1]")
     t=np.asarray(times,float);v=np.asarray(voltage,float)
     if t.ndim!=1 or not len(t) or t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0):
         raise ValueError("invalid voltage/time schedule")
@@ -163,6 +184,10 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
                 torch.as_tensor((u/cs)[None],dtype=g.dtype),
                 dt,g,torch.as_tensor((old/scale)[None],dtype=g.dtype),ac)
             guess=pred[0].cpu().numpy()*scale
+            if shape_mix:
+                phys=shape_step(old,guess,dt,float(v[i-1]),
+                    init,port,tan,g,scale,ambient,ext_fn,tm)
+                guess[5:]=(1.-shape_mix)*guess[5:]+shape_mix*phys
             full,budget=thermal_step(old,guess,dt,float(v[i-1]),
                                     init,port,tan,g,scale,ambient,ext_fn,tm)
             for _ in range(5):

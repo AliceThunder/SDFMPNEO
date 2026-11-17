@@ -1,0 +1,10 @@
+{
+  "train_geometries": 54,
+  "dev_geometries": 5,
+  "features": "first 12 geometry/pose/package scalars",
+  "ell": 10.0,
+  "lam": 0.0001,
+  "baseline_source_rel": 0.08935695951448559,
+  "learned_source_rel": 0.014540248606650394,
+  "requires_BFZI_at_query": false
+}
