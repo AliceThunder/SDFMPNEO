@@ -42,7 +42,7 @@ def metric(pred,row):
         energy_budget_W=float(np.max(abs(pred['material_budget_W']))))
 
 
-def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None):
+def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None):
     rows=[]
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
@@ -51,7 +51,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
         for hist in prepare(spec,32):
             t0=time.perf_counter()
             pred=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
-                         init_override=init)
+                         init_override=init,extra=dyn)
             dt=time.perf_counter()-t0
             result=metric(pred,hist)
             if field is not None:
@@ -60,8 +60,20 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
                 regs=np.r_[np.zeros(rom.nwet,int),
                     np.repeat([5,6],rom.nskin//2),
                     np.repeat(1,rom.npkg),np.repeat(2,rom.npkg)]
+                sea_skin=None
+                if skin is not None:
+                    from sdfmpneo_bfzi.geom_free import geometry
+                    geom=np.broadcast_to(geometry(case,init)[1],
+                                         (len(hist['time']),skin.ng)).copy()
+                    with torch.no_grad():
+                        sea_skin=skin(
+                            torch.as_tensor(geom,dtype=torch.float32),
+                            torch.as_tensor(pred['heat_state'],dtype=torch.float32),
+                            torch.as_tensor(hist['time'][:,None],dtype=torch.float32),
+                            torch.as_tensor(np.r_[0.,hist['voltage'][:-1]][:,None],
+                                            dtype=torch.float32)).numpy()
                 field_t=field.query(case,xyz,regs,pred['heat_state'],
-                                    pred['ambient'],weights=rom.cap[:len(xyz)])
+                        pred['ambient'],weights=rom.cap[:len(xyz)],skin=sea_skin)
                 actual=hist['temp_K'][:,:len(xyz)]
                 result['temperature_max_K']=float(np.max(abs(field_t-actual)))
                 result['temperature_rmse_K']=float(
@@ -89,6 +101,8 @@ def main():
     p.add_argument('--cold-atlas',type=Path,default=None)
     p.add_argument('--cold-weight',type=float,default=0.)
     p.add_argument('--field-atlas',type=Path,default=None)
+    p.add_argument('--dyn-model',type=Path,default=None)
+    p.add_argument('--skin-model',type=Path,default=None)
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,default=Path('runs/geomfrac_et_v9_ztune.pt'))
     p.add_argument('--out',type=Path,required=True)
@@ -106,10 +120,18 @@ def main():
     if args.field_atlas:
         from sdfmpneo_bfzi.geom_field import FieldAtlas
         field=FieldAtlas.load(args.field_atlas)
+    dyn=None
+    if args.dyn_model:
+        from sdfmpneo_bfzi.geom_dyn import restore
+        dyn=restore(args.dyn_model)
+    skin=None
+    if args.skin_model:
+        from sdfmpneo_bfzi.geom_skin import restore as load_skin
+        skin=load_skin(args.skin_model)
     pl=json.loads(args.plan.read_text(encoding='utf-8'))
     mf=json.loads(args.manifest.read_text(encoding='utf-8'))
     res=evaluate(atlas,net,ck,tan,pl,mf,args.split,
-                 extra,args.cold_weight,field)
+                 extra,args.cold_weight,field,dyn,skin)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(res,indent=2),encoding='utf-8')
     print('FREE_EVAL_MEANS',[(k,round(v*100 if 'z_rel' in k else v,4))

@@ -41,6 +41,22 @@ def raw_field(points,region,origin,span,mid,axes,half):
     return out
 
 
+def raw_skin(points,region,mid,axes,half):
+    """V7 16 seawater-skin canonical raw modes on user-supplied world points."""
+    p=np.asarray(points,float).reshape(-1,3)
+    r=np.asarray(region,int).reshape(-1)
+    out=np.zeros((len(p),16),float)
+    for j in range(2):
+        if not np.any(r==j+5):
+            continue
+        local=(p-mid[j])@axes[j]
+        local/=np.maximum(2*half[j],1e-4)
+        a,b,c=local.T
+        f=np.stack((a,b,c,a*a,c*c,a*c,a*b,b*c),axis=1)
+        out[:,j*8:(j+1)*8]=f*(r==j+5)[:,None]
+    return out
+
+
 class FieldAtlas:
     """Continuous per-material temperature-shape interpolation."""
 
@@ -51,13 +67,16 @@ class FieldAtlas:
         self.ell=float(raw['ell'])
         self.qsea=np.asarray(raw['qsea'],float)
         self.qpkg=np.asarray(raw['qpkg'],float)
+        self.qskin=np.asarray(raw.get('qskin',[]),float)
         self.origin=np.asarray(raw['origin'],float)
         self.span=np.asarray(raw['span'],float)
         self.mid=np.asarray(raw['mid'],float)
         self.axes=np.asarray(raw['axes'],float)
         self.half=np.asarray(raw['half'],float)
         if (self.qsea.shape!=(len(self.x),14,13) or
-                self.qpkg.shape!=(len(self.x),2,8,7)):
+                self.qpkg.shape!=(len(self.x),2,8,7) or
+                (self.qskin.size and
+                 self.qskin.shape!=(len(self.x),30,16))):
             raise ValueError("invalid spatial temperature shape atlas")
 
     def weights(self,case):
@@ -105,18 +124,53 @@ class FieldAtlas:
                     shapes[idx,lo:hi]-=mean
         return shapes
 
-    def query(self,case,points,region,state,ambient=293.15,weights=None):
+    def predict_skin(self,case,points,region,weights=None):
+        if not self.qskin.size:
+            raise ValueError("16-mode seawater field atlas is not trained")
+        p=np.asarray(points,float).reshape(-1,3)
+        r=np.asarray(region,int).reshape(-1)
+        w=self.weights(case)
+        origin=w@self.origin
+        span=w@self.span
+        mid=np.einsum('n,nij->ij',w,self.mid)
+        axes=np.einsum('n,nijk->ijk',w,self.axes)
+        for j in range(2):
+            u,_,v=np.linalg.svd(axes[j])
+            axes[j]=u@v
+        half=np.einsum('n,nij->ij',w,self.half)
+        old=raw_field(p,r,origin,span,mid,axes,half)[:,:14]
+        skin=raw_skin(p,r,mid,axes,half)
+        raw=np.column_stack((old,skin))
+        Q=np.einsum('n,nij->ij',w,self.qskin)
+        out=raw@Q
+        sea=(r==0)|(r==5)|(r==6)
+        out[~sea]=0.
+        if weights is not None and np.any(sea):
+            cap=np.asarray(weights,float).reshape(-1)
+            if cap.shape!=(len(p),) or np.any(cap<=0):
+                raise ValueError("positive point capacities are required")
+            out[sea]-=np.average(out[sea],axis=0,weights=cap[sea])
+        return out
+
+    def query(self,case,points,region,state,ambient=293.15,weights=None,
+              skin=None):
         st=np.asarray(state,float)
         if st.ndim==1:
             st=st[None]
         if st.ndim!=2 or st.shape[1]!=32:
             raise ValueError("shared heat state must have 32 kelvin coordinates")
         b=self.predict(case,points,region,weights)
-        return ambient+st@b.T
+        out=ambient+st@b.T
+        if skin is not None:
+            extra=np.asarray(skin,float)
+            if extra.shape!=(len(st),16):
+                raise ValueError("sea-skin temporal modes must match [time,16]")
+            out+=extra@self.predict_skin(case,points,region,weights).T
+        return out
 
     def save(self,path):
         np.savez_compressed(path,x=self.x,mu=self.mu,std=self.std,
-            ell=self.ell,qsea=self.qsea,qpkg=self.qpkg,
+            ell=self.ell,qsea=self.qsea,qpkg=self.qpkg,qskin=self.qskin,
             origin=self.origin,span=self.span,mid=self.mid,
             axes=self.axes,half=self.half)
 
@@ -126,12 +180,12 @@ class FieldAtlas:
             return cls({k:f[k] for k in f.files})
 
 
-def learn(rows,init):
+def learn(rows,init,skin=False):
     """Fit the exact canonical spatial modes on the original training anchors."""
     from .geom_canon import basis,mode_scale
     from .geom_heat import GeomHeat
     from .geom_rom import groups
-    qs=[];qp=[];orig=[];span=[];mid=[];axes=[];half=[]
+    qs=[];qp=[];qsk=[];orig=[];span=[];mid=[];axes=[];half=[]
     for row in rows:
         head=GeomHeat.load(row['anchor'])
         phi=basis(head,32)
@@ -159,9 +213,18 @@ def learn(rows,init):
             a=18+(j-1)*7
             q12.append(np.linalg.lstsq(
                 f[sl[j],:8],phi[sl[j],a:a+7]*scale[a:a+7],rcond=1e-10)[0])
+        if skin:
+            phi48=basis(head,48)
+            scale48=mode_scale(head,48)
+            rskin=raw_skin(points,reg,center,
+                           head._pkg_axes,head._pkg_half)
+            R=np.column_stack((f[sl[0],:14],rskin[sl[0]]))
+            qsk.append(np.linalg.lstsq(
+                R,phi48[sl[0],32:48]*scale48[32:48],rcond=1e-10)[0])
         qs.append(q0);qp.append(q12);orig.append(org);span.append(sp)
         mid.append(center);axes.append(head._pkg_axes);half.append(head._pkg_half)
     return FieldAtlas(dict(x=init.x,mu=init.mu,std=init.std,ell=init.ell,
         qsea=np.asarray(qs),qpkg=np.asarray(qp),
+        qskin=np.asarray(qsk),
         origin=np.asarray(orig),span=np.asarray(span),
         mid=np.asarray(mid),axes=np.asarray(axes),half=np.asarray(half)))

@@ -49,3 +49,29 @@ def test_conservative_spatial_shape_centering():
         idx=mat==m
         avg=np.average(temp[:,idx],axis=1,weights=cap[idx])
         assert np.allclose(avg,293.15+st[:,m],atol=1e-8)
+
+def test_48mode_skin_field_keeps_material_means():
+    case=json.load(open('runs/geomfrac_s5_v9_plan.json'))['cases']['W02']
+    from sdfmpneo_bfzi.geom_field import FieldAtlas
+    f=FieldAtlas.load('runs/geomfrac_field_v2.npz')
+    xyz=np.array([[.02,.13,.08],[-.02,-.03,.08],
+                  [.0,.0,.0],[.01,.03,.01],
+                  [-.03,.03,.01],[.05,.03,.01]])
+    region=np.array([0,5,6,1,2,3])
+    weight=np.array([2.,3.,4.,5.,6.,7.])
+    modes=np.ones((3,16))
+    states=np.zeros((3,32))
+    states[:,0]=1.
+    states[:,1]=2.
+    states[:,2]=3.
+    raw=f.predict_skin(case,xyz,region,weights=weight)
+    sea=np.isin(region,[0,5,6])
+    assert raw.shape==(len(xyz),16)
+    assert np.allclose(np.average(raw[sea],weights=weight[sea],axis=0),0,atol=1e-10)
+    assert np.count_nonzero(raw[~sea])==0
+    out=f.query(case,xyz,region,states,weights=weight,skin=modes)
+    sea_mean=np.average(out[:,sea],axis=1,weights=weight[sea])
+    assert np.allclose(sea_mean,294.15,atol=1e-10)
+    assert np.allclose(out[:,region==1],295.15)
+    assert np.allclose(out[:,region==2],296.15)
+    assert np.all(np.isfinite(out))

@@ -1,4 +1,4 @@
-﻿"""Train and check geometry-only continuous spatial temperature decoder."""
+"""Train and check geometry-only continuous spatial temperature decoder."""
 from __future__ import annotations
 import argparse
 import json
@@ -40,6 +40,8 @@ def score(atlas,plan,mf,split):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--skin',action='store_true',
+                   help="train additional 16 local sea-skin spatial modes")
     p.add_argument('--plan',type=Path,
                    default=Path('runs/geomfrac_s5_v4_plan.json'))
     p.add_argument('--manifest',type=Path,
@@ -51,13 +53,14 @@ def main():
     a=p.parse_args()
     pl=json.loads(a.plan.read_text(encoding='utf-8'))
     mf=json.loads(a.manifest.read_text(encoding='utf-8'))
-    atlas=learn(mf['train'],GeomInit.load(a.init))
+    atlas=learn(mf['train'],GeomInit.load(a.init),skin=a.skin)
     atlas.save(a.out)
     dev=score(atlas,pl,mf,'val')
     train=score(atlas,pl,dict(train=mf['train'][:2]),'train')
     a.report.write_text(json.dumps(dict(status='geometry-only continuous spatial fields',
           train_geometries=len(mf['train']),dev_geometries=len(mf['val']),
           input_states='teacher projected 32-mode states, spatial decoder isolated',
+          rank=48 if a.skin else 32,
           dev=dev,train_subset=train),indent=2),encoding='utf-8')
     print('FIELD_DONE',dev['mean_max_K'],dev['mean_rmse_K'],flush=True)
 

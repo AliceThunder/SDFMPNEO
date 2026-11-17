@@ -11,7 +11,7 @@ import torch
 from .frac_memory import zmat
 from .geom_canon import labels
 from .geom_heat import pack
-from .geom_init import GeomInit
+from .geom_init import GeomInit,encode
 from .geom_memory import geom_feat, geom_port, heat_drive
 from .geom_neural import GeomFracET
 from .pose import _rot
@@ -42,7 +42,7 @@ def geometry(case,init):
     return a,feat
 
 
-def circuit(a,init,port,state,tan,g,scale,voltage,ambient):
+def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,tm=0.):
     """Nonlinear two-port circuit with temperature-sensitive sea and copper."""
     mean=state[:5]/np.sqrt(init['cap'])
     cu=port.copper(ambient+mean[3:5])
@@ -55,6 +55,10 @@ def circuit(a,init,port,state,tan,g,scale,voltage,ambient):
     else:
         st=torch.as_tensor((state/scale)[None],dtype=g.dtype)
         dsea=zmat(tan(g,st)[0].detach().cpu().numpy())
+    if extra is not None:
+        corr=extra(torch.as_tensor((state/scale)[None],dtype=g.dtype),
+                   tm,voltage)
+        dsea+=zmat(np.asarray(corr,float))
     sea=sea0+dsea
     z=sea+1j*port.omega*air+np.diag(cu)
     cur=np.linalg.solve(z+init['ext'],np.array([voltage,0.],complex))
@@ -78,7 +82,7 @@ def positivity(a,init,scale):
         np.maximum(mean[mat[bad]],0.)/(-fluctu[bad]))))
 
 
-def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb):
+def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
     """Implicit correction of five budgets, explicit neural shape coordinates."""
     cap=init['cap']
     k=init['k']
@@ -88,7 +92,7 @@ def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb):
     jac=np.eye(5)/dt+k[:5,:5]
     for _ in range(12):
         z,cur,ps,pc,sea=circuit(target,init,port,target,tan,g,scale,
-                                voltage,amb)
+                                voltage,amb,extra,tm)
         # Cold weak-source projection with positive total sea loss.
         q=init['src']@np.array([.5*abs(cur[0])**2,
                    (cur[0].conjugate()*cur[1]).real,
@@ -103,7 +107,8 @@ def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb):
             target[:5]=nxt
             break
         target[:5]=nxt
-    z,cur,ps,pc,sea=circuit(target,init,port,target,tan,g,scale,voltage,amb)
+    z,cur,ps,pc,sea=circuit(target,init,port,target,tan,g,scale,
+                             voltage,amb,extra,tm)
     q=init['src']@np.array([.5*abs(cur[0])**2,
                            (cur[0].conjugate()*cur[1]).real,
                            .5*abs(cur[1])**2])
@@ -117,7 +122,7 @@ def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb):
 
 @torch.no_grad()
 def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
-            init_override=None):
+            init_override=None,extra=None):
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
@@ -130,6 +135,14 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     geom,feat=geometry(case,init)
     port=geom_port(geom)
     g=torch.as_tensor(feat[None],dtype=torch.float32)
+    if extra is not None:
+        eg=torch.as_tensor(encode(case)[None],dtype=g.dtype)
+        def ext_fn(state,tm,vin):
+            tim=torch.as_tensor([[tm]],dtype=g.dtype)
+            vol=torch.as_tensor([[vin]],dtype=g.dtype)
+            return extra(eg,state,tim,vol)[0].detach().cpu().numpy()
+    else:
+        ext_fn=None
     cap=init['cap']
     scale=np.sqrt(cap[labels(32)])
     cs=np.asarray(ck['src_scale'],float)
@@ -151,7 +164,7 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
                 dt,g,torch.as_tensor((old/scale)[None],dtype=g.dtype),ac)
             guess=pred[0].cpu().numpy()*scale
             full,budget=thermal_step(old,guess,dt,float(v[i-1]),
-                                    init,port,tan,g,scale,ambient)
+                                    init,port,tan,g,scale,ambient,ext_fn,tm)
             for _ in range(5):
                 beta=positivity(full,init,scale)
                 if beta>=1.-1e-9:
@@ -159,12 +172,12 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
                 damped=full.copy()
                 damped[5:]*=max(beta*.999,0.)
                 full,budget=thermal_step(old,damped,dt,float(v[i-1]),
-                                          init,port,tan,g,scale,ambient)
+                                          init,port,tan,g,scale,ambient,ext_fn,tm)
             old=full.copy()
         else:
             budget=np.zeros(5)
         z,I,ps,pc,_=circuit(full,init,port,full,tan,g,scale,
-                            float(v[i]),ambient)
+                            float(v[i]),ambient,ext_fn,tm)
         zprev=z
         for key,val in (
             ('z6',pack(z)),('current_A',I),

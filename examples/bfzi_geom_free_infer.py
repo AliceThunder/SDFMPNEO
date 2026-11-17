@@ -20,6 +20,8 @@ def main():
     p.add_argument('--atlas',type=Path,default=Path('runs/geomfrac_init_v1.npz'))
     p.add_argument('--cold-atlas',type=Path,default=None)
     p.add_argument('--cold-weight',type=float,default=0.)
+    p.add_argument('--dyn-model',type=Path,default=None)
+    p.add_argument('--skin-model',type=Path,default=None)
     p.add_argument('--field-atlas',type=Path,default=None,
                    help="continuous 3D temperature decoder from cold training geometries")
     p.add_argument('--point-file',type=Path,default=None,
@@ -45,11 +47,15 @@ def main():
     net.load_state_dict(ck['state'])
     net.eval()
     tangent=load_z(a.z_fix_model)
+    extra=None
+    if a.dyn_model:
+        from sdfmpneo_bfzi.geom_dyn import restore
+        extra=restore(a.dyn_model)
     loaded=time.perf_counter()
     times=np.arange(0,a.horizon+a.step*.5,a.step)
     voltage=np.full(len(times),a.voltage)
     result=rollout(case,atlas,net,ck,times,voltage,tangent,
-                   init_override=init)
+                   init_override=init,extra=extra)
     if a.point_file or a.field_atlas:
         if not a.point_file or not a.field_atlas:
             p.error("--point-file and --field-atlas are required together")
@@ -59,9 +65,22 @@ def main():
             region=np.asarray(pts['region'],int)
             weights=np.asarray(pts['cap'],float) if 'cap' in pts else None
         field=FieldAtlas.load(a.field_atlas)
+        extra_skin=None
+        if a.skin_model:
+            from sdfmpneo_bfzi.geom_skin import restore as load_skin
+            from sdfmpneo_bfzi.geom_free import geometry
+            model=load_skin(a.skin_model)
+            g=np.broadcast_to(geometry(case,init)[1],
+                              (len(times),model.ng)).copy()
+            with torch.no_grad():
+                extra_skin=model(
+                    torch.as_tensor(g,dtype=torch.float32),
+                    torch.as_tensor(result['heat_state'],dtype=torch.float32),
+                    torch.as_tensor(times[:,None],dtype=torch.float32),
+                    torch.as_tensor(np.r_[0.,voltage[:-1]][:,None],dtype=torch.float32)).numpy()
         result['temp_points_K']=field.query(case,xyz,region,
                                result['heat_state'],result['ambient'],
-                               weights=weights)
+                               weights=weights,skin=extra_skin)
         result['point_xyz']=xyz
         result['point_region']=region
     infer=time.perf_counter()-loaded

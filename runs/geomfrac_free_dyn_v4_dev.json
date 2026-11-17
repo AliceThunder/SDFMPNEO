@@ -1,0 +1,64 @@
+{
+  "status": "development-selected geometry-only causal dynamic Z head",
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "train_histories": 90,
+  "dev_histories": 15,
+  "best_epoch": 80,
+  "baseline_dev_dynamic_Z_pct": 33.005694182552745,
+  "best_dev_dynamic_Z_pct": 22.375886122596743,
+  "baseline_dev_temp_group_K": 2.6969287111568407,
+  "history": [
+    {
+      "epoch": 0,
+      "dynamic_Z_pct": 33.005694182552745,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.6969287111568407,
+      "budget_W": 1.0711321972945598e-11
+    },
+    {
+      "epoch": 40,
+      "dynamic_Z_pct": 25.590239413776988,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7178443841633375,
+      "budget_W": 1.2186202795382168e-11
+    },
+    {
+      "epoch": 80,
+      "dynamic_Z_pct": 22.375886122596743,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.711059596759719,
+      "budget_W": 1.5965584902875882e-11
+    },
+    {
+      "epoch": 120,
+      "dynamic_Z_pct": 23.149308631213554,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.711136570062748,
+      "budget_W": 1.198340668229714e-11
+    },
+    {
+      "epoch": 160,
+      "dynamic_Z_pct": 23.303663553774218,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7124043473306187,
+      "budget_W": 1.2647103052393597e-11
+    },
+    {
+      "epoch": 200,
+      "dynamic_Z_pct": 23.207748032244687,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.714877576016822,
+      "budget_W": 1.2997387247722283e-11
+    },
+    {
+      "epoch": 240,
+      "dynamic_Z_pct": 24.992473334865004,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.718416652449116,
+      "budget_W": 1.3679519628099197e-11
+    }
+  ],
+  "atlas": "runs\\geomfrac_init_v1.npz",
+  "head": "runs\\geomfrac_free_dyn_v4.pt"
+}

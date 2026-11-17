@@ -1,0 +1,63 @@
+{
+  "status": "development-selected geometry-only causal dynamic Z head",
+  "train_geometries": 24,
+  "dev_geometries": 5,
+  "hold_geometries": 6,
+  "geom_strength": 0.0,
+  "train_histories": 72,
+  "dev_histories": 15,
+  "best_epoch": 160,
+  "baseline_dev_dynamic_Z_pct": 33.005694182552745,
+  "best_dev_dynamic_Z_pct": 21.68595467731353,
+  "best_selection_Z_pct": 26.469265527889128,
+  "baseline_dev_temp_group_K": 2.6969287111568407,
+  "history": [
+    {
+      "epoch": 0,
+      "dynamic_Z_pct": 33.005694182552745,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.6969287111568407,
+      "budget_W": 1.0711321972945598e-11,
+      "hold_Z_pct": 35.92033696278005,
+      "selection_Z_pct": 34.46301557266639
+    },
+    {
+      "epoch": 40,
+      "dynamic_Z_pct": 25.44863676411563,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7156517042771156,
+      "budget_W": 1.133814632248114e-11,
+      "hold_Z_pct": 34.16219228550684,
+      "selection_Z_pct": 29.805414524811233
+    },
+    {
+      "epoch": 80,
+      "dynamic_Z_pct": 24.657877275750806,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.709722876243499,
+      "budget_W": 1.146719839444434e-11,
+      "hold_Z_pct": 32.79601645333279,
+      "selection_Z_pct": 28.726946864541798
+    },
+    {
+      "epoch": 120,
+      "dynamic_Z_pct": 23.080291271917684,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7123816999258037,
+      "budget_W": 1.2407434918747654e-11,
+      "hold_Z_pct": 31.81266960732851,
+      "selection_Z_pct": 27.446480439623095
+    },
+    {
+      "epoch": 160,
+      "dynamic_Z_pct": 21.68595467731353,
+      "cold_Z_pct": 2.374802486721316,
+      "temp_group_K": 2.7182219674084496,
+      "budget_W": 1.557842868698628e-11,
+      "hold_Z_pct": 31.252576378464724,
+      "selection_Z_pct": 26.469265527889128
+    }
+  ],
+  "atlas": "runs\\geomfrac_init_v1.npz",
+  "head": "runs\\geomfrac_free_dyn_v4_shared.pt"
+}
