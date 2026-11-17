@@ -1,0 +1,54 @@
+{
+  "status": "running",
+  "experiment": "pose-augmented V5 GeomFracET base-model fine-tuning",
+  "branch": "research/bfzi-uwpt-electrothermal-surrogate",
+  "initial_checkpoint": "runs/geomfrac_et_v4_8g_quality.pt",
+  "training_manifest": "runs/geomfrac_s5_v5_36g_manifest.json",
+  "train_geometries": 36,
+  "dev_geometries": 5,
+  "train_history_count": 108,
+  "dev_history_count": 15,
+  "training": {
+    "init_model": true,
+    "reuse_scales": true,
+    "epochs": 300,
+    "patience": 60,
+    "learning_rate": 0.0003,
+    "selection": "dynamic_z",
+    "dynamic_z_loss_weight": 1,
+    "history_weight": "step"
+  },
+  "added_pose_geometries": [
+    "Z01",
+    "Z02",
+    "Z03",
+    "Z04",
+    "Z05",
+    "Z06"
+  ],
+  "added_pose_geometries_role": "previously completed diagnostic set; now included in training, no longer independent",
+  "fresh_holdout_plan": "runs/geomfrac_s5_free9_plan.json",
+  "fresh_holdout_geometries": [
+    "AA01",
+    "AA02",
+    "AA03",
+    "AA04",
+    "AA05",
+    "AA06"
+  ],
+  "fresh_holdout_histories": 18,
+  "holdout_grid": "BFZI V150 S5 ultra",
+  "inner_step_s": 1.875,
+  "xenergy": {
+    "device": "XEnergy-Zhucy",
+    "repo": "D:\\work\\geomfrac-train",
+    "training_pid": 32332,
+    "holdout_generation_pid": 12904,
+    "training_log": "runs/v5_pose_train.log",
+    "training_stderr": "runs/v5_pose_train.err",
+    "holdout_log": "runs/free9_build.log",
+    "holdout_stderr": "runs/free9_build.err",
+    "failure_policy": "per-history physical reference generation continues after an individual failure and persists each attempt"
+  },
+  "decision": "V1-V4 local tangent variants are not promoted; V6 remains formal until V5 base-model AA holdout acceptance."
+}
