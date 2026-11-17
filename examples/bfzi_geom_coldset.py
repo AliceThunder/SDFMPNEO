@@ -23,8 +23,9 @@ def main():
     p.add_argument('--rank',type=int,choices=(32,48,64),default=32)
     a=p.parse_args()
     plan=json.loads(a.plan.read_text(encoding='utf-8'))
-    if any(k not in plan['train'] for k in a.keys):
-        p.error('only declared cold-only training cases permitted')
+    allowed=plan.get('train',[])+plan.get('test',[])
+    if any(k not in allowed for k in a.keys):
+        p.error('only declared cold-only cases permitted')
     a.out.mkdir(parents=True,exist_ok=True)
     bf,v150=originals(a.bfzi_root)
     xz,y=GRIDS['ultra']

@@ -1010,3 +1010,33 @@ budget and existing BFZI-free SOE dynamics unchanged.
 W01 600-s 6-point query ~0.409s total with no new geometry BFZI
 solve or per-geometry FV construction. V9 anchored model remains
 accepted. See GEOMFRAC_GEOMETRY_FREE_V4.md.
+
+## 2026-11-16 ? V5 separate TX/RX cold-port surrogate and frozen Q test
+
+Created terminal-specific independent cold self R/X regressors using
+the native coil alpha/core parameters, calibrated the cold
+self-air inductance decomposition and connected them to the
+BFZI-free conserved 32-state SOE / 48-mode spatial pipeline.
+Developer matched-current error 23.018% ->
+7.241%; cold Z 2.375% ->
+0.836%; dynamic Z
+33.006% ->
+12.691%; 3D RMSE
+0.3445 ->
+0.2261 K.
+
+Six new Q01-Q06 cold-only geometries were frozen after
+checkpoint selection and independently built with BFZI V150 S5.
+Their current error fell 21.810% ->
+11.334%; worst case
+48.157% ->
+22.998%; cold-Z
+1.892% ->
+1.269%. Additional 24 cold
+geometries did not further improve this holdout.
+Previously evaluated W01-W04 dynamic retrospective
+20.344% ->
+19.149% with 2 geometry
+regressions. V5 remains optional in BFZI-free branch, accepted
+V9 with geometry anchor remains unchanged.
+See GEOMFRAC_GEOMETRY_FREE_V5.md.

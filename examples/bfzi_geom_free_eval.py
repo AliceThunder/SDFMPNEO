@@ -42,12 +42,14 @@ def metric(pred,row):
         energy_budget_W=float(np.max(abs(pred['material_budget_W']))))
 
 
-def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None):
+def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None):
     rows=[]
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
         case=plan['cases'][name]
         init=mix_init(case,atlas,extra,weight)
+        if port_self is not None:
+            init=port_self.apply(case,init)
         for hist in prepare(spec,32):
             t0=time.perf_counter()
             pred=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
@@ -103,6 +105,7 @@ def main():
     p.add_argument('--field-atlas',type=Path,default=None)
     p.add_argument('--dyn-model',type=Path,default=None)
     p.add_argument('--skin-model',type=Path,default=None)
+    p.add_argument('--port-self-model',type=Path,default=None)
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,default=Path('runs/geomfrac_et_v9_ztune.pt'))
     p.add_argument('--out',type=Path,required=True)
@@ -128,10 +131,14 @@ def main():
     if args.skin_model:
         from sdfmpneo_bfzi.geom_skin import restore as load_skin
         skin=load_skin(args.skin_model)
+    port_self=None
+    if args.port_self_model:
+        from sdfmpneo_bfzi.geom_portself import PortSelf
+        port_self=PortSelf.load(args.port_self_model)
     pl=json.loads(args.plan.read_text(encoding='utf-8'))
     mf=json.loads(args.manifest.read_text(encoding='utf-8'))
     res=evaluate(atlas,net,ck,tan,pl,mf,args.split,
-                 extra,args.cold_weight,field,dyn,skin)
+                 extra,args.cold_weight,field,dyn,skin,port_self)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(res,indent=2),encoding='utf-8')
     print('FREE_EVAL_MEANS',[(k,round(v*100 if 'z_rel' in k else v,4))

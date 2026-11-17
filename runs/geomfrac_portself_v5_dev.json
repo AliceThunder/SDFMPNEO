@@ -1,0 +1,42 @@
+{
+  "method": "two native port cold R/X RBF with air/sea separation",
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "dims": 2,
+  "ell": 5.0,
+  "lam": 0.01,
+  "dev": {
+    "current": 0.07241106171315467,
+    "cold_Z": 0.008360085164239486,
+    "per_geometry": [
+      {
+        "geometry": "T04",
+        "current_rel": 0.051534044417354694,
+        "cold_Z_rel": 0.0032220478982213
+      },
+      {
+        "geometry": "D01",
+        "current_rel": 0.07322903315682731,
+        "cold_Z_rel": 0.009377624440676916
+      },
+      {
+        "geometry": "D02",
+        "current_rel": 0.12218700372749838,
+        "cold_Z_rel": 0.013191058858930916
+      },
+      {
+        "geometry": "D03",
+        "current_rel": 0.07538147248951414,
+        "cold_Z_rel": 0.008885901976971951
+      },
+      {
+        "geometry": "D04",
+        "current_rel": 0.0397237547745788,
+        "cold_Z_rel": 0.007123792646396353
+      }
+    ]
+  },
+  "base_dev_current": 0.23017896719407602,
+  "base_dev_cold_Z": 0.023748024867213176,
+  "zero_BFZI_inference": true
+}
