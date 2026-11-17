@@ -7,7 +7,7 @@
   "dev_histories": 15,
   "baseline_dev_dynamic_z_pct": 12.204559292681521,
   "best_dev_dynamic_z_pct": 10.877213990632677,
-  "relative_dev_reduction_pct": -10.875815096779348,
+  "relative_dev_reduction_pct": 10.87581509677935,
   "current_dev_pct": 6.902101679542394,
   "temp_rmse_dev_K": 0.3544164453965149,
   "budget_dev_W": 1.0130587649111197e-11,
@@ -25,6 +25,6 @@
   ],
   "fresh_holdout_histories": 18,
   "fresh_holdout_physics": "pending",
-  "Y01_Y06": "not used for candidate fitting; previous Y error analysis informed method design, so not considered blind for this candidate",
+  "Y01_Y06": "previous Y error analysis informed method design; no fitting data were taken from Y, but Y is not treated as blind for this candidate",
   "next": "Generate BFZI V150 S5 free8 physical references with resilient per-history continuation, then evaluate the fixed candidate once."
 }
