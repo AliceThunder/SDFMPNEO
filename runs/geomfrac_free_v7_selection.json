@@ -19,7 +19,7 @@
   ],
   "physics": "BFZI V150 S5 source_order=5 ultra inner_step=1.875s",
   "atlas": "runs/geomfrac_init_v1.npz",
-  "heat_model": "runs/geomfrac_et_v7_skin_resid.pt",
+  "heat_model": "runs/geomfrac_et_v4_8g_quality.pt",
   "z_fix_model": "runs/geomfrac_et_v9_ztune.pt",
   "field_atlas": "runs/geomfrac_field_v2.npz",
   "skin_model": "runs/geomfrac_et_v7_skin_resid.pt",
