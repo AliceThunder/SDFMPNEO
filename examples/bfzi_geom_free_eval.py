@@ -106,6 +106,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
             result['geometry_prepare_s']=prep_s if hi==0 else 0.
             result['first_new_geometry_s']=prep_s+dt if hi==0 else None
             if field is not None:
+                tf=time.perf_counter()
                 rom=hist['rom']
                 xyz=np.concatenate((rom.xyz,*rom.pkg_xyz),axis=0)
                 regs=np.r_[np.zeros(rom.nwet,int),
@@ -139,6 +140,11 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
                         result[label+'_rmse_K']=float(
                             np.sqrt(np.mean(diff[:,mask]**2)))
                         result[label+'_max_K']=float(np.max(abs(diff[:,mask])))
+                result['field_decode_s']=time.perf_counter()-tf
+                result['field_query_points']=int(len(xyz))
+                if hi==0:
+                    result['first_new_geometry_full_s']=(
+                        prep_s+dt+result['field_decode_s'])
             result['seconds']=dt
             result['geometry']=name
             rows.append(result)
