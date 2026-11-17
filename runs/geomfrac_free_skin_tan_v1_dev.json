@@ -54,5 +54,12 @@
   "checkpoint_local_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1.pt",
   "report_local_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1_dev.json",
   "checkpoint_committed": false,
-  "next": "Generate a fresh sealed S5 geometry set Z01-Z06. Y01-Y06 has already informed method selection and must not be reused as a blind set for this candidate."
+  "next": "Generate a fresh sealed S5 geometry set Z01-Z06. Y01-Y06 has already informed method selection and must not be reused as a blind set for this candidate.",
+  "relative_dynamic_z_reduction_pct": 10.87581509677935,
+  "test_protocol": {
+    "Y01_Y06": "not used for fitting, but previous Y error analysis informed the choice to add RX-local skin modes; therefore not treated as a blind evaluation for this candidate",
+    "fresh_holdout": "runs/geomfrac_s5_free8_plan.json",
+    "fresh_holdout_geometries": 6,
+    "fresh_holdout_histories": 18
+  }
 }
