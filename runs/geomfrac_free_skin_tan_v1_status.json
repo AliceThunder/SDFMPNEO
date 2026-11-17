@@ -1,5 +1,5 @@
 {
-  "status": "development_selected_fresh_holdout_pending",
+  "status": "fresh_holdout_physics_running",
   "candidate": "port-factorized local-skin impedance tangent",
   "best_epoch": 80,
   "train_geometries": 30,
@@ -13,7 +13,7 @@
   "budget_dev_W": 1.0130587649111197e-11,
   "tests": "5 passed",
   "checkpoint_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1.pt",
-  "checkpoint_pushed": false,
+  "checkpoint_pushed": true,
   "fresh_holdout_plan": "runs/geomfrac_s5_free8_plan.json",
   "fresh_holdout_geometries": [
     "Z01",
@@ -26,5 +26,23 @@
   "fresh_holdout_histories": 18,
   "fresh_holdout_physics": "pending",
   "Y01_Y06": "previous Y error analysis informed method design; no fitting data were taken from Y, but Y is not treated as blind for this candidate",
-  "next": "Generate BFZI V150 S5 free8 physical references with resilient per-history continuation, then evaluate the fixed candidate once."
+  "next": "Allow all 18 S5 teachers to finish, then run the frozen local-skin tangent candidate once on Z01-Z06.",
+  "checkpoint_path": "runs/geomfrac_free_skin_tan_v1.pt",
+  "checkpoint_commit": "50a20c7812f72f1edc58d490acc661d4cf1eb6e5",
+  "physics_generation": {
+    "device": "XEnergy-Zhucy",
+    "repo_path": "D:\\work\\geomfrac-train",
+    "bfzi_root": "D:\\work\\geomfrac-s5-BFZI",
+    "python_pid": 37428,
+    "tag": "free8",
+    "grid": "ultra",
+    "inner_step_s": 1.875,
+    "log": "runs/free8_build.log",
+    "stderr": "runs/free8_build.err",
+    "completed_histories": 1,
+    "failed_histories": 0,
+    "first_completed": "Z01/60s",
+    "failure_policy": "per-history failure is recorded and the next excitation/geometry continues",
+    "resume": "candidate histories are skipped; failed and incomplete histories are retried"
+  }
 }
