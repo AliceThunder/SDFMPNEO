@@ -14,7 +14,7 @@ from sdfmpneo_bfzi.geom_init import GeomInit
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_ztune import restore as load_z
 from sdfmpneo_bfzi.geom_skin import restore as load_skin
-from sdfmpneo_bfzi.geom_skintan import SkinTan,SkinTanV2
+from sdfmpneo_bfzi.geom_skintan import SkinTan,SkinTanV2,SkinTanV3
 from sdfmpneo_bfzi.geom_portself import PortSelf
 from sdfmpneo_bfzi.geom_mutual import MutFix
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
@@ -113,12 +113,13 @@ def main():
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_free_skin_tan_v1_dev.json"))
     p.add_argument("--shape-mix",type=float,default=.5)
     p.add_argument("--v2",action="store_true",help="use periodic SO(3) geometry encoding")
+    p.add_argument("--v3",action="store_true",help="use compact physical geometry descriptors")
     p.add_argument("--epochs",type=int,default=180)
     p.add_argument("--eval-every",type=int,default=10)
     p.add_argument("--patience",type=int,default=60)
     p.add_argument("--lr",type=float,default=.0008)
     args=p.parse_args()
-    if args.eval_every<1 or args.epochs<1 or not 0<=args.shape_mix<=1:
+    if args.eval_every<1 or args.epochs<1 or not 0<=args.shape_mix<=1 or (args.v2 and args.v3):
         p.error("invalid training schedule or shape mix")
     torch.manual_seed(73)
     torch.set_num_threads(2)
@@ -147,7 +148,7 @@ def main():
     sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32)
     all_s=torch.cat([r["skin"] for r in tr]).numpy()
     ss=np.maximum(np.std(all_s,axis=0),.05)
-    model_cls=SkinTanV2 if args.v2 else SkinTan
+    model_cls=SkinTanV3 if args.v3 else (SkinTanV2 if args.v2 else SkinTan)
     model=model_cls(ng=int(ck["ng"]),sa=np.asarray(ck["a_scale"]),ss=ss)
     opt=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=.002)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -184,17 +185,17 @@ def main():
     model.load_state_dict(saved)
     final=closed(va,model,base,skin,sy,atlas,net,ck,args.shape_mix)
     result=dict(status="development-selected port-factorized local-skin tangent V2" if args.v2 else "development-selected port-factorized local-skin tangent V1",
-        model_version="v2" if args.v2 else "v1",
+        model_version="v3" if args.v3 else ("v2" if args.v2 else "v1"),
         train_geometries=len(mf["train"]),dev_geometries=len(mf["val"]),
         train_histories=len(tr),dev_histories=len(va),
-        architecture=("periodic sin/cos yaw-pitch-tilt encoding; TX/RX local skin modes; mutual head uses both" if args.v2 else "TX head uses TX local skin modes; RX head uses RX local skin modes; mutual head uses both"),
+        architecture=("compact physical coil/translation/package/thermal descriptors; pose encoded by local skin modes" if args.v3 else ("periodic sin/cos yaw-pitch-tilt encoding; TX/RX local skin modes; mutual head uses both" if args.v2 else "TX head uses TX local skin modes; RX head uses RX local skin modes; mutual head uses both")),
         shape_mix=args.shape_mix,best_epoch=best_ep,
         baseline_dev=baseline,best_dev=final,history=hist,
         base_model=str(args.z_fix_model),skin_model=str(args.skin_model),
         port_self=str(args.port_self_model),mutual=str(args.mutual_model),
         source=str(args.source_model))
     args.out.parent.mkdir(parents=True,exist_ok=True)
-    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version="v2" if args.v2 else "v1",
+    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version="v3" if args.v3 else ("v2" if args.v2 else "v1"),
         sa=torch.as_tensor(np.asarray(ck["a_scale"]),dtype=torch.float32),
         ss=torch.as_tensor(ss,dtype=torch.float32),
         sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32),
