@@ -39,12 +39,12 @@
     "inner_step_s": 1.875,
     "log": "runs/free8_build.log",
     "stderr": "runs/free8_build.err",
-    "completed_histories": 1,
+    "completed_histories": 2,
     "failed_histories": 0,
     "first_completed": "Z01/60s",
     "failure_policy": "per-history failure is recorded and the next excitation/geometry continues",
     "resume": "candidate histories are skipped; failed and incomplete histories are retried",
     "current_geometry": "Z01",
-    "last_completed": "Z01/60s"
+    "last_completed": "Z01/300s"
   }
 }
