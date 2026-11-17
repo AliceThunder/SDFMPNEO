@@ -135,9 +135,9 @@ def main():
     src=SrcFix.load(args.source_model) if args.source_model else None
     plan=json.loads(args.plan.read_text(encoding="utf-8"))
     mf=json.loads(args.manifest.read_text(encoding="utf-8"))
-    trset={str(x["anchor"]).replace("\\\\","/") for x in mf["train"]}
-    vaset={str(x["anchor"]).replace("\\\\","/") for x in mf["val"]}
-    teset={str(x["anchor"]).replace("\\\\","/") for x in mf.get("test",[])}
+    trset={str(x["anchor"]).replace(chr(92),"/") for x in mf["train"]}
+    vaset={str(x["anchor"]).replace(chr(92),"/") for x in mf["val"]}
+    teset={str(x["anchor"]).replace(chr(92),"/") for x in mf.get("test",[])}
     if (not trset or not vaset or trset&vaset or
             trset&teset or vaset&teset):
         raise ValueError("train, dev and sealed test geometries must be disjoint")
