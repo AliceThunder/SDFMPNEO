@@ -1,0 +1,30 @@
+{
+  "status": "development_selected_fresh_holdout_pending",
+  "candidate": "port-factorized local-skin impedance tangent",
+  "best_epoch": 80,
+  "train_geometries": 30,
+  "dev_geometries": 5,
+  "dev_histories": 15,
+  "baseline_dev_dynamic_z_pct": 12.204559292681521,
+  "best_dev_dynamic_z_pct": 10.877213990632677,
+  "relative_dev_reduction_pct": -10.875815096779348,
+  "current_dev_pct": 6.902101679542394,
+  "temp_rmse_dev_K": 0.3544164453965149,
+  "budget_dev_W": 1.0130587649111197e-11,
+  "tests": "5 passed",
+  "checkpoint_xenergy": "D:\\work\\geomfrac-train\\runs\\geomfrac_free_skin_tan_v1.pt",
+  "checkpoint_pushed": false,
+  "fresh_holdout_plan": "runs/geomfrac_s5_free8_plan.json",
+  "fresh_holdout_geometries": [
+    "Z01",
+    "Z02",
+    "Z03",
+    "Z04",
+    "Z05",
+    "Z06"
+  ],
+  "fresh_holdout_histories": 18,
+  "fresh_holdout_physics": "pending",
+  "Y01_Y06": "not used for candidate fitting; previous Y error analysis informed method design, so not considered blind for this candidate",
+  "next": "Generate BFZI V150 S5 free8 physical references with resilient per-history continuation, then evaluate the fixed candidate once."
+}
