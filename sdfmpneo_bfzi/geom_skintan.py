@@ -17,8 +17,27 @@ def _head(n,h):
     return net
 
 
+def encode_geom(g):
+    """Encode the relative coil rotation by periodic Euler-angle features.
+
+    Input layout is the existing 45-D geometry descriptor:
+    16 coil descriptors, 6 cold-Z values, 3 translations, 9 rotation
+    matrix entries, 6 package half-sizes and 5 thermal descriptors.
+    Output replaces the 9 matrix entries with sin/cos of yaw, pitch, tilt.
+    """
+    if g.ndim!=2 or g.shape[1]!=45:
+        raise ValueError("geometry encoder expects [B,45]")
+    r=g[:,25:34].reshape(-1,3,3)
+    pitch=torch.asin(torch.clamp(-r[:,2,0],-1.,1.))
+    yaw=torch.atan2(r[:,1,0],r[:,0,0])
+    tilt=torch.atan2(r[:,2,1],r[:,2,2])
+    ang=torch.stack((yaw,pitch,tilt),dim=-1)
+    rot=torch.stack((torch.sin(ang),torch.cos(ang)),dim=-1).flatten(1)
+    return torch.cat((g[:,:25],rot,g[:,34:]),dim=-1)
+
+
 class SkinTan(nn.Module):
-    """Separate TX, mutual and RX thermal corrections."""
+    """Separate TX, mutual and RX thermal corrections (V1)."""
     def __init__(self,ng=45,sa=None,ss=None,hidden=64):
         super().__init__()
         aa=np.ones(32) if sa is None else np.asarray(sa,float)
@@ -38,9 +57,9 @@ class SkinTan(nn.Module):
         return net(x)-net(z)
 
     def forward(self,g,a,skin):
-        if (g.ndim!=2 or a.shape!=(len(g),32) or
+        if (g.ndim!=2 or g.shape[1]!=45 or a.shape!=(len(g),32) or
                 skin.shape!=(len(g),16)):
-            raise ValueError("skin tangent expects [B,ng], [B,32], [B,16]")
+            raise ValueError("skin tangent expects [B,45], [B,32], [B,16]")
         aa=a[:,IDX]/self.sa
         ss=skin/self.ss
         tx=self._run(self.tx,g,aa,ss[:,:8])
@@ -49,12 +68,43 @@ class SkinTan(nn.Module):
         return torch.cat((tx,mx,rx),dim=-1)
 
 
+class SkinTanV2(SkinTan):
+    """V2 uses periodic SO(3) angle features instead of raw matrix entries."""
+    def __init__(self,ng=45,sa=None,ss=None,hidden=64):
+        if ng!=45:
+            raise ValueError("V2 expects the original 45-D geometry descriptor")
+        nn.Module.__init__(self)
+        aa=np.ones(32) if sa is None else np.asarray(sa,float)
+        sk=np.ones(16) if ss is None else np.asarray(ss,float)
+        if aa.shape!=(32,) or sk.shape!=(16,) or np.min(aa)<=0 or np.min(sk)<=0:
+            raise ValueError("invalid thermal feature scales")
+        self.ng=45
+        self.register_buffer("sa",torch.as_tensor(aa[IDX],dtype=torch.float32))
+        self.register_buffer("ss",torch.as_tensor(sk,dtype=torch.float32))
+        self.tx=_head(42+14+8,hidden)
+        self.mx=_head(42+14+16,hidden)
+        self.rx=_head(42+14+8,hidden)
+
+    def forward(self,g,a,skin):
+        if (g.ndim!=2 or g.shape[1]!=45 or a.shape!=(len(g),32) or
+                skin.shape!=(len(g),16)):
+            raise ValueError("skin tangent V2 expects [B,45], [B,32], [B,16]")
+        xg=encode_geom(g)
+        aa=a[:,IDX]/self.sa
+        ss=skin/self.ss
+        tx=self._run(self.tx,xg,aa,ss[:,:8])
+        mx=self._run(self.mx,xg,aa,ss)
+        rx=self._run(self.rx,xg,aa,ss[:,8:])
+        return torch.cat((tx,mx,rx),dim=-1)
+
+
 def restore(path,base_path,skin_path):
     from .geom_ztune import restore as load_base
     from .geom_skin import restore as load_skin
     ck=torch.load(Path(path),map_location="cpu",weights_only=True)
-    net=SkinTan(ng=int(ck["ng"]),sa=np.asarray(ck["sa"]),
-                ss=np.asarray(ck["ss"]))
+    cls=SkinTanV2 if ck.get("model_version")=="v2" else SkinTan
+    net=cls(ng=int(ck["ng"]),sa=np.asarray(ck["sa"]),
+            ss=np.asarray(ck["ss"]))
     net.load_state_dict(ck["state"])
     net.eval()
     for p in net.parameters():
