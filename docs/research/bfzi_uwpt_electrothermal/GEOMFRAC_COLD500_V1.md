@@ -46,3 +46,22 @@ python -m examples.bfzi_cold_train --data runs/geomfrac_cold500/data.json --old 
 ```
 
 500 样本生产期间重启相同生成命令会跳过已保存的成功样本，并继续余下样本。全量完成前保留 V5 及 `geomfrac_portself_v5.npz` 不变。
+
+## 补齐有效样本与闭环验证
+
+若首批候选存在封装越界等物理无效情况，初次任务结束后可运行：
+
+```powershell
+python -m examples.bfzi_cold_topup
+python -m examples.bfzi_cold_generate --bfzi-root D:\work\geomfrac-s5-BFZI
+```
+
+`bfzi_cold_topup.py` 根据各 split 已完成的物理样本数量，为缺口增加新且不重复的候选并留出少量冗余。原 400/50/50 划分规则不变；新增样本继承原目标分组，保持已有成功数据不变。若仍有无效样本，可以重复补齐。
+
+完成独立冷态模型训练后，用冻结的热状态 V5、现有 Atlas、热源代理和 ZFix 对比完整 BFZI-free 闭环：
+
+```powershell
+python -m examples.bfzi_cold_closed_eval --cold-model runs/geomfrac_coldnet_v1.pt
+```
+
+输出 `runs/geomfrac_coldnet_closed_v1.json`，要求原未见 5G 动态阻抗相对误差至少改善 0.1 个百分点、N 回放恶化最多 0.5 个百分点；BB 已打开的诊断集仅在选择完成后用于分析，不能据此选择模型。新增独立 50G 只进行冷态物理标签验收，除非为其另行生成动态参考。
