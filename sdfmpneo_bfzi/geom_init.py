@@ -53,6 +53,7 @@ class GeomInit:
         self.src=np.asarray(raw['src'],float)
         self.ext=np.asarray(raw['ext'],complex)
         self.ell=float(raw['ell'])
+        self.kell=float(raw.get('kell',self.ell))
         self.lam=float(raw['lam'])
         self.sx=np.asarray(raw.get('sx',[]),float)
         self.smu=np.asarray(raw.get('smu',np.zeros(3)),float)
@@ -94,7 +95,7 @@ class GeomInit:
         return self
 
     @staticmethod
-    def fit(x,y,k,src,ext,ell=1.5,lam=.03):
+    def fit(x,y,k,src,ext,ell=1.5,lam=.03,kell=None):
         x=np.asarray(x,float)
         y=np.asarray(y,float)
         mu=x.mean(0)
@@ -108,7 +109,13 @@ class GeomInit:
         beta=np.linalg.solve(h+lam*np.eye(len(x)),z)
         return GeomInit(dict(x=x,mu=mu,std=std,y=y,ym=ym,ys=ys,
                              beta=beta,k=k,src=src,ext=ext,
-                             ell=ell,lam=lam))
+                             ell=ell,kell=ell if kell is None else kell,lam=lam))
+
+    def set_kell(self,ell):
+        if not np.isfinite(ell) or ell<=0:
+            raise ValueError("thermal kernel length must be positive")
+        self.kell=float(ell)
+        return self
 
     def set_guard(self,guard):
         guard=np.asarray(guard,float)
@@ -147,10 +154,10 @@ class GeomInit:
         h=_rbf(a,self.x,self.ell)
         y=self.ym+(h@self.beta)[0]*self.ys
         w=_w(a,self.x,self.ell)[0]
-        # Geometric convex interpolation retains symmetry and nonnegative
-        # thermal diffusion eigenvalues without a new FV heat construction.
+        wk=w if self.kell==self.ell else _w(a,self.x,self.kell)[0]
+        # A separate thermal bandwidth leaves cold, capacity and source fits intact.
         scale=self._kscale(raw)
-        k=np.einsum('n,nij->ij',w,self.knorm,optimize=True)
+        k=np.einsum('n,nij->ij',wk,self.knorm,optimize=True)
         k*=scale[:,None]*scale[None,:]
         k=.5*(k+k.T)
         src=np.einsum('n,nij->ij',w,self.src,optimize=True)
@@ -175,19 +182,20 @@ class GeomInit:
             ext=np.asarray(external,complex)
             if ext.shape!=(2,2):
                 raise ValueError("external circuit must be 2x2 complex matrix")
-        chosen=np.argsort(-w)[:min(3,len(w))]
+        chosen=np.argsort(-wk)[:min(3,len(wk))]
         guard=self.guard[chosen].reshape(-1,self.rank-5) if self.guard.size else None
         gmat=np.tile(self.gmat,len(chosen)) if guard is not None else None
         from .geom_canon import labels
         gmat=labels(self.rank)[gmat] if guard is not None else None
         return dict(z0=z,air=air,cap=cap,k=k,src=src,ext=ext,
-                    guard=guard,gmat=gmat,norm_weights=w)
+                    guard=guard,gmat=gmat,norm_weights=w,
+                    thermal_norm_weights=wk)
 
     def save(self,path):
         np.savez_compressed(path,x=self.x,mu=self.mu,std=self.std,
               y=self.y,ym=self.ym,ys=self.ys,beta=self.beta,
               k=self.k,src=self.src,ext=self.ext,
-              ell=self.ell,lam=self.lam,sx=self.sx,smu=self.smu,
+              ell=self.ell,kell=self.kell,lam=self.lam,sx=self.sx,smu=self.smu,
               sstd=self.sstd,sy=self.sy,sbeta=self.sbeta,
               sell=self.sell,slam=self.slam,guard=self.guard,
               kexp=self.kexp)
