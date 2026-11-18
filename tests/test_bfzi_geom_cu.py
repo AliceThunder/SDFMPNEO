@@ -48,3 +48,28 @@ def test_analytic_conductance_exchange_is_passive():
     for j,(p,cu) in enumerate(((1,3),(2,4))):
         assert np.isclose(z[cu,cu]*cp[j],g[j])
         assert np.isclose(-z[p,cu]*np.sqrt(out["cap"][p]*cp[j]),g[j])
+
+
+def test_learned_contact_profile_preserves_passivity():
+    from sdfmpneo_bfzi.geom_culink import CuLink
+    cases=[]
+    for j in range(8):
+        c=case()
+        c["geometry"]=dict(c["geometry"],
+            alpha1=.70+.02*j,alpha2=.88+.01*j,
+            core1_mm=12.+j,core2_mm=9.+.8*j,
+            box1_mm=210.+j,box2_mm=225.+j)
+        vals=np.array([[-.03,0.,.005,-.47-.01*j,-.09,0.,-.013],
+                       [-.03,0.,.005,-.48-.01*j,-.09,0.,-.013]])
+        cases.append((c,vals))
+    net=CuLink.fit(cases,ell=(5.,5.),lam=(.0001,.0001))
+    prof=net.predict(cases[3][0])
+    assert prof.shape==(2,7)
+    assert np.all(np.isfinite(prof))
+    k=np.eye(32)
+    cap=np.array([100.,20.,25.,27.,26.])
+    out=apply(cases[3][0],dict(k=k,cap=cap),
+              exchange=True,profile=prof)
+    _,c,g=properties(cases[3][0])
+    assert np.linalg.eigvalsh(out["k"])[0]>0
+    assert np.allclose(out["k"][3:5,3:5].diagonal()*c,g)
