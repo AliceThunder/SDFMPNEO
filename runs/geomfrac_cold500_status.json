@@ -155,5 +155,48 @@
     "residual_v1_cold_Z_pct": 1.1330983831604553,
     "plain_v1_cold_Z_pct": 2.0401719590561243,
     "note": "Evaluated existing models on the original filtered test subset; this is not a new trained model or independent 50G acceptance"
+  },
+  "clean_pilot": {
+    "status": "complete_not_promoted",
+    "new": {
+      "train": 323,
+      "val": 25,
+      "test": 28
+    },
+    "legacy_valid": {
+      "train": 18,
+      "dev": 2
+    },
+    "total_train": 341,
+    "total_val": 27,
+    "test_cold_Z_pct": {
+      "v5": 1.0719448461597632,
+      "coldnet": 0.7311418167295565,
+      "coldres": 0.7095244670018367
+    },
+    "dynamic_valid_Z_pct": {
+      "unseen_2G": {
+        "v5": 13.519675898846891,
+        "coldnet": 12.842852144525333,
+        "coldres": 15.731881144001388
+      },
+      "replay_3G": {
+        "v5": 19.321152600450358,
+        "coldnet": 9.671161461991115,
+        "coldres": 10.198161415826942
+      },
+      "BB_4G": {
+        "v5": 22.113605636486167,
+        "coldnet": 33.3910781953261,
+        "coldres": 29.518065636129375
+      }
+    },
+    "note": "Physical-cold improvement on held-out 28G, but legacy BFZI-free thermal rollout not consistently improved; retain V5 until fresh independent valid dynamic acceptance.",
+    "report": [
+      "runs/geomfrac_coldclean_pilot.json",
+      "runs/geomfrac_coldclean_plain_closed.json",
+      "runs/geomfrac_coldclean_res_closed.json"
+    ],
+    "document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_COLD500_CLEAN_PILOT_V1.md"
   }
 }
