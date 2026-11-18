@@ -1,0 +1,52 @@
+{
+  "status": "rejected",
+  "project": "GeomFrac deployment-aligned differentiable 32D heat head",
+  "validation": "T04/D01-D04 (unseen) and N05/N10/N15/N20/N25/N27 (replay)",
+  "training": {
+    "geometries": 36,
+    "histories": 108,
+    "epochs_trained": 30,
+    "best_epoch": 5,
+    "checkpoint": "runs/geomfrac_et_free_v1.pt (XEnergy; diagnostic, not promoted)",
+    "report": "runs/geomfrac_et_free_v1.json",
+    "weight_scope": "heat_head only",
+    "init": "runs/geomfrac_et_v5_closed.pt"
+  },
+  "implementation": [
+    "sdfmpneo_bfzi/geom_free_train.py",
+    "examples/bfzi_geom_free_train.py",
+    "tests/test_bfzi_geom_free_train.py"
+  ],
+  "verification": {
+    "parity_Z_max_abs_ohm": 1.457522991188398e-11,
+    "parity_T_max_abs_K": 2.544823018979514e-9,
+    "heat_head_grad_norms": [
+      0.0862080305814743,
+      0.002247304655611515,
+      0.6103854179382324,
+      0.020855361595749855
+    ],
+    "pytest": "9 passed (geom_free_train + geom_init)"
+  },
+  "same_split_dynamic_Z_pct": {
+    "unseen": {
+      "v5": 12.324512014899105,
+      "candidate": 12.29794237484277
+    },
+    "replay": {
+      "v5": 19.98196846990392,
+      "candidate": 20.049177040858545
+    },
+    "BB_diagnostic": {
+      "v5": 40.53681620512771,
+      "candidate": 40.763761639330134
+    }
+  },
+  "promotion_rule": {
+    "min_unseen_improvement_pp": 0.1,
+    "max_replay_degradation_pp": 0.5
+  },
+  "reason": "Dev improvement is 0.02657 percentage points, below 0.1 pp threshold; BB opened diagnostic worsens by 0.22695 pp.",
+  "decision": "retain V5; new differentiable rollout verified and reusable",
+  "next": "Improve geometry generalization, especially cold TX self-L in BB01 and RX dynamic self-Z in BB02-BB06. Train only with matched deployed losses and require independent validation."
+}
