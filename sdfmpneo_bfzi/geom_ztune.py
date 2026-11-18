@@ -35,7 +35,10 @@ def restore(path):
     net.load_state_dict(ck['state'])
     net.eval()
     for p in net.parameters():p.requires_grad_(False)
-    base=load_tan(ck['base'])
+    if ck.get('base_mode')=='ztune':
+        base=restore(ck['base'])
+    else:
+        base=load_tan(ck['base'])
     sy=torch.as_tensor(np.asarray(ck['sy'])[:6],dtype=torch.float32)
     def predict(g,a):
         return base(g,a)+net(g,a)*sy
