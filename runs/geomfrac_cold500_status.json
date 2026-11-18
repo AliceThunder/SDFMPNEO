@@ -1,0 +1,56 @@
+{
+  "status": "generating",
+  "as_of": "2026-11-18",
+  "target": {
+    "candidates": 500,
+    "training": 400,
+    "development": 50,
+    "independent_test": 50
+  },
+  "device": "XEnergy-Zhucy",
+  "process": {
+    "provider": "EXZA",
+    "job_id": "job-2",
+    "pid": 32672
+  },
+  "observed_progress": {
+    "successful": 33,
+    "failed": 2,
+    "failed_cases": [
+      "C0496",
+      "C0290"
+    ],
+    "failed_reason": "oriented BFZI package extends outside seawater tank"
+  },
+  "first_3_cases": {
+    "C0373": 13.81,
+    "C0358": 13.14,
+    "C0442": 13.48
+  },
+  "generation": {
+    "plan": "runs/geomfrac_cold500_plan.json (on XEnergy)",
+    "local_progress": "runs/geomfrac_cold500/progress.json",
+    "per_geometry_dir": "runs/geomfrac_cold500/samples",
+    "resume": "rerun same generator; saved successes are preserved; failures are skipped or retried by flag",
+    "topup": "examples/bfzi_cold_topup.py after initial batch"
+  },
+  "scripts": [
+    "examples/bfzi_cold_plan.py",
+    "examples/bfzi_cold_generate.py",
+    "examples/bfzi_cold_topup.py",
+    "examples/bfzi_cold_train.py",
+    "examples/bfzi_cold_closed_eval.py",
+    "sdfmpneo_bfzi/geom_coldnet.py"
+  ],
+  "pilot": {
+    "training_geometries": 45,
+    "development_geometries": 5,
+    "test_geometries": 0,
+    "epoch": 120,
+    "dev_cold_Z_pct": 2.831340800097366,
+    "dev_cold_current_pct": 23.64037280486301,
+    "dev_dynamic_Z_pct": 34.5943317370393,
+    "promote": false
+  },
+  "decision": "Keep deployed V5 cold ports and thermal models frozen until full geometry-disjoint evaluation."
+}
