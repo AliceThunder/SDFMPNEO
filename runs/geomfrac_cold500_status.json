@@ -1,5 +1,5 @@
 {
-  "status": "generating",
+  "status": "filtering_and_generating_physical_valid_cold_geometries",
   "as_of": "2026-11-18",
   "target": {
     "candidates": 500,
@@ -10,8 +10,9 @@
   "device": "XEnergy-Zhucy",
   "process": {
     "provider": "EXZA",
-    "job_id": "job-2",
-    "pid": 32672
+    "job_id": "job-17",
+    "pid": 39952,
+    "status": "running"
   },
   "observed_progress": {
     "successful": 304,
@@ -93,5 +94,46 @@
     "status": "watching cold producer job-2; when complete run valid-sample top-up, train both cold models, evaluate fresh independent 50G cold test and frozen-V5 dynamic histories",
     "script": "examples/bfzi_cold_finish.py",
     "automatically_promote": false
-  }
+  },
+  "initial_batch": {
+    "valid_samples": {
+      "train": 403,
+      "val": 52,
+      "test": 52
+    },
+    "numeric_failures": 10,
+    "original_candidates": 500,
+    "extra_candidates": 17
+  },
+  "physical_lead_audit": {
+    "all_geometries": 517,
+    "overlap_rejected": 201,
+    "by_split": {
+      "train": 149,
+      "val": 28,
+      "test": 24
+    },
+    "wire_diameter_mm": 2.3,
+    "invalid_legacy_pose47": 27,
+    "invalid_bb": [
+      "BB01",
+      "BB06"
+    ]
+  },
+  "physical_refill": {
+    "after_filter_success": {
+      "train": 258,
+      "val": 25,
+      "test": 28
+    },
+    "new_candidates": {
+      "train": 172,
+      "val": 32,
+      "test": 28
+    },
+    "status": "running"
+  },
+  "promotion": false,
+  "evidence": "runs/geomfrac_cold_lead_audit.json",
+  "notes": "Original full-batch coldnet and residual models did not beat V5; initial labels include overlapping terminal leads. Raw NPZ files retained, filtered and physically valid splits are being refilled."
 }
