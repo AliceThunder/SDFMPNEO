@@ -110,7 +110,7 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
         for ids in np.array_split(rng.permutation(len(tr)),
                                   max(1,int(np.ceil(len(tr)/batch)))):
             pred=net(t[ids])
-            delta=(pred-y)/net.ys
+            delta=(pred-y[ids])/net.ys
             loss=delta.square().mean()+.005*(pred/net.ys).square().mean()
             opt.zero_grad(set_to_none=True)
             loss.backward()
