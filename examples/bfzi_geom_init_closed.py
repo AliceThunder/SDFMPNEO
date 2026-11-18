@@ -126,9 +126,9 @@ def main():
         best[2].save(args.out)
     report=dict(status='closed-loop K/capacity atlas kernel selection',
         train_geometries=len(train_specs),hold_geometries=len(hold_specs),
-        dev_geometries=len(mf['val']),train_histories=sum(
-            len(json.loads(Path(x['teacher'][0]).read_text())['time_s'])
-            if False else 1 for x in train_specs),
+        dev_geometries=len(mf['val']),
+        train_histories=sum(len(x.get('teacher',[])) for x in train_specs),
+        hold_histories=sum(len(x.get('teacher',[])) for x in hold_specs),
         base_atlas=str(args.atlas),shape_mix=args.shape_mix,
         baseline_selection_pct=base_select,best_label=best[1],
         best_selection_pct=best[0],promoted=promoted,
