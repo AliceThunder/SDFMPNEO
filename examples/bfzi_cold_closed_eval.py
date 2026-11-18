@@ -46,6 +46,8 @@ def main():
                    default=Path('runs/geomfrac_free_pose42_kell_v1.json'))
     p.add_argument('--out',type=Path,
                    default=Path('runs/geomfrac_coldnet_closed_v1.json'))
+    p.add_argument('--bfzi-root',type=Path,default=None,
+                   help='check original lead clearance in historical dynamic cases')
     a=p.parse_args()
     torch.set_num_threads(2)
     mf=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
@@ -85,6 +87,27 @@ def main():
     bb_cand=err(bb,bp,cand)
     accepted=(base_dev-candidate_dev>=.1 and
               candidate_rep-base_rep<=.5)
+    valid=None
+    if a.bfzi_root is not None:
+        from examples.bfzi_param import originals
+        from examples.bfzi_cold_lead_guard import gap
+        bf,_=originals(a.bfzi_root)
+        def permitted(cases):
+            return {n for n,c in cases.items()
+                    if all(p['clear'] for p in gap(
+                        bf,c['geometry'] if 'geometry' in c else c))}
+        safe=permitted({**plan['cases'],**bp['cases']})
+        groups=dict(unseen=[r for r in dev if _name(r) in safe],
+                    replay=[r for r in rep if _name(r) in safe],
+                    bb=[r for r in bb if _name(r) in safe])
+        valid={}
+        for k,group in groups.items():
+            if not group:continue
+            pl=bp if k=='bb' else plan
+            valid[k]=dict(geometries=len({_name(r) for r in group}),
+                          histories=len(group),
+                          v5_Z_pct=err(group,pl,base),
+                          candidate_Z_pct=err(group,pl,cand))
     res=dict(status='candidate' if accepted else 'rejected',
              independent_new_cold_test='see coldnet training report',
              original_unseen_geometry_count=5,
@@ -97,6 +120,8 @@ def main():
              candidate_replay_Z_pct=candidate_rep,
              BB_opened_diagnostic=dict(
                 baseline_Z_pct=bb_base,candidate_Z_pct=bb_cand),
+             lead_valid_subset=valid,
+             original_full_dynamic_includes_overlapping_leads=True,
              decision=('eligible for independent dynamic acceptance'
                        if accepted else 'retain V5 cold model'))
     a.out.parent.mkdir(parents=True,exist_ok=True)
