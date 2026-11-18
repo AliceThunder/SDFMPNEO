@@ -51,10 +51,10 @@
     "new_holdout_histories": 18,
     "new_holdout_tag": "free11",
     "preflight_6_of_6": "PASSED on original BFZI V150 oriented S5 ultra mesh, 2652–2672 sea cells",
-    "holdout_status": "running",
+    "holdout_status": "17/18 physical histories complete; BB06 history 3 still running",
     "holdout_completed_histories_last_checked": 1,
     "holdout_failures_last_checked": 0,
-    "completed_histories_last_checked": 12,
+    "completed_histories_last_checked": 17,
     "failures_last_checked": 0
   },
   "train": {
@@ -95,7 +95,8 @@
     "stderr": "runs/pose42_accept.err",
     "baseline_out": "runs/geomfrac_free11_v5.json",
     "candidate_out": "runs/geomfrac_free11_pose42.json",
-    "summary_out": "runs/geomfrac_free11_acceptance.json"
+    "summary_out": "runs/geomfrac_free11_acceptance.json",
+    "last_checked": "BB01-BB05 complete; BB06 histories 1-2 complete"
   },
   "decision": "Retain formal V6 and independently accepted V5 candidate. Hold BB split sealed until pose42 training/dev model selection completes. Never use BB for training or checkpoint selection."
 }
