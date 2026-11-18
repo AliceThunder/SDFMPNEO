@@ -39,7 +39,7 @@ def _w(a,b,ell):
 
 
 class GeomInit:
-    """Cold-state kernel interpolant with conservative SPD thermal atlas."""
+    """Cold/source interpolants with an independently weighted SPD thermal atlas."""
 
     def __init__(self,raw):
         self.x=np.asarray(raw['x'],float)
