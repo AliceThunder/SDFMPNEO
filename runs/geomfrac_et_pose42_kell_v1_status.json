@@ -1,36 +1,22 @@
 {
-  "status": "running",
-  "process_id": 16748,
+  "status": "complete_rejected",
   "device": "XEnergy-Zhucy",
-  "command": "python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_v6_36g_hold6_manifest.json --init-model runs/geomfrac_et_v5_closed.pt --reuse-scales --heat-only --select free_dynamic_z --free-plan runs/geomfrac_pose42_plan.json --free-config runs/geomfrac_free_pose42_kell_v1.json --epochs 180 --patience 45 --val-every 5 --lr 0.0003 --batch-hist 36 --closed-weight 0.2 --closed-warmup 10 --closed-ramp 20 --out runs/geomfrac_et_pose42_kell_v1.pt --report runs/geomfrac_et_pose42_kell_v1.json",
-  "trainable": "heat_head only",
-  "train_geometries": 36,
-  "train_histories": 108,
-  "validation_geometries": 11,
-  "validation_histories": 33,
-  "validation_groups": {
-    "original_unseen": [
-      "T04",
-      "D01",
-      "D02",
-      "D03",
-      "D04"
-    ],
-    "v5_seen_atlas_replay": [
-      "N05",
-      "N10",
-      "N15",
-      "N20",
-      "N25",
-      "N27"
-    ]
-  },
-  "initial_free_dynamic_z": 0.165013,
-  "initial_free_dynamic_z_pct": 16.5013,
+  "completed": true,
+  "process_id": 16748,
+  "best_epoch": 55,
+  "epochs_trained": 100,
+  "initial_free_dynamic_z_pct": 16.50131,
+  "candidate_free_dynamic_z_pct": 16.49222,
+  "unseen_v5_pct": 12.32451,
+  "unseen_candidate_pct": 12.62209,
+  "replay_v5_pct": 19.98197,
+  "replay_candidate_pct": 19.71732,
+  "decision": "retain V5; candidate does not improve original unseen geometries",
+  "next_run": "geomfrac_et_pose42_kell_v2 with --zrel-weight 0.5",
   "outputs": {
     "checkpoint": "runs/geomfrac_et_pose42_kell_v1.pt",
     "report": "runs/geomfrac_et_pose42_kell_v1.json",
+    "free_eval": "runs/geomfrac_et_pose42_kell_v1_free_eval.json",
     "log": "runs/geomfrac_et_pose42_kell_v1.log"
-  },
-  "decision": "candidate not promoted; wait for completion and compare on same validation set"
+  }
 }
