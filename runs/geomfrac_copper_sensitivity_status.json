@@ -1,0 +1,80 @@
+{
+  "status": "copper_temperature_root_cause_diagnosed_two_development_trials_running",
+  "reference": "BFZI V150 S5 AA01-AA06 18 complete histories; AA only diagnostic from this point",
+  "formal_baseline": "BFZI-free V6 (unchanged)",
+  "improved_candidate": "runs/geomfrac_et_v5_closed.pt (unchanged)",
+  "oracle": {
+    "model": "V5",
+    "full_dynamic_z_pct": 38.3563650278309,
+    "sea_online_error_over_total_delta_pct": 7.755779193658995,
+    "sea_teacher_state_error_over_total_delta_pct": 12.44650078381175,
+    "copper_temperature_impedance_error_over_total_delta_pct": 34.28067723263681,
+    "thermal_state_rel_L2": 0.40968963503837585,
+    "note": "Error components are vector terms and cannot be added; true teacher sea state can lose favorable error compensation.",
+    "source": "runs/geomfrac_oracle_v5_AA.json"
+  },
+  "conduction": {
+    "physical_identity": "Kcc*Ccu = -Kpc*sqrt(Cpkg*Ccu) = Gc-pkg",
+    "AA_TX_ratio_atlas": {
+      "AA01": 1.034,
+      "AA02": 0.728,
+      "AA03": 1.415,
+      "AA04": 0.63,
+      "AA05": 1.537,
+      "AA06": 0.706
+    },
+    "AA_TX_ratio_teacher": {
+      "AA01": 1,
+      "AA02": 1,
+      "AA03": 1,
+      "AA04": 1,
+      "AA05": 1,
+      "AA06": 1
+    },
+    "direct_block_fix": "rejected; created negative K eigenvalues and unstable high temperatures",
+    "schur_fix": {
+      "flag": "--cu-balance",
+      "dev_dynamic_z_pct": 12.426595379637352,
+      "disposition": "rejected for old V5 without retraining"
+    },
+    "conductance_space": {
+      "flag": "--conductance-mix",
+      "dev_dynamic_z_pct": 12.268,
+      "positive_definite_AA": true,
+      "physical_exchange_AA": true,
+      "disposition": "not selected without retraining",
+      "model_training": "running"
+    },
+    "original_V5_dev_dynamic_z_pct": 11.461418858986038
+  },
+  "runs": {
+    "conductance": {
+      "status": "running",
+      "process_id_xenergy": 17308,
+      "script": "examples.bfzi_geom_multi",
+      "selection": "free_dynamic_z",
+      "free_heat_op": "conductance",
+      "checkpoint": "runs/geomfrac_et_cumix.pt",
+      "report": "runs/geomfrac_et_cumix_dev.json",
+      "log": "runs/cumix_train.log",
+      "epochs_max": 100,
+      "patience": 30,
+      "batch_hist": 36
+    },
+    "copper_z": {
+      "status": "running",
+      "process_id_xenergy": 30160,
+      "training_weight": 4,
+      "checkpoint": "runs/geomfrac_et_cuz.pt",
+      "report": "runs/geomfrac_et_cuz_dev.json",
+      "log": "runs/cuz_train.log",
+      "epochs_max": 100,
+      "patience": 30,
+      "batch_hist": 36,
+      "description": "Train heat_head with analytical copper impedance thermal sensitivity loss"
+    }
+  },
+  "tests": "5 passed for copper conductance and free rollout; positive spectra verified on AA01-AA06",
+  "decision": "Do not promote either operator change before development closed-loop improvement. AA is diagnostic only. Subsequent independent accuracy claims require a newly frozen geometry split.",
+  "research_doc": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_COPPER_SENSITIVITY_V1.md"
+}
