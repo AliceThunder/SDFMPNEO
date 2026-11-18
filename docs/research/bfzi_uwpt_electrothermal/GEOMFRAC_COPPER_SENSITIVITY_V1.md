@@ -60,12 +60,15 @@ G_{cp}=K_{cc}C_c=-K_{pc}sqrt{C_pC_c}.
 
 铜阻抗始终由 BFZI 解析铜皮肤效应模型计算。新增可选的可微铜温阻抗损失，通过真实铜温与当前预测铜温的差值、解析皮肤效应阻抗对温度的局部导数，构建：
 
-[
-L_{CuZ} =
-rac{\sum_{t,j}\left|\frac{\partial Z_{Cu,j}}{\partial T}
-   \left(T_{Cu,j}^{pred}(t)-T_{Cu,j}^{S5}(t)\right)\right|^2}
- {\sum_{t>0}\|Z^{S5}(t)-Z^{S5}(0)\|^2}.
-]
+
+$$
+L_{\mathrm{CuZ}}=
+\frac{\displaystyle\sum_{t,j}
+\left|\frac{\partial Z_{\mathrm{Cu},j}}{\partial T}
+\left(T_{\mathrm{Cu},j}^{\mathrm{pred}}(t)-
+T_{\mathrm{Cu},j}^{\mathrm{S5}}(t)\right)\right|^2}
+{\displaystyle\sum_{t>0}\left\|Z^{\mathrm{S5}}(t)-Z^{\mathrm{S5}}(0)\right\|^2}.
+$$
 
 输入均来自现有 BFZI 教师及几何物理端口，无需新增在线物理求解。训练保留五材料预算、SOE 与其他原有损失，允许通过 `--cu-z-weight` 提高铜温贡献。目前正在运行 **`--cu-z-weight 4.0`** 的单次开发实验，初始权重为 V5、仅训练 `heat_head`、开发集依据原真实无 BFZI 闭环动态 Z 选模。原配置默认权重为 0，兼容旧模型。
 
