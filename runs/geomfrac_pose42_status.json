@@ -55,7 +55,12 @@
     "holdout_completed_histories_last_checked": 1,
     "holdout_failures_last_checked": 0,
     "completed_histories_last_checked": 17,
-    "failures_last_checked": 0
+    "failures_last_checked": 0,
+    "last_repo_committed_observation": {
+      "completed_histories": 17,
+      "failures": 0,
+      "detail": "Last XEnergy observation committed to repository; BB06 history 3 was still running. Current runtime status has not been re-read in this turn."
+    }
   },
   "train": {
     "status": "complete_rejected",
@@ -88,7 +93,7 @@
     "xenergy_shell_pid": 30552
   },
   "evaluation": {
-    "status": "waiting_for_all_18_BB_histories",
+    "status": "awaiting_runtime_refresh",
     "xenergy_shell_pid": 2276,
     "guard": "requires valid candidate statuses and existing files for BB01-BB06 all 18 histories",
     "log": "runs/pose42_accept.log",
@@ -96,7 +101,18 @@
     "baseline_out": "runs/geomfrac_free11_v5.json",
     "candidate_out": "runs/geomfrac_free11_pose42.json",
     "summary_out": "runs/geomfrac_free11_acceptance.json",
-    "last_checked": "BB01-BB05 complete; BB06 histories 1-2 complete"
+    "last_checked": "BB01-BB05 complete; BB06 histories 1-2 complete",
+    "note": "No BB acceptance outputs are committed yet. The current XEnergy process status requires a fresh runtime check before claiming completion."
   },
-  "decision": "Retain formal V6 and independently accepted V5 candidate. Hold BB split sealed until pose42 training/dev model selection completes. Never use BB for training or checkpoint selection."
+  "decision": "Retain formal V6 and independently accepted V5 candidate. Hold BB split sealed until pose42 training/dev model selection completes. Never use BB for training or checkpoint selection.",
+  "generator_regression_test": {
+    "path": "tests/test_bfzi_s5_buildset.py",
+    "test": "test_failed_history_does_not_stop_later_candidates",
+    "status": "added_not_yet_executed",
+    "covers": [
+      "geometry anchor failure continues to next geometry",
+      "first excitation history failure continues to second history",
+      "successful later histories are persisted in manifest and report"
+    ]
+  }
 }
