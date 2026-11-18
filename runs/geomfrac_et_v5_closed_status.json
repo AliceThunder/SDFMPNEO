@@ -1,5 +1,5 @@
 {
-  "status": "running",
+  "status": "complete_evaluated_candidate_not_promoted",
   "reason": "Original V5 selected on internal neural Z that deployment bypasses and stopped at 60 before closed-source warmup threshold 80; best checkpoint identical to initialization",
   "original_v5": {
     "source": "runs/geomfrac_et_v5_pose_aug.json",
@@ -28,14 +28,18 @@
     "lr": 0.0003,
     "batch_hist": 36,
     "safe_early_stop": "patience begins after source warmup + ramp",
-    "status": "running",
+    "status": "completed",
     "active_python_pid": 8792,
     "validation_runtime": "same BFZI-free geometry-only 32D-heat closed-loop Z model used in deployment",
     "tests": "3 passed for geometry-free and impedance tangent",
     "last_verified_epoch": 100,
     "best_epoch_so_far": 100,
-    "best_development_dynamic_z": 0.114614,
-    "development_relative_improvement_pct": 6.089507234976983
+    "best_development_dynamic_z": 0.11461418858986037,
+    "development_relative_improvement_pct": 6.089507234976983,
+    "best_epoch": 100,
+    "epochs_trained": 150,
+    "checkpoint": "runs/geomfrac_et_v5_closed.pt",
+    "checkpoint_sha": "c223137805ef5bea257cdc52734783eb223ff814"
   },
   "reference": {
     "plan": "runs/geomfrac_s5_free10_plan.json",
@@ -43,18 +47,19 @@
     "tag": "free10",
     "grid": "ultra",
     "internal_step_s": 1.875,
-    "completed_histories": 16,
+    "completed_histories": 18,
     "total_histories": 18,
     "failed_histories": 0,
     "active_python_pid": 33076,
     "current_geometry": "AA06",
-    "status": "running",
+    "status": "complete_candidate_18_of_18",
     "completed_geometries": [
       "AA01",
       "AA02",
       "AA03",
       "AA04",
-      "AA05"
+      "AA05",
+      "AA06"
     ],
     "aa06_domain_preflight": "PASSED using BFZI V150 oriented physical-box ultra create, elapsed 5.59 s",
     "manifest_geometries": 5,
@@ -85,16 +90,27 @@
         "AA06_partial": 2e-9
       },
       "status": "candidate; no failed histories; full AA06 300/600s still pending"
-    }
+    },
+    "physical_peak_global_budget_W": 9.718810645154008e-8,
+    "physical_max_basis_rmse_K": 0.3295872113155653
   },
-  "decision": "V6 remains formal. Compare base and selected V5 closed-loop model using the same corrected free10 AA teachers after 18/18 candidate.",
+  "decision": "V5 closed-loop thermal-head candidate shows modest AA independent improvement (dynamic Z 39.078% to 38.356%, 4/6 geometries improve, field RMSE 0.2133K to 0.2099K), matched current unchanged; retain V6 as formal version while main generalization issue remains.",
   "postprocessing": {
-    "status": "waiting for both independent jobs; acceptance not yet evaluated",
+    "status": "completed",
     "powershell_pid": 37456,
     "log": "runs/free10_accept.log",
     "stderr": "runs/free10_accept.err",
-    "baseline_result": "runs/geomfrac_free10_v6.json",
-    "candidate_result": "runs/geomfrac_free10_v5.json",
-    "gate": "requires 18 candidate physics traces and 6 manifest geometries"
-  }
+    "baseline_result": "runs/geomfrac_free10_v6.json (XEnergy full raw)",
+    "candidate_result": "runs/geomfrac_free10_v5.json (XEnergy full raw)",
+    "gate": "requires 18 candidate physics traces and 6 manifest geometries",
+    "summary": "runs/geomfrac_free10_acceptance_summary.json (GitHub)",
+    "error_log": "empty",
+    "baseline_dynamic_z_pct": 39.07785267302431,
+    "candidate_dynamic_z_pct": 38.3563650278309,
+    "dynamic_z_reduction_pp": 0.7214876451934138,
+    "dynamic_z_reduction_relative_pct": 1.846282730093461,
+    "improve_geometry_count": 4,
+    "improve_history_count": 13
+  },
+  "next": "Investigate geometry-dependent RX self-resistance and TX self-impedance tangent error; prioritize a structured sea sensitivity representation, not another broad V5 fine-tune. Use a fresh geometrically disjoint set for subsequent independent claims."
 }
