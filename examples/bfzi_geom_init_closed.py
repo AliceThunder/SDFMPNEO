@@ -105,24 +105,26 @@ def main():
     base_select=.5*(base_dev['dynamic_Z_pct']+base_hold['dynamic_Z_pct'])
     results=[dict(label='baseline',dev=base_dev,hold=base_hold,
                   selection_pct=base_select)]
-    ell,lam=6.0,.003
-    kell_grid=(.3,.6,1.,1.7,2.8,4.,6.)
+    ell_grid=(2.8,4.,6.)
+    lam=.003
+    kell_grid=(.6,1.7,6.)
     best=(base_select,'baseline',None)
-    for kell in kell_grid:
-        atlas=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam,kell=kell)
-        atlas.set_guard(guard)
-        atlas.set_kscale(old.kexp)
-        dv=score(dev_rows,atlas,net,ck,tan,ps,mu,sf,args.shape_mix)
-        hv=score(hold_rows,atlas,net,ck,tan,ps,mu,sf,args.shape_mix)
-        sel=.5*(dv['dynamic_Z_pct']+hv['dynamic_Z_pct'])
-        label=f'kell{kell:g}'
-        results.append(dict(label=label,ell=ell,lam=lam,kell=kell,
-                            dev=dv,hold=hv,selection_pct=sel))
-        print('CLOSED_ATLAS',label,'dev',round(dv['dynamic_Z_pct'],4),
-              'hold',round(hv['dynamic_Z_pct'],4),
-              'selection',round(sel,4),flush=True)
-        if sel<best[0]:
-            best=(sel,label,atlas)
+    for ell in ell_grid:
+        for kell in kell_grid:
+            atlas=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam,kell=kell)
+            atlas.set_guard(guard)
+            atlas.set_kscale(old.kexp)
+            dv=score(dev_rows,atlas,net,ck,tan,ps,mu,sf,args.shape_mix)
+            hv=score(hold_rows,atlas,net,ck,tan,ps,mu,sf,args.shape_mix)
+            sel=.5*(dv['dynamic_Z_pct']+hv['dynamic_Z_pct'])
+            label=f'ell{ell:g}_kell{kell:g}'
+            results.append(dict(label=label,ell=ell,lam=lam,kell=kell,
+                                dev=dv,hold=hv,selection_pct=sel))
+            print('CLOSED_ATLAS',label,'dev',round(dv['dynamic_Z_pct'],4),
+                  'hold',round(hv['dynamic_Z_pct'],4),
+                  'selection',round(sel,4),flush=True)
+            if sel<best[0]:
+                best=(sel,label,atlas)
     promoted=best[2] is not None and best[0]<base_select-1e-4
     if promoted:
         best[2].save(args.out)
@@ -132,7 +134,7 @@ def main():
         train_histories=sum(len(x.get('teacher',[])) for x in train_specs),
         hold_histories=sum(len(x.get('teacher',[])) for x in hold_specs),
         base_atlas=str(args.atlas),shape_mix=args.shape_mix,
-        ell=ell,lam=lam,kell_grid=list(kell_grid),
+        ell_grid=list(ell_grid),lam=lam,kell_grid=list(kell_grid),
         baseline_selection_pct=base_select,best_label=best[1],
         best_selection_pct=best[0],promoted=promoted,
         output=str(args.out) if promoted else None,
