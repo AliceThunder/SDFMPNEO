@@ -145,9 +145,45 @@ def thermal_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0
     return target,residual
 
 
+def rom_step(prev,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
+    """Fully implicit, nonlinear 32D shared heat-ROM step with port feedback."""
+    k=init['k']
+    cap=init['cap']
+    sc=np.sqrt(cap)
+    mat=np.eye(len(prev))/dt+k
+    target=prev.copy()
+    for _ in range(12):
+        _,cur,ps,pc,_=circuit(target,init,port,target,tan,g,scale,
+                              voltage,amb,extra,tm)
+        amp=np.array([.5*abs(cur[0])**2,
+                      (cur[0].conjugate()*cur[1]).real,
+                      .5*abs(cur[1])**2])
+        q=init['src']@amp
+        sea_in=q[0]*sc[0]
+        q=q*ps/sea_in if sea_in>1e-20 else np.zeros_like(q)
+        q[3]+=pc[0]/sc[3]
+        q[4]+=pc[1]/sc[4]
+        nxt=np.linalg.solve(mat,prev/dt+q)
+        if np.max(abs(nxt-target)/scale)<1e-9:
+            target=nxt
+            break
+        target=nxt
+    _,cur,ps,pc,_=circuit(target,init,port,target,tan,g,scale,
+                          voltage,amb,extra,tm)
+    amp=np.array([.5*abs(cur[0])**2,
+                  (cur[0].conjugate()*cur[1]).real,
+                  .5*abs(cur[1])**2])
+    q=init['src']@amp
+    sea_in=q[0]*sc[0]
+    q=q*ps/sea_in if sea_in>1e-20 else np.zeros_like(q)
+    q[3]+=pc[0]/sc[3];q[4]+=pc[1]/sc[4]
+    budget=sc*((target[:5]-prev[:5])/dt+k[:5]@target-q[:5])
+    return target,budget
+
+
 @torch.no_grad()
 def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
-            init_override=None,extra=None,shape_mix=0.):
+            init_override=None,extra=None,shape_mix=0.,heat_mode="neural"):
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
@@ -155,6 +191,8 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
         raise ValueError("current autonomous shared-coordinate head uses 32 modes")
     if not 0.<=shape_mix<=1.:
         raise ValueError("thermal shape mixing coefficient must be in [0,1]")
+    if heat_mode not in ("neural","rom"):
+        raise ValueError("heat mode must be neural or rom")
     t=np.asarray(times,float);v=np.asarray(voltage,float)
     if t.ndim!=1 or not len(t) or t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0):
         raise ValueError("invalid voltage/time schedule")
@@ -184,18 +222,22 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     for i,tm in enumerate(t):
         if i:
             dt=float(tm-t[i-1])
-            u=heat_drive(float(v[i-1]),zprev,init['ext'],port,
-                ambient+full[3:5]/scale[3:5],cap[3:5])
-            hist,_,pred=net.step_et(hist,
-                torch.as_tensor((u/cs)[None],dtype=g.dtype),
-                dt,g,torch.as_tensor((old/scale)[None],dtype=g.dtype),ac)
-            guess=pred[0].cpu().numpy()*scale
-            if shape_mix:
-                phys=shape_step(old,guess,dt,float(v[i-1]),
-                    init,port,tan,g,scale,ambient,ext_fn,tm)
-                guess[5:]=(1.-shape_mix)*guess[5:]+shape_mix*phys
-            full,budget=thermal_step(old,guess,dt,float(v[i-1]),
-                                    init,port,tan,g,scale,ambient,ext_fn,tm)
+            if heat_mode=="rom":
+                full,budget=rom_step(old,dt,float(v[i-1]),init,port,
+                                     tan,g,scale,ambient,ext_fn,tm)
+            else:
+                u=heat_drive(float(v[i-1]),zprev,init['ext'],port,
+                    ambient+full[3:5]/scale[3:5],cap[3:5])
+                hist,_,pred=net.step_et(hist,
+                    torch.as_tensor((u/cs)[None],dtype=g.dtype),
+                    dt,g,torch.as_tensor((old/scale)[None],dtype=g.dtype),ac)
+                guess=pred[0].cpu().numpy()*scale
+                if shape_mix:
+                    phys=shape_step(old,guess,dt,float(v[i-1]),
+                        init,port,tan,g,scale,ambient,ext_fn,tm)
+                    guess[5:]=(1.-shape_mix)*guess[5:]+shape_mix*phys
+                full,budget=thermal_step(old,guess,dt,float(v[i-1]),
+                                        init,port,tan,g,scale,ambient,ext_fn,tm)
             for _ in range(5):
                 beta=positivity(full,init,scale)
                 if beta>=1.-1e-9:
@@ -218,7 +260,7 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
             ('material_budget_W',budget),('Psea_W',ps),('Pcu_W',pc)):
             out[key].append(np.asarray(val).copy())
     res={name:np.asarray(val) for name,val in out.items()}
-    res.update(heat_rank=32,geometry_only=True,full_FV_states=0,
+    res.update(heat_rank=32,geometry_only=True,heat_mode=heat_mode,full_FV_states=0,
                cold_BFZI_solves=0,heat_basis_builds=0,
                heat_FV_solves=0,ambient=ambient)
     return res
