@@ -36,6 +36,11 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
 
     bf,v150=originals(bfzi_root)
+    from examples.bfzi_cold_lead_guard import gap
+    spacing=gap(bf,geom)
+    if not all(p['clear'] for p in spacing):
+        raise ValueError('native BFZI terminal leads overlap: '
+                         +str([p['gap_mm'] for p in spacing]))
     if grid not in GRIDS:
         raise ValueError(f'unknown BFZI grid {grid}')
     xz,y=GRIDS[grid]
