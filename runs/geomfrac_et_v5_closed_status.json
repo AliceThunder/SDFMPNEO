@@ -31,7 +31,11 @@
     "status": "running",
     "active_python_pid": 8792,
     "validation_runtime": "same BFZI-free geometry-only 32D-heat closed-loop Z model used in deployment",
-    "tests": "3 passed for geometry-free and impedance tangent"
+    "tests": "3 passed for geometry-free and impedance tangent",
+    "last_verified_epoch": 50,
+    "best_epoch_so_far": 50,
+    "best_development_dynamic_z": 0.11642,
+    "development_relative_improvement_pct": 4.609737312160993
   },
   "reference": {
     "plan": "runs/geomfrac_s5_free10_plan.json",
@@ -39,16 +43,21 @@
     "tag": "free10",
     "grid": "ultra",
     "internal_step_s": 1.875,
-    "completed_histories": 2,
+    "completed_histories": 8,
     "total_histories": 18,
     "failed_histories": 0,
     "active_python_pid": 33076,
-    "current_geometry": "AA01",
-    "status": "running"
+    "current_geometry": "AA03",
+    "status": "running",
+    "completed_geometries": [
+      "AA01",
+      "AA02"
+    ],
+    "aa06_domain_preflight": "PASSED using BFZI V150 oriented physical-box ultra create, elapsed 5.59 s"
   },
   "decision": "V6 remains formal. Compare base and selected V5 closed-loop model using the same corrected free10 AA teachers after 18/18 candidate.",
   "postprocessing": {
-    "status": "waiting for physical=33076 and train=8792 on XEnergy",
+    "status": "waiting on physical and training, then automatic V6/V5 comparison after 18/18 candidate check",
     "powershell_pid": 37456,
     "log": "runs/free10_accept.log",
     "stderr": "runs/free10_accept.err",
