@@ -78,8 +78,8 @@ def main():
     base_rep=metric(replay,plan,old)
     best=(base_dev,base_rep,0.,0.)
     trials=[]
-    for tx in (0.,.1,.25,.5,1.):
-        for rx in (0.,.1,.25,.5,1.):
+    for tx in (0.,.25,.5,1.):
+        for rx in (0.,.25,.5,1.):
             model=PortBlend(old,new,tx,rx)
             ed=metric(dev,plan,model)
             er=metric(replay,plan,model)
