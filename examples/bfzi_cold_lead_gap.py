@@ -13,7 +13,7 @@ def calc(bf,v150,g):
                   physical_box_only=True,grid_xz=xz,grid_y=y,
                   grid_max_nodes=4000)
     out={}
-    for sep in (0.,.004,.008):
+    for sep in (0.,.004,.008,.012,.016):
         d=dict(data,cfg={**data['cfg'],'ENV_ZLEAD_LANE_SEPARATION_X_M':sep})
         L,_=bf.compute_air_matrix_direct_zlead(d)
         info=[]
