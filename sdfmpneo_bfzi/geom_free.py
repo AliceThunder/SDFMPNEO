@@ -183,7 +183,7 @@ def rom_step(prev,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
 
 @torch.no_grad()
 def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
-            init_override=None,extra=None,shape_mix=0.,heat_mode="neural"):
+            init_override=None,extra=None,shape_mix=0.,heat_mode="neural",rom_mix=0.):
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
@@ -191,8 +191,10 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
         raise ValueError("current autonomous shared-coordinate head uses 32 modes")
     if not 0.<=shape_mix<=1.:
         raise ValueError("thermal shape mixing coefficient must be in [0,1]")
-    if heat_mode not in ("neural","rom"):
-        raise ValueError("heat mode must be neural or rom")
+    if heat_mode not in ("neural","rom","hybrid"):
+        raise ValueError("heat mode must be neural, rom or hybrid")
+    if not 0.<=rom_mix<=1.:
+        raise ValueError("physical heat mix must be in [0,1]")
     t=np.asarray(times,float);v=np.asarray(voltage,float)
     if t.ndim!=1 or not len(t) or t[0]!=0 or v.shape!=t.shape or np.any(np.diff(t)<=0):
         raise ValueError("invalid voltage/time schedule")
@@ -236,6 +238,10 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
                     phys=shape_step(old,guess,dt,float(v[i-1]),
                         init,port,tan,g,scale,ambient,ext_fn,tm)
                     guess[5:]=(1.-shape_mix)*guess[5:]+shape_mix*phys
+                if heat_mode=="hybrid" and rom_mix:
+                    implicit,_=rom_step(old,dt,float(v[i-1]),init,port,
+                                        tan,g,scale,ambient,ext_fn,tm)
+                    guess[5:]=(1.-rom_mix)*guess[5:]+rom_mix*implicit[5:]
                 full,budget=thermal_step(old,guess,dt,float(v[i-1]),
                                         init,port,tan,g,scale,ambient,ext_fn,tm)
             for _ in range(5):
@@ -260,7 +266,7 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
             ('material_budget_W',budget),('Psea_W',ps),('Pcu_W',pc)):
             out[key].append(np.asarray(val).copy())
     res={name:np.asarray(val) for name,val in out.items()}
-    res.update(heat_rank=32,geometry_only=True,heat_mode=heat_mode,full_FV_states=0,
+    res.update(heat_rank=32,geometry_only=True,heat_mode=heat_mode,rom_mix=rom_mix,full_FV_states=0,
                cold_BFZI_solves=0,heat_basis_builds=0,
                heat_FV_solves=0,ambient=ambient)
     return res
