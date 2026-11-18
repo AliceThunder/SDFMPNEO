@@ -1,0 +1,354 @@
+{
+  "status": "acceptance_complete_candidate_only",
+  "physical_reference": "BFZI V150 S5 ultra; 1.875 s inner step; corrected free10 thermal parameters",
+  "physical_plan": "runs/geomfrac_s5_free10_plan.json",
+  "physical_histories": 18,
+  "physical_success": 18,
+  "physical_failures": 0,
+  "physical_peak_global_budget_W": 9.718810645154008e-8,
+  "physical_max_basis_rmse_K": 0.3295872113155653,
+  "split": "AA01-AA06 six frozen geometry-disjoint unseen samples",
+  "training": {
+    "model": "runs/geomfrac_et_v5_closed.pt",
+    "source": "runs/geomfrac_et_v4_8g_quality.pt",
+    "train_geometries": 36,
+    "dev_geometries": 5,
+    "train_histories": 108,
+    "dev_histories": 15,
+    "best_epoch": 100,
+    "epochs_trained": 150,
+    "best_dev_dynamic_z_pct": 11.461418858986038,
+    "initial_dev_dynamic_z_pct": 12.2046,
+    "select": "BFZI-free actual closed-loop dynamic Z",
+    "trainable": "heat_head only"
+  },
+  "summary": {
+    "cold_z_rel_L2_mean": {
+      "v6": 0.009326163423626209,
+      "v5": 0.009326163423626209
+    },
+    "dynamic_z_rel_L2_mean": {
+      "v6": 0.3907785267302431,
+      "v5": 0.38356365027830897
+    },
+    "current_rel_L2_mean": {
+      "v6": 0.09500862883646946,
+      "v5": 0.09501217706290786
+    },
+    "temperature_rmse_K_mean": {
+      "v6": 0.2132752348592748,
+      "v5": 0.20992002542471921
+    },
+    "temperature_max_K_mean": {
+      "v6": 2.4360704116779366,
+      "v5": 2.3527827117856424
+    },
+    "material_mean_rmse_K_mean": {
+      "v6": 1.076771926640128,
+      "v5": 1.071107306373873
+    },
+    "energy_budget_W_mean": {
+      "v6": 5.761351598151669e-13,
+      "v5": 1.351854852162194e-12
+    },
+    "repeat_s_mean": {
+      "v6": 0.20033671110609752,
+      "v5": 0.19235695000194633
+    },
+    "first_new_geometry_full_s_mean": {
+      "v6": 0.04907159998159235,
+      "v5": 0.04728329997548523
+    },
+    "R11_dynamic_error_L2_over_total_delta_mean": {
+      "v6": 0.18383863549796747,
+      "v5": 0.18894432461237046
+    },
+    "X11_dynamic_error_L2_over_total_delta_mean": {
+      "v6": 0.13804558998045702,
+      "v5": 0.1402506265894129
+    },
+    "R22_dynamic_error_L2_over_total_delta_mean": {
+      "v6": 0.24665885418365502,
+      "v5": 0.2245317295010082
+    },
+    "X22_dynamic_error_L2_over_total_delta_mean": {
+      "v6": 0.15615002599227973,
+      "v5": 0.1573969639162901
+    },
+    "sea_power_rel_L2_mean": {
+      "v6": 0.23327088986171912,
+      "v5": 0.2332938060903441
+    },
+    "copper_power_rel_L2_mean": {
+      "v6": 0.12769041147881408,
+      "v5": 0.12768560451182365
+    },
+    "sea_skin_rmse_K_mean": {
+      "v6": 0.3306956901915979,
+      "v5": 0.32191148815672505
+    },
+    "package_tx_rmse_K_mean": {
+      "v6": 0.8577120346683539,
+      "v5": 0.8362667120166519
+    },
+    "package_rx_rmse_K_mean": {
+      "v6": 0.891283758310167,
+      "v5": 0.9012268309520012
+    }
+  },
+  "dynamic_z_reduction_absolute_pp": 0.7214876451934138,
+  "dynamic_z_reduction_relative_pct": 1.846282730093461,
+  "improve_geometries": [
+    "AA03",
+    "AA04",
+    "AA05",
+    "AA06"
+  ],
+  "degrade_geometries": [
+    "AA01",
+    "AA02"
+  ],
+  "per_geometry": [
+    {
+      "geometry": "AA01",
+      "v6_dynamic_z_pct": 15.996972649085384,
+      "v5_dynamic_z_pct": 16.024455005884466,
+      "v6_field_rmse_K": 0.1282753337100945,
+      "v5_field_rmse_K": 0.13830250841132832,
+      "v6_current_pct": 7.846018718269001,
+      "v5_current_pct": 7.846025971377974,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA01_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 14.897270803276918,
+          "v5_dynamic_pct": 15.023515072993643,
+          "v6_current_pct": 7.845136794320597,
+          "v5_current_pct": 7.845217948868112,
+          "v6_field_rmse_K": 0.022075237129470675,
+          "v5_field_rmse_K": 0.02945121542009243
+        },
+        {
+          "file": "runs/bfzi_s5_AA01_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 15.7474478702671,
+          "v5_dynamic_pct": 15.586677402555294,
+          "v6_current_pct": 7.846665469246412,
+          "v5_current_pct": 7.846774359078018,
+          "v6_field_rmse_K": 0.13024926059316755,
+          "v5_field_rmse_K": 0.14011179805694285
+        },
+        {
+          "file": "runs/bfzi_s5_AA01_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 17.34619927371213,
+          "v5_dynamic_pct": 17.46317254210447,
+          "v6_current_pct": 7.846253891239993,
+          "v5_current_pct": 7.846085606187793,
+          "v6_field_rmse_K": 0.23250150340764533,
+          "v5_field_rmse_K": 0.24534451175694966
+        }
+      ],
+      "delta_dynamic_pp": 0.027482356799081842
+    },
+    {
+      "geometry": "AA02",
+      "v6_dynamic_z_pct": 29.109277869962106,
+      "v5_dynamic_z_pct": 30.44779000670595,
+      "v6_field_rmse_K": 0.18965683775525624,
+      "v5_field_rmse_K": 0.17139149831695585,
+      "v6_current_pct": 7.304572669866529,
+      "v5_current_pct": 7.304335768434238,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA02_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 23.291954229568343,
+          "v5_dynamic_pct": 26.039139215229323,
+          "v6_current_pct": 7.307187677826901,
+          "v5_current_pct": 7.307201360236242,
+          "v6_field_rmse_K": 0.02766282741114746,
+          "v5_field_rmse_K": 0.032043058674680276
+        },
+        {
+          "file": "runs/bfzi_s5_AA02_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 30.956762717566598,
+          "v5_dynamic_pct": 32.592773688447814,
+          "v6_current_pct": 7.30369742828016,
+          "v5_current_pct": 7.3035741811256605,
+          "v6_field_rmse_K": 0.18851098308687467,
+          "v5_field_rmse_K": 0.16111588627926987
+        },
+        {
+          "file": "runs/bfzi_s5_AA02_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 33.07911666275138,
+          "v5_dynamic_pct": 32.71145711644071,
+          "v6_current_pct": 7.302832903492522,
+          "v5_current_pct": 7.30223176394081,
+          "v6_field_rmse_K": 0.35279670276774666,
+          "v5_field_rmse_K": 0.3210155499969174
+        }
+      ],
+      "delta_dynamic_pp": 1.3385121367438444
+    },
+    {
+      "geometry": "AA03",
+      "v6_dynamic_z_pct": 50.7649569163476,
+      "v5_dynamic_z_pct": 48.40256308510776,
+      "v6_field_rmse_K": 0.17895653348388155,
+      "v5_field_rmse_K": 0.1989374781955353,
+      "v6_current_pct": 13.97073824186613,
+      "v5_current_pct": 13.971610991112604,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA03_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 36.60328589081783,
+          "v5_dynamic_pct": 34.61905828890326,
+          "v6_current_pct": 13.999468178322477,
+          "v5_current_pct": 13.999877589616544,
+          "v6_field_rmse_K": 0.0418790519808048,
+          "v5_field_rmse_K": 0.04865096953013311
+        },
+        {
+          "file": "runs/bfzi_s5_AA03_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 56.18960881518015,
+          "v5_dynamic_pct": 53.74282985869681,
+          "v6_current_pct": 13.963810466014499,
+          "v5_current_pct": 13.964926458124518,
+          "v6_field_rmse_K": 0.19064088648994099,
+          "v5_field_rmse_K": 0.21688551888319615
+        },
+        {
+          "file": "runs/bfzi_s5_AA03_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 59.501976043044834,
+          "v5_dynamic_pct": 56.84580110772322,
+          "v6_current_pct": 13.948936081261412,
+          "v5_current_pct": 13.95002892559675,
+          "v6_field_rmse_K": 0.30434966198089886,
+          "v5_field_rmse_K": 0.33127594617327666
+        }
+      ],
+      "delta_dynamic_pp": -2.3623938312398423
+    },
+    {
+      "geometry": "AA04",
+      "v6_dynamic_z_pct": 56.382971266076034,
+      "v5_dynamic_z_pct": 54.407881694186166,
+      "v6_field_rmse_K": 0.28441645165666385,
+      "v5_field_rmse_K": 0.2585933522943688,
+      "v6_current_pct": 16.25268631673049,
+      "v5_current_pct": 16.25437344807269,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA04_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 51.22157914314944,
+          "v5_dynamic_pct": 50.315436938985634,
+          "v6_current_pct": 16.277115985426875,
+          "v5_current_pct": 16.277259193729773,
+          "v6_field_rmse_K": 0.04598225527640701,
+          "v5_field_rmse_K": 0.04567806283203121
+        },
+        {
+          "file": "runs/bfzi_s5_AA04_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 57.89428526564324,
+          "v5_dynamic_pct": 55.74298577560208,
+          "v6_current_pct": 16.24923672447334,
+          "v5_current_pct": 16.250984743674042,
+          "v6_field_rmse_K": 0.28630295120974397,
+          "v5_field_rmse_K": 0.26599062087753755
+        },
+        {
+          "file": "runs/bfzi_s5_AA04_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 60.0330493894354,
+          "v5_dynamic_pct": 57.16522236797079,
+          "v6_current_pct": 16.231706240291242,
+          "v5_current_pct": 16.234876406814255,
+          "v6_field_rmse_K": 0.5209641484838405,
+          "v5_field_rmse_K": 0.4641113731735375
+        }
+      ],
+      "delta_dynamic_pp": -1.9750895718898676
+    },
+    {
+      "geometry": "AA05",
+      "v6_dynamic_z_pct": 36.01985639789606,
+      "v5_dynamic_z_pct": 35.4451597537454,
+      "v6_field_rmse_K": 0.16073240677575404,
+      "v5_field_rmse_K": 0.16814957802870856,
+      "v6_current_pct": 2.9456154590362065,
+      "v5_current_pct": 2.9438086333279103,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA05_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 23.121607648945407,
+          "v5_dynamic_pct": 23.010731840446812,
+          "v6_current_pct": 2.9380060540230546,
+          "v5_current_pct": 2.9378149925737604,
+          "v6_field_rmse_K": 0.0355245681112964,
+          "v5_field_rmse_K": 0.03593548450657788
+        },
+        {
+          "file": "runs/bfzi_s5_AA05_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 42.06308071501641,
+          "v5_dynamic_pct": 41.28499673713894,
+          "v6_current_pct": 2.947781766769905,
+          "v5_current_pct": 2.9460781162199026,
+          "v6_field_rmse_K": 0.16986681215135013,
+          "v5_field_rmse_K": 0.17365254429555932
+        },
+        {
+          "file": "runs/bfzi_s5_AA05_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 42.874880829726386,
+          "v5_dynamic_pct": 42.03975068365045,
+          "v6_current_pct": 2.9510585563156604,
+          "v5_current_pct": 2.947532791190069,
+          "v6_field_rmse_K": 0.27680584006461556,
+          "v5_field_rmse_K": 0.29486070528398844
+        }
+      ],
+      "delta_dynamic_pp": -0.5746966441506629
+    },
+    {
+      "geometry": "AA06",
+      "v6_dynamic_z_pct": 46.19308093877867,
+      "v5_dynamic_z_pct": 45.41034062135563,
+      "v6_field_rmse_K": 0.33761384577399856,
+      "v5_field_rmse_K": 0.3241457373014185,
+      "v6_current_pct": 8.685545896113329,
+      "v5_current_pct": 8.687151425419305,
+      "histories": [
+        {
+          "file": "runs/bfzi_s5_AA06_ultra_free10_drive1.npz",
+          "v6_dynamic_pct": 39.43830661299385,
+          "v5_dynamic_pct": 40.41453283892758,
+          "v6_current_pct": 8.71014473206166,
+          "v5_current_pct": 8.71000969434948,
+          "v6_field_rmse_K": 0.05297102096089521,
+          "v5_field_rmse_K": 0.054404521034104474
+        },
+        {
+          "file": "runs/bfzi_s5_AA06_ultra_free10_drive2.npz",
+          "v6_dynamic_pct": 47.443205255491314,
+          "v5_dynamic_pct": 45.923198238474825,
+          "v6_current_pct": 8.683876315862218,
+          "v5_current_pct": 8.685888721344485,
+          "v6_field_rmse_K": 0.3325469616444488,
+          "v5_field_rmse_K": 0.3187405472686967
+        },
+        {
+          "file": "runs/bfzi_s5_AA06_ultra_free10_drive3.npz",
+          "v6_dynamic_pct": 51.69773094785084,
+          "v5_dynamic_pct": 49.89329078666449,
+          "v6_current_pct": 8.662616640416108,
+          "v5_current_pct": 8.665555860563948,
+          "v6_field_rmse_K": 0.6273235547166517,
+          "v5_field_rmse_K": 0.5992921436014542
+        }
+      ],
+      "delta_dynamic_pp": -0.7827403174230412
+    }
+  ],
+  "decision": "Keep formal V6; retain V5 as candidate with modest independent improvements in dynamic Z and 3D temperature. Dynamic Z remains high; current unchanged, TX self-resistance worsens.",
+  "source_files": [
+    "runs/geomfrac_free10_v6.json",
+    "runs/geomfrac_free10_v5.json",
+    "runs/geomfrac_et_v5_closed.json",
+    "runs/geomfrac_s5_free10_build_report.json"
+  ]
+}
