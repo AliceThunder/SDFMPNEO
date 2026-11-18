@@ -1,0 +1,9 @@
+{
+  "description": "BFZI-free closed-loop heat_head adaptation using a 36G independently fitted thermal atlas; all cold port and tangent models frozen",
+  "atlas": "runs/geomfrac_init_pose42_kell_36g_v1.npz",
+  "port_self_model": "runs/geomfrac_portself_v5.npz",
+  "mutual_model": "runs/geomfrac_mutual_v6.npz",
+  "source_model": "runs/geomfrac_src_v6.npz",
+  "z_fix_model": "runs/geomfrac_et_v9_ztune.pt",
+  "shape_mix": 0.5
+}
