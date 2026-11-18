@@ -53,3 +53,17 @@ BB 已打开诊断集上，V10 动态 Z 为 45.1581%，V5 为 45.3022%；电流�
 正式 V6 与 V5 均保持不变，V10 与 42G 热算子候选不升级。
 
 下一步在 42G 真实 S5 锚点上重建独立 `kell` 热算子模型，先检查原开发集的 K/cap 和完整动态 Z，再决定是否值得进行新一轮 CC 独立物理验收。BB 只保留为已打开的误差诊断集，不参与模型选型。
+
+
+## 36G 热状态头适配实验（待运行）
+
+本实验从已验收的 `geomfrac_et_v5_closed.pt` 初始化，仅开放 `heat_head` 参数；冷态 TX/RX 自阻抗、互阻抗、热源模型和海水动态切线全部冻结。热算子由 36 组真实 S5 锚点重新拟合，独立核宽度由 `bfzi_geom_init.py` 在 11 组验证几何上搜索。训练使用 36 组几何/108 条历史，验证使用原 5 组开发几何加 6 组内部留出，共 11 组/33 条历史。六组内部留出只用于训练过程选模，不作为最终独立验收。
+
+训练入口：
+
+```powershell
+python -m examples.bfzi_geom_init --plan runs/geomfrac_pose42_plan.json --manifest runs/geomfrac_s5_v6_36g_hold6_manifest.json --rank 32 --out runs/geomfrac_init_pose42_kell_36g_v1.npz --report runs/geomfrac_init_pose42_kell_36g_v1_dev.json
+python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_v6_36g_hold6_manifest.json --init-model runs/geomfrac_et_v5_closed.pt --reuse-scales --heat-only --select free_dynamic_z --free-plan runs/geomfrac_pose42_plan.json --free-config runs/geomfrac_free_pose42_kell_v1.json --epochs 180 --patience 45 --val-every 5 --lr 0.0003 --batch-hist 36 --closed-weight 0.2 --closed-warmup 10 --closed-ramp 20 --out runs/geomfrac_et_pose42_kell_v1.pt --report runs/geomfrac_et_pose42_kell_v1.json
+```
+
+训练报告包含 `initial_selection_score` 和 `selection_improvement_pct`，用于候选与初始化 V5 在完全相同的 11 组/33 条历史上比较。原开发集 V5 的 11.4614% 是 5 组/15 条历史指标，只作历史参照，不能替代本轮同集基线。当前状态：输入清单与配置已冻结，训练和模型升级验收待 XEnergy 执行。
