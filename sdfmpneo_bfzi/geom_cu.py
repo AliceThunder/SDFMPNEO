@@ -35,7 +35,7 @@ def properties(case):
     return length,cap,cond
 
 
-def apply(case,init,exchange=False):
+def apply(case,init,exchange=False,profile=None):
     """Use analytic Cu heat capacities; optionally enforce insulated exchange.
 
     Interpolate other heat coordinates unchanged in physical conductance
@@ -51,12 +51,25 @@ def apply(case,init,exchange=False):
     k=np.asarray(init["k"],float)
     old=np.sqrt(cold[lab])
     h=k*old[:,None]*old[None,:]
+    if profile is not None:
+        coeff=np.asarray(profile,dtype=float)
+        if coeff.shape!=(2,7) or not np.isfinite(coeff).all():
+            raise ValueError("expected two sets of seven finite package contact coefficients")
+        if not exchange:
+            raise ValueError("contact profile requires explicit exchange correction")
     if exchange:
         cu=np.array([3,4])
         rest=np.array([i for i in range(len(k)) if i not in cu])
         d=h[np.ix_(cu,cu)]
         b=h[np.ix_(rest,cu)]
         bnew=b*(cond/np.diag(d))[None,:]
+        if profile is not None:
+            bnew[:]=0.
+            for col,p in enumerate((1,2)):
+                ids=list(range(18+7*col,25+7*col))
+                for j,mode in enumerate(ids):
+                    row=int(np.flatnonzero(rest==mode)[0])
+                    bnew[row,col]=-cond[col]*coeff[col,j]
         for col,p in enumerate((1,2)):
             row=int(np.flatnonzero(rest==p)[0])
             bnew[row,col]=-cond[col]
