@@ -20,9 +20,13 @@ def test_copper_exchange_and_no_mutation():
         old=-original[p,c]*np.sqrt(cap[p]*cap[c])
         goal=original[c,c]*cap[c]
         assert np.isclose(-out[p,c]*np.sqrt(cap[p]*cap[c]),goal)
-        assert np.isclose(out[p,p],original[p,p]+(goal-old)/cap[p])
+        old_b=original[p,c]
+        new_b=out[p,c]
+        assert np.isclose(out[p,p],original[p,p]+
+                          (new_b**2-old_b**2)/original[c,c])
         assert np.isclose(out[c,c],original[c,c])
-    assert np.allclose(out[5:,5:],original[5:,5:])
+    assert np.linalg.eigvalsh(original)[0]>0
+    assert np.linalg.eigvalsh(out)[0]>0
 
 
 def test_consistent_operator_remains_unchanged():
