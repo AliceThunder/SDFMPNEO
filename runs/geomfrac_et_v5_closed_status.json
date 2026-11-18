@@ -43,24 +43,53 @@
     "tag": "free10",
     "grid": "ultra",
     "internal_step_s": 1.875,
-    "completed_histories": 14,
+    "completed_histories": 16,
     "total_histories": 18,
     "failed_histories": 0,
     "active_python_pid": 33076,
-    "current_geometry": "AA05",
+    "current_geometry": "AA06",
     "status": "running",
     "completed_geometries": [
       "AA01",
       "AA02",
       "AA03",
-      "AA04"
+      "AA04",
+      "AA05"
     ],
     "aa06_domain_preflight": "PASSED using BFZI V150 oriented physical-box ultra create, elapsed 5.59 s",
-    "manifest_geometries": 5
+    "manifest_geometries": 5,
+    "aa06_anchor_and_60s": "passed, source S5 candidate",
+    "completed_reference_quality": {
+      "basis_global_rmse_K_max_by_geometry": {
+        "AA01": 0.2976,
+        "AA02": 0.2768,
+        "AA03": 0.2788,
+        "AA04": 0.2509,
+        "AA05": 0.2696,
+        "AA06_partial": 0.0212
+      },
+      "basis_global_max_abs_K_max_by_geometry": {
+        "AA01": 1.7899,
+        "AA02": 1.7235,
+        "AA03": 1.5049,
+        "AA04": 1.4724,
+        "AA05": 1.7731,
+        "AA06_partial": 0.122
+      },
+      "peak_global_budget_W_max_by_geometry": {
+        "AA01": 6.3e-8,
+        "AA02": 7.7e-8,
+        "AA03": 9.7e-8,
+        "AA04": 4.5e-8,
+        "AA05": 8.8e-8,
+        "AA06_partial": 2e-9
+      },
+      "status": "candidate; no failed histories; full AA06 300/600s still pending"
+    }
   },
   "decision": "V6 remains formal. Compare base and selected V5 closed-loop model using the same corrected free10 AA teachers after 18/18 candidate.",
   "postprocessing": {
-    "status": "waiting on physical and training, then automatic V6/V5 comparison after 18/18 candidate check",
+    "status": "waiting for both independent jobs; acceptance not yet evaluated",
     "powershell_pid": 37456,
     "log": "runs/free10_accept.log",
     "stderr": "runs/free10_accept.err",
