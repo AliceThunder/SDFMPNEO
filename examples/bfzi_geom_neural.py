@@ -197,7 +197,7 @@ def _hist_mean(vals, spans, mode):
     return (v*w).sum()/w.sum()
 
 
-def _zrel_full(rom, row, sea, cu, sy):
+def _zrel_full(rom, row, sea, cu, sy, sea_physical=False):
     """Relative dynamic full-port impedance, including copper temperature."""
     if sea.shape[0]!=len(cu) or cu.shape!=(len(sea),2):
         raise ValueError("expected two predicted copper temperature rises per time")
@@ -211,7 +211,8 @@ def _zrel_full(rom, row, sea, cu, sy):
     copper=torch.stack((dz[:,0].real,dz[:,0].imag,zero,zero,
                         dz[:,1].real,dz[:,1].imag),dim=-1)
     zscale=torch.as_tensor(sy[:6],dtype=sea.dtype,device=sea.device)
-    pred=sea[:,:6]*zscale+copper
+    pred=sea[:,:6] if sea_physical else sea[:,:6]*zscale
+    pred=pred+copper
     ref=torch.as_tensor(row["z6"][1:]-row["z6"][0],
                         dtype=sea.dtype,device=sea.device)
     return (pred-ref).square().sum()/ref.square().sum().clamp_min(1e-12)
@@ -228,7 +229,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
         a = torch.as_tensor(row["a"], dtype=torch.float32)
         asc = torch.as_tensor(sa, dtype=torch.float32)
         h = net.init_state(1)
-        pr_z, pr_a = [], []
+        pr_z, pr_a, pr_tsea = [], [], []
         pr_phys,pr_pkg,pr_cu,pr_cuz,pr_tan = [],[],[],[],[]
         cur = a[0:1]
         zy = torch.zeros((1,14),dtype=a.dtype)
@@ -273,6 +274,8 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             # The training target must describe the same corrected state
             # that autonomous inference returns at the sampling instant.
             pr_z.append(zhat[0])
+            if zrel_w and tangent is not None:
+                pr_tsea.append(tangent(gg,state)[0])
             pr_a.append((state[0]-a[k])/asc)
             if tan_w:
                 if tangent is None:
@@ -307,7 +310,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
         if zrel_w:
             if rr is None:
                 raise ValueError("full dynamic impedance needs a heat ROM")
-            zrel=_zrel_full(rr,row,pz,torch.stack(pr_cuz),sy)
+            sea=torch.stack(pr_tsea) if pr_tsea else pz
+            zrel=_zrel_full(rr,row,sea,torch.stack(pr_cuz),sy,
+                            sea_physical=bool(pr_tsea))
         cu_z=0.
         if cu_z_w:
             if rr is None:
