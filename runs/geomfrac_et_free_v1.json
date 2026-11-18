@@ -1,0 +1,58 @@
+{
+  "status": "accepted",
+  "best_epoch": 5,
+  "epochs_trained": 30,
+  "train_geometries": 36,
+  "unseen_geometries": 5,
+  "replay_geometries": 6,
+  "train_histories": 108,
+  "unseen_histories": 15,
+  "replay_histories": 18,
+  "baseline_unseen_Z_pct": 12.324512014899105,
+  "best_unseen_Z_pct": 12.29794237484277,
+  "baseline_replay_Z_pct": 19.98196846990392,
+  "best_replay_Z_pct": 20.049177040858545,
+  "forward_parity_Z": 1.457522991188398e-11,
+  "forward_parity_T_K": 2.544823018979514e-9,
+  "shape_mix": 0.5,
+  "history": [
+    {
+      "epoch": 5,
+      "train_loss": 0.014392935180656229,
+      "unseen_Z_pct": 12.29794237484277,
+      "replay_Z_pct": 20.049177040858545
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.029706560176836316,
+      "unseen_Z_pct": 12.310923702116618,
+      "replay_Z_pct": 20.07311312009682
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.049875882422874586,
+      "unseen_Z_pct": 12.377606706688951,
+      "replay_Z_pct": 20.069426092694272
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.033017547677269804,
+      "unseen_Z_pct": 12.402017118777927,
+      "replay_Z_pct": 19.956630221752807
+    },
+    {
+      "epoch": 25,
+      "train_loss": 0.02905678405298701,
+      "unseen_Z_pct": 12.398032912287073,
+      "replay_Z_pct": 19.773227841927053
+    },
+    {
+      "epoch": 30,
+      "train_loss": 0.07309903917747247,
+      "unseen_Z_pct": 12.47001265209553,
+      "replay_Z_pct": 19.60437693177898
+    }
+  ],
+  "data_manifest": "runs\\geomfrac_s5_v6_36g_hold6_manifest.json",
+  "base_model": "runs\\geomfrac_et_v5_closed.pt"
+}
