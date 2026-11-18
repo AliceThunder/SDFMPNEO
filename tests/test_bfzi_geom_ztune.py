@@ -28,12 +28,12 @@ def test_nested_geometry_free_tangent_checkpoint(tmp_path):
     tan=Tangent(ng=45,nmode=len(IDX))
     sa=np.ones(32)
     sy=np.ones(14)
-    torch.save(dict(state=tan.state_dict(),ng=45,idx=IDX,sa=sa,sy=sy),base)
+    torch.save(dict(state=tan.state_dict(),ng=45,idx=IDX,sa=torch.as_tensor(sa),sy=torch.as_tensor(sy)),base)
     one=ZFix(ng=45,sa=sa)
-    torch.save(dict(state=one.state_dict(),ng=45,sa=sa,sy=sy,
+    torch.save(dict(state=one.state_dict(),ng=45,sa=torch.as_tensor(sa),sy=torch.as_tensor(sy),
                     base=str(base)),first)
     two=ZFix(ng=45,sa=sa)
-    torch.save(dict(state=two.state_dict(),ng=45,sa=sa,sy=sy,
+    torch.save(dict(state=two.state_dict(),ng=45,sa=torch.as_tensor(sa),sy=torch.as_tensor(sy),
                     base=str(first),base_mode='ztune'),second)
     predict=restore(second)
     g=torch.zeros((2,45))
