@@ -47,7 +47,7 @@ def prepare(spec,rank=32):
     return result
 
 
-def free_metric(rows,free,net,ck):
+def free_metric(rows,free,net,ck,heat_op="atlas"):
     """Select with the same BFZI-free closed loop used for deployment."""
     from sdfmpneo_bfzi.geom_free import rollout
     plan,atlas,ps,mu,src,tan,mix=free
@@ -61,6 +61,9 @@ def free_metric(rows,free,net,ck):
             for model in (ps,mu,src):
                 if model is not None:
                     init=model.apply(case,init)
+            if heat_op=="conductance":
+                from sdfmpneo_bfzi.geom_init import conductance_mix
+                init=conductance_mix(atlas,init)
             cache[name]=init
         pred=rollout(case,atlas,net,ck,r['time'],r['voltage'],tan,
                      init_override=cache[name],shape_mix=mix)['z6']
@@ -116,6 +119,7 @@ def main():
                    help='geometry case plan for BFZI-free development selection')
     p.add_argument('--free-config',type=Path,default=Path('runs/geomfrac_free_v7_selection.json'),
                    help='frozen geometry-free port/thermal model configuration')
+    p.add_argument('--free-heat-op',choices=('atlas','conductance'),default='atlas',help='geometry-only heat operator used for closed-loop checkpoint selection')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -204,7 +208,7 @@ def main():
         net.eval()
         with torch.no_grad():
             if a.select=='free_dynamic_z':
-                best=free_metric(val,free,net,eck)
+                best=free_metric(val,free,net,eck,a.free_heat_op)
             else:
                 init_z=eval_rollout(None,net,eck,val,tangent=tangent)
                 key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
@@ -260,7 +264,7 @@ def main():
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if a.select=='free_dynamic_z':
             with torch.no_grad():
-                metric=free_metric(val,free,net,eck)
+                metric=free_metric(val,free,net,eck,a.free_heat_op)
         elif a.select in ('dynamic_z','thermal'):
             with torch.no_grad():
                 zval=eval_rollout(None,net,eck,val,tangent=tangent)
