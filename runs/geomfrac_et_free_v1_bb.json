@@ -1,0 +1,73 @@
+{
+  "status": "BB01-BB06 physical reference diagnostic; previous opened set",
+  "baseline": "runs/geomfrac_et_v5_closed.pt",
+  "candidate": "runs/geomfrac_et_free_v1.pt",
+  "histories": 18,
+  "geometries": 6,
+  "by_geometry": {
+    "BB01": {
+      "v5": {
+        "dynamic_Z_pct": 132.53416387081504,
+        "group_temp_max_K": 4.089786945135302
+      },
+      "candidate": {
+        "dynamic_Z_pct": 133.6857215106726,
+        "group_temp_max_K": 4.12715340955333
+      }
+    },
+    "BB02": {
+      "v5": {
+        "dynamic_Z_pct": 21.03826738961858,
+        "group_temp_max_K": 2.393623240134218
+      },
+      "candidate": {
+        "dynamic_Z_pct": 21.01651406760332,
+        "group_temp_max_K": 2.3712651125752586
+      }
+    },
+    "BB03": {
+      "v5": {
+        "dynamic_Z_pct": 24.620094260459236,
+        "group_temp_max_K": 4.608321354037457
+      },
+      "candidate": {
+        "dynamic_Z_pct": 25.182522300726745,
+        "group_temp_max_K": 4.689982585511075
+      }
+    },
+    "BB04": {
+      "v5": {
+        "dynamic_Z_pct": 32.40846028359446,
+        "group_temp_max_K": 4.954606084191084
+      },
+      "candidate": {
+        "dynamic_Z_pct": 31.821778033111375,
+        "group_temp_max_K": 4.941249709176191
+      }
+    },
+    "BB05": {
+      "v5": {
+        "dynamic_Z_pct": 10.38760061227238,
+        "group_temp_max_K": 2.8545583008689164
+      },
+      "candidate": {
+        "dynamic_Z_pct": 10.480007855090212,
+        "group_temp_max_K": 2.8872809840850664
+      }
+    },
+    "BB06": {
+      "v5": {
+        "dynamic_Z_pct": 22.232310814006574,
+        "group_temp_max_K": 2.926558674458988
+      },
+      "candidate": {
+        "dynamic_Z_pct": 22.396026068776568,
+        "group_temp_max_K": 2.872842374489835
+      }
+    }
+  },
+  "summary_pct": {
+    "v5": 40.53681620512771,
+    "candidate": 40.763761639330134
+  }
+}
