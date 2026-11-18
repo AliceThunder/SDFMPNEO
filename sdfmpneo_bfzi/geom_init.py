@@ -231,6 +231,44 @@ def balance_cu(init):
     return out
 
 
+def conductance_mix(atlas,init):
+    """Cross-geometry heat ROM in physical conductance coordinates.
+
+    Interpolate H=M K M rather than K, with M=sqrt(material capacity).
+    The Cu-package exchange identity is linear in H and survives mixing.
+    Scale each conservative copper branch to the independently predicted
+    copper self-conductance, retaining the non-copper Schur complement.
+    """
+    from .geom_canon import labels
+    lab=labels(atlas.rank)
+    m=np.sqrt(np.exp(atlas.y[:,9:14])[:,lab])
+    bank=atlas.k*m[:,:,None]*m[:,None,:]
+    w=np.asarray(init["norm_weights"],float)
+    h=np.einsum("n,nij->ij",w,bank,optimize=True)
+    cu=np.array([3,4])
+    rest=np.array([i for i in range(atlas.rank) if i not in cu])
+    base=h[np.ix_(cu,cu)]
+    b=h[np.ix_(rest,cu)]
+    target=np.array([init["k"][i,i]*init["cap"][i] for i in cu])
+    if np.min(target)<=0:
+        raise ValueError("invalid copper self-conductance")
+    factors=target/np.diag(base)
+    bnew=b*factors[None,:]
+    dnew=np.diag(target)
+    anew=(h[np.ix_(rest,rest)]-
+          b@np.linalg.solve(base,b.T)+
+          bnew@np.linalg.solve(dnew,bnew.T))
+    h[np.ix_(rest,rest)]=anew
+    h[np.ix_(rest,cu)]=bnew
+    h[np.ix_(cu,rest)]=bnew.T
+    h[np.ix_(cu,cu)]=dnew
+    mass=np.sqrt(np.asarray(init["cap"],float)[lab])
+    k=h/(mass[:,None]*mass[None,:])
+    out=dict(init)
+    out["k"]=.5*(k+k.T)
+    return out
+
+
 def mix_init(case,base,extra=None,weight=0.):
     """Cold electrical blending; preserve the base dissipative thermal operator."""
     w=float(weight)
