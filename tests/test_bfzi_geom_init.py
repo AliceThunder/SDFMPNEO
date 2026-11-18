@@ -108,3 +108,25 @@ def test_cold_mix_keeps_material_conservation_operator():
     assert np.allclose(val['src'],base['src'])
     with pytest.raises(ValueError):
         mix_init(cases[0],a,b,1.2)
+
+def test_thermal_kernel_bandwidth_is_independent_and_persistent(tmp_path):
+    cases=[_case(.8),_case(.9),_case(.95)]
+    x=np.stack([encode(c) for c in cases])
+    y=np.zeros((3,14))
+    y[:,9:]=np.log([1e5,500,500,20,20])
+    k=np.stack([np.eye(32)*v for v in (.01,.02,.04)])
+    src=np.stack([np.full((32,3),v) for v in (.2,.4,.8)])
+    ext=np.stack([np.eye(2,dtype=complex)]*3)
+    base=GeomInit.fit(x,y,k,src,ext,ell=6.)
+    local=GeomInit.fit(x,y,k,src,ext,ell=6.,kell=.6)
+    q=_case(.86)
+    a=base.predict(q)
+    b=local.predict(q)
+    assert not np.allclose(a['k'],b['k'])
+    assert np.allclose(a['src'],b['src'])
+    assert np.linalg.eigvalsh(b['k'])[0]>0
+    assert np.allclose(b['k'],b['k'].T)
+    local.save(tmp_path/'local.npz')
+    restored=GeomInit.load(tmp_path/'local.npz')
+    assert restored.kell==.6
+    assert np.allclose(restored.predict(q)['k'],b['k'])
