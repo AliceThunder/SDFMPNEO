@@ -14,13 +14,19 @@
     "pid": 32672
   },
   "observed_progress": {
-    "successful": 33,
-    "failed": 2,
+    "successful": 292,
+    "failed": 8,
     "failed_cases": [
       "C0496",
-      "C0290"
+      "C0290",
+      "C0287",
+      "C0399",
+      "C0446",
+      "C0340",
+      "C0211",
+      "C0205"
     ],
-    "failed_reason": "oriented BFZI package extends outside seawater tank"
+    "failed_reason": "invalid rotated package / original BFZI geometry domain; recorded then skipped"
   },
   "first_3_cases": {
     "C0373": 13.81,
@@ -52,5 +58,33 @@
     "dev_dynamic_Z_pct": 34.5943317370393,
     "promote": false
   },
-  "decision": "Keep deployed V5 cold ports and thermal models frozen until full geometry-disjoint evaluation."
+  "decision": "Keep deployed V5 cold ports and thermal models frozen until full geometry-disjoint evaluation.",
+  "partial_training": {
+    "snapshot_new_train": 232,
+    "old_train": 42,
+    "total_train": 274,
+    "old_unseen_dev": 5,
+    "independent_new_val": 0,
+    "independent_new_test": 0,
+    "plain": {
+      "cold_Z_pct": 1.2167345172228738,
+      "current_pct": 10.110497634347137,
+      "dynamic_Z_pct": 21.255787243472135
+    },
+    "residual": {
+      "cold_Z_pct": 0.7907771244659473,
+      "current_pct": 6.724525006959414,
+      "dynamic_Z_pct": 12.695135179726885
+    },
+    "baseline": {
+      "cold_Z_pct": 0.8271521125133395,
+      "current_pct": 6.901684575337747,
+      "dynamic_Z_pct": 12.324512014899105
+    },
+    "decision": "retain frozen V5; cold residual improves static but has not improved closed-loop dynamic Z"
+  },
+  "next": {
+    "script": "examples/bfzi_cold_finish.py",
+    "steps": "After current producer completes, replenish valid 400/50/50 geometry counts, train plain and residual cold networks, evaluate fresh 50G independent cold labels, then use bfzi_cold_closed_eval on unchanged V5 dynamic histories."
+  }
 }
