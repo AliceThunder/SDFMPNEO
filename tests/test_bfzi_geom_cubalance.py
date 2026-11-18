@@ -48,6 +48,7 @@ def test_conductance_mixing_is_passive_and_conservative():
     bank=[]
     for g in (4.,9.):
         h=np.eye(32)*0.05
+        h[3,3]=h[4,4]=0.
         for p,c in ((1,3),(2,4)):
             v=np.zeros(32);v[p]=-1.;v[c]=1.
             h+=g*np.outer(v,v)
