@@ -165,6 +165,8 @@
     "trainer": "examples/bfzi_geom_init.py",
     "test": "tests/test_bfzi_geom_init.py::test_thermal_kernel_bandwidth_is_independent_and_persistent",
     "description": "Separate kell controls the convex SPD K interpolation weights; ell continues to control cold/capacity/source interpolation. Legacy checkpoints default kell to ell.",
-    "decision": "Run 42G anchor rebuild and full original-dev dynamic-Z evaluation before considering promotion."
+    "decision": "Run 42G anchor rebuild and full original-dev dynamic-Z evaluation before considering promotion.",
+    "nested_tangent_test": "tests/test_bfzi_geom_ztune.py::test_nested_geometry_free_tangent_checkpoint",
+    "pytest_status": "not_run_after_this_round_of_changes"
   }
 }
