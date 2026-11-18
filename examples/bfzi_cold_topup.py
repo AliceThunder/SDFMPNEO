@@ -6,7 +6,7 @@ from pathlib import Path
 from examples.bfzi_cold_plan import sample
 
 
-def topup(plan,store,seed=62027):
+def topup(plan,store,seed=62027,accept=None):
     goals=dict(train=400,val=50,test=50)
     done={part:sum((store/'samples'/f'{k}.npz').exists()
                    for k in plan[part]) for part in goals}
@@ -17,7 +17,7 @@ def topup(plan,store,seed=62027):
     counts={part:int(n*1.2)+2 if n else 0 for part,n in need.items()}
     n=sum(counts.values())
     occupied=[c for c in plan['cases'].values()]
-    new=sample(seed,n,existing=occupied)
+    new=sample(seed,n,existing=occupied,accept=accept)
     keys=list(new['cases'])
     number=max(int(k[1:]) for k in plan['cases'])+1
     extra={}
