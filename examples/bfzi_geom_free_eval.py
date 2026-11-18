@@ -219,6 +219,8 @@ def main():
         from sdfmpneo_bfzi.geom_srcfix import SrcFix
         source=SrcFix.load(args.source_model)
     pl=json.loads(args.plan.read_text(encoding='utf-8'))
+    if pl.get('invalid_for_physics'):
+        p.error('superseded physical plan: use '+str(pl.get('superseded_by','corrected plan')))
     mf=json.loads(args.manifest.read_text(encoding='utf-8'))
     res=evaluate(atlas,net,ck,tan,pl,mf,args.split,
                  extra,args.cold_weight,field,dyn,skin,port_self,mutual,source,
