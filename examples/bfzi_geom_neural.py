@@ -112,7 +112,7 @@ def scales(rows):
     return sscale, yscale, ascale
 
 
-def _port_src(row, rom, a, y, sy, voltage):
+def _port_src(row, rom, a, y, sy, voltage, tangent=None, geom=None):
     """Differentiable causal circuit source from previous predicted Z and Tcu."""
     if "port_t" not in row:
         from sdfmpneo_bfzi.geom_canon import mode_scale
@@ -145,7 +145,8 @@ def _port_src(row, rom, a, y, sy, voltage):
     p=row["port_t"]
     tc=a@p["cu_map"].T
     cu=p["cu"][None]+p["deriv"][None]*tc
-    dz=ztorch(y[:,:6]*torch.as_tensor(sy[:6],dtype=y.dtype))
+    sea=tangent(geom,a) if tangent is not None else y[:,:6]*torch.as_tensor(sy[:6],dtype=y.dtype)
+    dz=ztorch(sea)
     z=p["cold"]+dz+torch.diag_embed(cu-p["cu"])
     sea=p["cold"]+dz-p["sea_air"]-torch.diag_embed(p["cu"])
     v=torch.as_tensor(voltage,dtype=a.dtype).reshape(1)
@@ -157,13 +158,14 @@ def _port_src(row, rom, a, y, sy, voltage):
     return torch.cat((qsea[:,None],qcu),dim=-1)
 
 
-def _heat_balance(row, rom, old, pred, y, sy, dt, voltage):
+def _heat_balance(row, rom, old, pred, y, sy, dt, voltage,
+                  tangent=None, geom=None):
     """Differentiable matching budgets plus nonnegative spatial projection."""
     a=pred
     # Each adjustment to zero-mean modes requires a new material budget step.
     for stage in range(6):
         for _ in range(6):
-            q=_port_src(row,rom,a,y,sy,voltage)
+            q=_port_src(row,rom,a,y,sy,voltage,tangent=tangent,geom=geom)
             p=row["port_t"]
             qg=torch.stack((q[:,0],torch.zeros_like(q[:,0]),
                             torch.zeros_like(q[:,0]),
@@ -258,17 +260,19 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             prev = cur if closed else a[k-1:k]
             input_u=u[k:k+1]
             if src_mix:
-                live=_port_src(row,rr,prev,zy,sy,float(row["voltage"][k-1]))
+                live=_port_src(row,rr,prev,zy,sy,float(row["voltage"][k-1]),
+                               tangent=tangent,geom=gg)
                 input_u=(1-src_mix)*input_u+src_mix*(
                     live/torch.as_tensor(sx,dtype=a.dtype))
             h, zhat, nxt = net.step_et(h,input_u,float(t[k]-t[k-1]),gg,
                                        prev,asc)
-            zy=zhat
             state=nxt
             if closed and src_mix:
                 physical=_heat_balance(row,rr,prev,nxt,zhat,sy,dt,
-                                       float(row["voltage"][k-1]))
+                                       float(row["voltage"][k-1]),
+                                       tangent=tangent,geom=gg)
                 state=(1-src_mix)*nxt+src_mix*physical
+            zy=tangent(gg,state) if tangent is not None else zhat
             if closed:
                 cur=state
             # The training target must describe the same corrected state
