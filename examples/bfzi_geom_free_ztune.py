@@ -82,7 +82,7 @@ def closed_score(model, rows, atlas, net, ck, base, sy, shape_mix):
     return dict(
         dynamic_z_pct=float(np.mean([x['dynamic_z_rel_L2'] for x in out])*100),
         current_pct=float(np.mean([x['current_rel_L2'] for x in out])*100),
-        temp_rmse_K=float(np.mean([x['temperature_rmse_K'] for x in out])),
+        temp_rmse_K=float(np.mean([x['material_mean_rmse_K'] for x in out])),
         cu_tx_K=float(np.mean([x['material_cu_tx_rmse_K'] for x in out])),
         cu_rx_K=float(np.mean([x['material_cu_rx_rmse_K'] for x in out])),
         sea_power_pct=float(np.mean([x['sea_power_rel_L2'] for x in out])*100),
