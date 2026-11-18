@@ -1,0 +1,55 @@
+{
+  "status": "complete_geometry_atlas_build",
+  "source_manifest": "runs/geomfrac_s5_v6_42g_manifest.json",
+  "split_manifest": "runs/geomfrac_s5_v6_36g_hold6_manifest.json",
+  "train_geometries": 36,
+  "train_histories": 108,
+  "validation_geometries": 11,
+  "validation_histories": 33,
+  "validation_note": "T04,D01-D04 are original unseen development geometries. N05,N10,N15,N20,N25,N27 were used in the prior V5 neural training and are atlas replay cases, not independent neural holdouts.",
+  "rank": 32,
+  "ell": 6,
+  "lambda": 0.003,
+  "thermal_kernel_ell": 0.6,
+  "thermal_scale_exp": [
+    0.5,
+    0.25,
+    1
+  ],
+  "self_dims": 3,
+  "self_ell": 1.5,
+  "self_lambda": 0.01,
+  "train_metrics": {
+    "cold_Z_rel_L2_mean": 0.009173014996133889,
+    "air_rel_L2_mean": 0.004583484440614539,
+    "cap_rel_L2_mean": 0.00001639321883267287,
+    "heat_K_rel_F_mean": 0.042075079720848195,
+    "heat_K_min_eig_mean": 0.000023234471896583494,
+    "source_rel_F_mean": 0.09876184421745691
+  },
+  "validation_metrics": {
+    "cold_Z_rel_L2_mean": 0.021543724162247764,
+    "air_rel_L2_mean": 0.04484125794839382,
+    "cap_rel_L2_mean": 0.00006736245209195592,
+    "heat_K_rel_F_mean": 0.03791474681604567,
+    "heat_K_min_eig_mean": 0.000023127223341055777,
+    "source_rel_F_mean": 0.0927938653127077
+  },
+  "atlas_status": "SPD; mean validation thermal operator relative Frobenius error 3.791%; mean capacity relative error 0.00674%; mean weak-source relative error 9.279%",
+  "closed_loop_initialization_baseline": {
+    "model": "runs/geomfrac_et_v5_closed.pt",
+    "metric": "BFZI-free dynamic-Z relative L2",
+    "validation_histories": 33,
+    "value": 0.165013,
+    "percent": 16.5013
+  },
+  "training": {
+    "status": "running",
+    "output": "runs/geomfrac_et_pose42_kell_v1.pt",
+    "report": "runs/geomfrac_et_pose42_kell_v1.json",
+    "log": "runs/geomfrac_et_pose42_kell_v1.log",
+    "epochs_max": 180,
+    "val_every": 5,
+    "trainable_parameters": "heat_head only"
+  }
+}
