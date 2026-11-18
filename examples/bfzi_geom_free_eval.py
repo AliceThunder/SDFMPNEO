@@ -252,6 +252,8 @@ def main():
     if args.source_model:
         from sdfmpneo_bfzi.geom_srcfix import SrcFix
         source=SrcFix.load(args.source_model)
+    if args.cold_atlas and args.cold_weight and port_self is not None and mutual is not None:
+        p.error('--cold-atlas blend is fully overwritten by absolute port-self and mutual corrections')
     pl=json.loads(args.plan.read_text(encoding='utf-8'))
     if pl.get('invalid_for_physics'):
         p.error('superseded physical plan: use '+str(pl.get('superseded_by','corrected plan')))
