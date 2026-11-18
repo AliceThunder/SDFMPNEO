@@ -1,5 +1,5 @@
 {
-  "status": "awaiting_xenergy_reconnection_for_training_and_corrected_holdout",
+  "status": "completed_no_change",
   "experiment": "pose-augmented V5 GeomFracET base-model fine-tuning",
   "branch": "research/bfzi-uwpt-electrothermal-surrogate",
   "initial_checkpoint": "runs/geomfrac_et_v4_8g_quality.pt",
@@ -16,7 +16,10 @@
     "learning_rate": 0.0003,
     "selection": "dynamic_z",
     "dynamic_z_loss_weight": 1,
-    "history_weight": "step"
+    "history_weight": "step",
+    "closed_source_warmup": 80,
+    "early_stopping_patience": 60,
+    "issue": "old code stopped before source warmup finished; old dynamic Z selection used neural port head not the deployed BFZI-free tangent"
   },
   "added_pose_geometries": [
     "Z01",
@@ -53,26 +56,23 @@
     "holdout_wrapper_pid": 12904,
     "current_availability": "offline; device last seen approximately 4 hours before latest attempt"
   },
-  "decision": "V1-V4 not promoted. V5 training outcome unverified while XEnergy is offline. Official V6 unchanged; evaluate V5 only on corrected free10 teacher histories after physical completion.",
+  "decision": "reject original V5 checkpoint (identical to initialized V6); closed-loop-select thermal-head training running; V6 stays formal.",
   "holdout_generation": {
-    "status": "original_free9_invalid; corrected_free10_not_started",
-    "invalid_original_plan": "runs/geomfrac_s5_free9_plan.json",
-    "invalid_original_tag": "free9",
-    "original_prior_progress": "AA01 60s generated under invalid parameter mapping; this and any subsequent free9 histories are excluded from acceptance",
-    "cause": "alpha_per_K was assigned ins_k; ins_k was assigned ins_t, corrupting thermal material inputs for all AA cases",
-    "corrected_plan": "runs/geomfrac_s5_free10_plan.json",
-    "corrected_reference_tag": "free10",
-    "corrected_histories_done": 0,
-    "corrected_histories_target": 18,
-    "action": "On XEnergy reconnection, stop obsolete free9 generator if still running; generate fresh free10 histories using corrected physical parameters and separate filenames. Preserve existing V5 training outputs."
+    "status": "free10_running",
+    "completed_histories": 2,
+    "failed_histories": 0,
+    "tag": "free10",
+    "corrected_plan": "runs/geomfrac_s5_free10_plan.json"
   },
   "training_process": {
-    "process_id": 35588,
-    "log": "D:\\work\\geomfrac-train\\runs\\v5_pose_train.log",
-    "status": "unverified_offline",
-    "initial_dev_dynamic_z": 0.163145
+    "status": "finished",
+    "initial_dev_dynamic_z": 0.16314533246528498,
+    "best_epoch": 0,
+    "epochs_trained": 60,
+    "max_param_abs_diff_from_initial": 0
   },
   "last_confirmed_training": "V5 training Python PID 35588; no finalized checkpoint or training report published",
   "fresh_holdout_reference_tag": "free10",
-  "next": "Restart Desktop Commander Remote on XEnergy, inspect V5 training result, discard free9 reference histories, generate free10 with per-history failure continuation, then compare frozen V6/V5 on the corrected AA holdout."
+  "next": "Restart Desktop Commander Remote on XEnergy, inspect V5 training result, discard free9 reference histories, generate free10 with per-history failure continuation, then compare frozen V6/V5 on the corrected AA holdout.",
+  "corrected_successor": "runs/geomfrac_et_v5_closed_status.json"
 }
