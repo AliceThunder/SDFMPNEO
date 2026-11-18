@@ -104,6 +104,7 @@ def main():
     p.add_argument('--closed-warmup',type=int,default=20)
     p.add_argument('--closed-ramp',type=int,default=60)
     p.add_argument('--therm-weight',type=float,default=.03)
+    p.add_argument('--cu-z-weight',type=float,default=0.,help='copper-only physically weighted dynamic impedance loss')
     p.add_argument('--zrel-weight',type=float,default=0.,
                    help='full dynamic port-Z relative squared loss weight')
     p.add_argument('--history-weight',choices=('equal','step'),default='step')
@@ -121,6 +122,8 @@ def main():
                    help='frozen geometry-free port/thermal model configuration')
     p.add_argument('--free-heat-op',choices=('atlas','conductance'),default='atlas',help='geometry-only heat operator used for closed-loop checkpoint selection')
     a=p.parse_args()
+    if a.cu_z_weight<0:
+        p.error('copper impedance weight must be nonnegative')
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
     trgeo={str(item['anchor']).replace('\\','/') for item in trspec}
@@ -239,12 +242,12 @@ def main():
         net.train()
         opt.zero_grad(set_to_none=True)
         loss=score(net,batch,None,sx,sy,sa,therm_w=a.therm_weight,
-                   zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight)
+                   zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight)
         if a.closed_weight and ep>=a.closed_warmup:
             mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
             loss+=a.closed_weight*score(net,batch,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=mix,
-                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight)
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight)
         if not torch.isfinite(loss):
             raise RuntimeError(f"training diverged at epoch {ep+1}")
         loss.backward()
@@ -255,11 +258,11 @@ def main():
         net.eval()
         with torch.no_grad():
             v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
-                          zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
+                          zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
             if a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=1.,
-                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
+                        zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if a.select=='free_dynamic_z':
@@ -295,12 +298,12 @@ def main():
         with torch.no_grad():
             best_loss=float(score(net,val,None,sx,sy,sa,
                 therm_w=a.therm_weight,zrel_w=a.zrel_weight,
-                hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
+                hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
             if a.closed_weight:
                 best_loss+=a.closed_weight*float(score(net,val,None,
                     sx,sy,sa,closed=True,therm_w=a.therm_weight,
                     src_mix=1.,zrel_w=a.zrel_weight,
-                    hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
+                    hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
     ck=dict(state=net.state_dict(),ng=net.ng,rank=net.rank,
             src_scale=torch.as_tensor(sx,dtype=torch.float32),
             y_scale=torch.as_tensor(sy,dtype=torch.float32),
@@ -320,6 +323,8 @@ def main():
                  reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
                  heat_z=a.heat_z,head_only=a.head_only,
                  heat_only=a.heat_only,
+                 copper_z_loss_weight=a.cu_z_weight,
+                 free_heat_op=a.free_heat_op,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
                  tangent_loss_weight=a.tangent_loss_weight,
                  history_weight=a.history_weight,
