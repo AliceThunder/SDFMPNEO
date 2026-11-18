@@ -1,0 +1,47 @@
+{
+  "status": "running",
+  "reason": "Original V5 selected on internal neural Z that deployment bypasses and stopped at 60 before closed-source warmup threshold 80; best checkpoint identical to initialization",
+  "original_v5": {
+    "source": "runs/geomfrac_et_v5_pose_aug.json",
+    "epochs_executed": 60,
+    "best_epoch": 0,
+    "best_internal_dynamic_z": 0.16314533246528498,
+    "checkpoint_param_max_abs_diff": 0,
+    "promote": false
+  },
+  "new_training": {
+    "source_model": "runs/geomfrac_et_v4_8g_quality.pt",
+    "output": "runs/geomfrac_et_v5_closed.pt",
+    "report": "runs/geomfrac_et_v5_closed.json",
+    "log": "runs/v5_closed_train.log",
+    "error_log": "runs/v5_closed_train.err",
+    "train_manifest": "runs/geomfrac_s5_v5_36g_manifest.json",
+    "dev_geometry_plan": "runs/geomfrac_s5_v4_plan.json",
+    "dev_geometry_count": 5,
+    "train_geometry_count": 36,
+    "selection": "actual geometry-free closed-loop dynamic-Z relative L2",
+    "initial_development_dynamic_z": 0.122046,
+    "trainable_params": "heat_head only",
+    "source_coupling": "closed_weight 0.2, warmup 10, ramp 20",
+    "epochs_max": 160,
+    "patience": 50,
+    "lr": 0.0003,
+    "batch_hist": 36,
+    "safe_early_stop": "patience begins after source warmup + ramp",
+    "status": "running"
+  },
+  "reference": {
+    "plan": "runs/geomfrac_s5_free10_plan.json",
+    "manifest": "runs/geomfrac_s5_free10_manifest.json",
+    "tag": "free10",
+    "grid": "ultra",
+    "internal_step_s": 1.875,
+    "completed_histories": 2,
+    "total_histories": 18,
+    "failed_histories": 0,
+    "active_python_pid": 33076,
+    "current_geometry": "AA01",
+    "status": "running"
+  },
+  "decision": "V6 remains formal. Compare base and selected V5 closed-loop model using the same corrected free10 AA teachers after 18/18 candidate."
+}
