@@ -1,0 +1,68 @@
+{
+  "status": "independent_acceptance_complete",
+  "geometries": 6,
+  "histories": 18,
+  "summary": {
+    "dynamic_z_rel_L2_mean": {
+      "v5": 0.4530217271490024,
+      "pose42": 0.4530217271490024
+    },
+    "cold_z_rel_L2_mean": {
+      "v5": 0.02512429859119142,
+      "pose42": 0.02512429859119142
+    },
+    "current_rel_L2_mean": {
+      "v5": 0.16839009151797912,
+      "pose42": 0.16839009151797912
+    },
+    "temperature_rmse_K_mean": {
+      "v5": 0.2118153660949745,
+      "pose42": 0.2118153660949745
+    },
+    "material_cu_tx_rmse_K_mean": {
+      "v5": 1.006216183596547,
+      "pose42": 1.006216183596547
+    },
+    "material_cu_rx_rmse_K_mean": {
+      "v5": 1.855420188295087,
+      "pose42": 1.855420188295087
+    },
+    "repeat_s_mean": {
+      "v5": 0.19945398889184515,
+      "pose42": 0.20254699444760466
+    },
+    "energy_budget_W_mean": {
+      "v5": 1.6533322994045421e-12,
+      "pose42": 1.6533322994045421e-12
+    }
+  },
+  "per_geometry": {
+    "BB01": {
+      "v5_dynamic_pct": 138.91540839236134,
+      "pose42_dynamic_pct": 138.91540839236134
+    },
+    "BB02": {
+      "v5_dynamic_pct": 19.198791423342588,
+      "pose42_dynamic_pct": 19.198791423342588
+    },
+    "BB03": {
+      "v5_dynamic_pct": 33.216699694131655,
+      "pose42_dynamic_pct": 33.216699694131655
+    },
+    "BB04": {
+      "v5_dynamic_pct": 36.31099586377566,
+      "pose42_dynamic_pct": 36.31099586377566
+    },
+    "BB05": {
+      "v5_dynamic_pct": 18.31180905820287,
+      "pose42_dynamic_pct": 18.31180905820287
+    },
+    "BB06": {
+      "v5_dynamic_pct": 25.859331857587332,
+      "pose42_dynamic_pct": 25.859331857587332
+    }
+  },
+  "model": "runs/geomfrac_et_pose42.pt",
+  "baseline": "runs/geomfrac_et_v5_closed.pt",
+  "physical_reference": "BFZI V150 S5 ultra free11; independently frozen BB01-BB06"
+}
