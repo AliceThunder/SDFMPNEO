@@ -1,5 +1,5 @@
 {
-  "description": "36-geometry heat-head adaptation: 108 training histories; 11 validation geometries (original five development geometries plus six internal holdouts), 33 validation histories. BB remains excluded.",
+  "description": "36-geometry heat-head adaptation: 108 training histories; 11 validation geometries (original five development geometries plus six N-geometry atlas replay cases), 33 validation histories. The six N cases were used in the prior V5 neural training and are not independent neural holdouts; BB remains excluded.",
   "train": [
     {
       "anchor": "runs/bfzi_s5_T01_ultra_pilot60_anchor.npz",
