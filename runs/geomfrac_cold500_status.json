@@ -1,6 +1,6 @@
 {
-  "status": "filtering_and_generating_physical_valid_cold_geometries",
-  "as_of": "2026-11-18",
+  "status": "physical_lead_cleaning_resumed",
+  "as_of": "2026-11-19",
   "target": {
     "candidates": 500,
     "training": 400,
@@ -10,9 +10,10 @@
   "device": "XEnergy-Zhucy",
   "process": {
     "provider": "EXZA",
-    "job_id": "job-17",
-    "pid": 39952,
-    "status": "running"
+    "job_id": "job-18",
+    "status": "running",
+    "restart_of": "job-17",
+    "reason": "job-17 stopped unexpectedly without a solver traceback; saved NPZ files preserved"
   },
   "observed_progress": {
     "successful": 304,
@@ -90,8 +91,8 @@
   },
   "postprocess": {
     "provider": "EXZA",
-    "job_id": "job-11",
-    "status": "watching cold producer job-2; when complete run valid-sample top-up, train both cold models, evaluate fresh independent 50G cold test and frozen-V5 dynamic histories",
+    "job_id": "job-19",
+    "status": "watching resumed producer; when producer ends, finish valid-sample top-ups and train/evaluate",
     "script": "examples/bfzi_cold_finish.py",
     "automatically_promote": false
   },
@@ -131,9 +132,28 @@
       "val": 32,
       "test": 28
     },
-    "status": "running"
+    "status": "resumed",
+    "restart_snapshot": {
+      "train": 309,
+      "val": 25,
+      "test": 28,
+      "checked_via": "bfzi_cold_snapshot.py"
+    },
+    "new_candidate_count": {
+      "train": 172,
+      "val": 32,
+      "test": 28
+    }
   },
   "promotion": false,
   "evidence": "runs/geomfrac_cold_lead_audit.json",
-  "notes": "Original full-batch coldnet and residual models did not beat V5; initial labels include overlapping terminal leads. Raw NPZ files retained, filtered and physically valid splits are being refilled."
+  "notes": "Original full-batch coldnet and residual models did not beat V5; initial labels include overlapping terminal leads. Raw NPZ files retained, filtered and physically valid splits are being refilled.",
+  "cleaned_historical_test": {
+    "geometries": 28,
+    "unfiltered_test_geometry_count": 52,
+    "v5_cold_Z_pct": 1.0719448461597632,
+    "residual_v1_cold_Z_pct": 1.1330983831604553,
+    "plain_v1_cold_Z_pct": 2.0401719590561243,
+    "note": "Evaluated existing models on the original filtered test subset; this is not a new trained model or independent 50G acceptance"
+  }
 }
