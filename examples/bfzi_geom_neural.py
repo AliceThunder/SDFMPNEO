@@ -219,7 +219,7 @@ def _zrel_full(rom, row, sea, cu, sy):
 
 def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
           therm_w=0., src_mix=0., zrel_w=0., hist_weight="equal",
-          tangent=None, tan_w=0.):
+          tangent=None, tan_w=0., cu_z_w=0.):
     total, spans = [], []
     for row in rows:
         t = row["time"]
@@ -285,7 +285,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
                               .square().mean())
                 pr_cu.append((pred_temp[n_pkg:]-actual[k,n_pkg:])
                              .square().mean())
-                if zrel_w:
+                if zrel_w or cu_z_w:
                     pr_cuz.append(pred_temp[n_pkg:])
             if therm_w:
                 delta=state[0]-a[k]
@@ -308,12 +308,23 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             if rr is None:
                 raise ValueError("full dynamic impedance needs a heat ROM")
             zrel=_zrel_full(rr,row,pz,torch.stack(pr_cuz),sy)
+        cu_z=0.
+        if cu_z_w:
+            if rr is None:
+                raise ValueError("copper impedance sensitivity needs the thermal ROM")
+            hot=rr.port.copper(np.full(2,rr.amb+.1))
+            cold=rr.port.copper(np.full(2,rr.amb-.1))
+            slope=torch.as_tensor((hot-cold)/.2,dtype=torch.complex64)
+            ref=torch.as_tensor(row["temp_K"][1:,rr.cu]-rr.amb,dtype=a.dtype)
+            delta=(torch.stack(pr_cuz)-ref).to(torch.complex64)*slope[None]
+            den=max(float(np.square(row["z6"][1:]-row["z6"][0]).sum()),1e-12)
+            cu_z=delta.abs().square().sum()/den
         tloss=0.
         if tan_w:
             den=float(np.square(row['z6']-row['z6'][0]).sum())
             tloss=torch.stack(pr_tan).sum()/max(den,1e-12)
         total.append(zerr+0.45*zextra+heat+therm_w*phy
-                     +temp_loss+zrel_w*zrel+tan_w*tloss)
+                     +temp_loss+zrel_w*zrel+tan_w*tloss+cu_z_w*cu_z)
         spans.append(len(t)-1)
     if not total:
         raise ValueError("teacher histories need at least two times")
