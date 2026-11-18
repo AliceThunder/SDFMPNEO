@@ -14,12 +14,19 @@ from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_ztune import restore as load_z
 
 
-def records(mf,pl,atlas,net,ck,tan,split,report=True):
+def records(mf,pl,atlas,net,ck,tan,split,report=True,
+            port_self=None,mutual=None,source=None):
     rows=[]
     for i,spec in enumerate(mf[split]):
         name=Path(spec['anchor']).stem.split('_')[2]
         case=pl['cases'][name]
         init=atlas.predict(case)
+        if port_self is not None:
+            init=port_self.apply(case,init)
+        if mutual is not None:
+            init=mutual.apply(case,init)
+        if source is not None:
+            init=source.apply(case,init)
         for row in prepare(spec,32):
             with torch.no_grad():
                 pred=rollout(case,atlas,net,ck,row['time'],
@@ -28,7 +35,7 @@ def records(mf,pl,atlas,net,ck,tan,split,report=True):
             base=np.asarray(pred['z6'])
             target=(truth-truth[0])-(base-base[0])
             denom=max(float(np.linalg.norm(truth-truth[0])),1e-11)
-            rows.append(dict(name=name,case=case,row=row,
+            rows.append(dict(name=name,case=case,row=row,init=init,
                 g=torch.as_tensor(np.repeat(encode(case)[None],len(truth),axis=0),
                                   dtype=torch.float32),
                 a=torch.as_tensor(pred['heat_state'],dtype=torch.float32),
@@ -60,7 +67,7 @@ def closed_score(model,rows,atlas,net,ck,tan,field=None):
             case=r['case']
             row=r['row']
             pred=rollout(case,atlas,net,ck,row['time'],
-                         row['voltage'],tan,extra=model)
+                         row['voltage'],tan,init_override=r['init'],extra=model)
             out.append(metric(pred,row))
     return dict(dynamic_Z_pct=float(np.mean([e['dynamic_z_rel_L2']
                                              for e in out])*100),
@@ -79,6 +86,9 @@ def main():
     parser.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     parser.add_argument('--z-fix-model',type=Path,
                         default=Path('runs/geomfrac_et_v9_ztune.pt'))
+    parser.add_argument('--port-self-model',type=Path,default=None)
+    parser.add_argument('--mutual-model',type=Path,default=None)
+    parser.add_argument('--source-model',type=Path,default=None)
     parser.add_argument('--out',type=Path,
                         default=Path('runs/geomfrac_free_dyn_v4.pt'))
     parser.add_argument('--report',type=Path,
@@ -102,6 +112,18 @@ def main():
     net.eval()
     atlas=GeomInit.load(args.atlas)
     tan=load_z(args.z_fix_model)
+    port_self=None
+    mutual=None
+    source=None
+    if args.port_self_model:
+        from sdfmpneo_bfzi.geom_portself import PortSelf
+        port_self=PortSelf.load(args.port_self_model)
+    if args.mutual_model:
+        from sdfmpneo_bfzi.geom_mutual import MutFix
+        mutual=MutFix.load(args.mutual_model)
+    if args.source_model:
+        from sdfmpneo_bfzi.geom_srcfix import SrcFix
+        source=SrcFix.load(args.source_model)
     pl=json.loads(args.plan.read_text(encoding='utf-8'))
     mf=json.loads(args.manifest.read_text(encoding='utf-8'))
     if args.holdout:
@@ -110,12 +132,15 @@ def main():
             if Path(s['anchor']).stem.split('_')[2] not in hold_names])
         held=dict(mf,val=[s for s in mf['train']
             if Path(s['anchor']).stem.split('_')[2] in hold_names])
-        hold=records(held,pl,atlas,net,ck,tan,'val')
+        hold=records(held,pl,atlas,net,ck,tan,'val',
+                      port_self=port_self,mutual=mutual,source=source)
     else:
         training=mf
         hold=[]
-    train=records(training,pl,atlas,net,ck,tan,'train')
-    dev=records(mf,pl,atlas,net,ck,tan,'val')
+    train=records(training,pl,atlas,net,ck,tan,'train',
+                  port_self=port_self,mutual=mutual,source=source)
+    dev=records(mf,pl,atlas,net,ck,tan,'val',
+                port_self=port_self,mutual=mutual,source=source)
     model=DynFix(atlas.mu,atlas.std,
         np.asarray(ck['a_scale']),np.asarray(ck['y_scale'])[:6],
         geom_strength=args.geom_strength)
@@ -171,7 +196,10 @@ def main():
         best_selection_Z_pct=best_score,
         baseline_dev_temp_group_K=history[0]['temp_group_K'],
         history=history,
-        atlas=str(args.atlas),head=str(args.out))
+        atlas=str(args.atlas),head=str(args.out),
+        port_self_model=str(args.port_self_model) if args.port_self_model else None,
+        mutual_model=str(args.mutual_model) if args.mutual_model else None,
+        source_model=str(args.source_model) if args.source_model else None)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(dict(state=model.state_dict(),mu=model.mu,std=model.std,
                     scale=model.scale,ys=model.ys,
