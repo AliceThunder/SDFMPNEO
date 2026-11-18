@@ -416,5 +416,8 @@
   },
   "seed": 261118,
   "grid": "ultra",
-  "inner_step_s": 1.875
+  "inner_step_s": 1.875,
+  "invalid_for_physics": true,
+  "superseded_by": "runs/geomfrac_s5_free10_plan.json",
+  "invalid_reason": "AA01-AA06 alpha_per_K and insulation thermal conductivity were interchanged when the original plan was constructed; generated free9 teachers must not be used."
 }
