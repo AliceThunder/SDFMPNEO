@@ -1,0 +1,221 @@
+{
+  "status": "rejected",
+  "train_geometries": 42,
+  "dev_geometries": 5,
+  "replay_geometries": 6,
+  "BB_geometries": 6,
+  "dev_histories": 15,
+  "replay_histories": 18,
+  "BB_histories": 18,
+  "model": "runs\\geomfrac_portself_v7.npz",
+  "dims": 2,
+  "ell": 2.5,
+  "lam": 0.1,
+  "baseline_dev_Z_pct": 12.324512014899105,
+  "baseline_replay_Z_pct": 19.98196846990392,
+  "selected_dev_Z_pct": 14.812247380009246,
+  "selected_replay_Z_pct": 22.35609347396137,
+  "baseline_BB_Z_pct": 40.53681620512771,
+  "selected_BB_Z_pct": 41.11109191756627,
+  "baseline_cold_dev": {
+    "cold_Z_pct": 0.8291137744651953,
+    "cold_current_pct": 6.901684575337747,
+    "per_geometry": [
+      {
+        "name": "T04",
+        "cold_Z_pct": 0.32215543510586675,
+        "cold_current_pct": 5.156567460898777,
+        "X11_ohm": 18.18042308936597,
+        "X11_ref_ohm": 18.145781679634197,
+        "X22_ohm": 18.059058942349573,
+        "X22_ref_ohm": 18.134047450259995
+      },
+      {
+        "name": "D01",
+        "cold_Z_pct": 0.9018310762787545,
+        "cold_current_pct": 6.991265943924081,
+        "X11_ohm": 17.276717226720734,
+        "X11_ref_ohm": 17.066156990975813,
+        "X22_ohm": 19.653486098573676,
+        "X22_ref_ohm": 19.759895109011776
+      },
+      {
+        "name": "D02",
+        "cold_Z_pct": 1.3091898138269746,
+        "cold_current_pct": 11.575852898009348,
+        "X11_ohm": 18.29227645264336,
+        "X11_ref_ohm": 18.629920585127117,
+        "X22_ohm": 17.90179590080268,
+        "X22_ref_ohm": 17.87623857798455
+      },
+      {
+        "name": "D03",
+        "cold_Z_pct": 0.8792704912757354,
+        "cold_current_pct": 7.51747617291067,
+        "X11_ohm": 17.59031224700569,
+        "X11_ref_ohm": 17.804559540119374,
+        "X22_ohm": 19.872849174468847,
+        "X22_ref_ohm": 19.778430603803336
+      },
+      {
+        "name": "D04",
+        "cold_Z_pct": 0.7331220558386458,
+        "cold_current_pct": 3.2672604009458537,
+        "X11_ohm": 15.739218868987795,
+        "X11_ref_ohm": 15.58299976572214,
+        "X22_ohm": 16.196080532805524,
+        "X22_ref_ohm": 16.165785969532433
+      }
+    ]
+  },
+  "selected_cold_dev": {
+    "cold_Z_pct": 0.9657013452396649,
+    "cold_current_pct": 8.193336172561091,
+    "per_geometry": [
+      {
+        "name": "T04",
+        "cold_Z_pct": 0.3457555581908633,
+        "cold_current_pct": 3.6037609265197093,
+        "X11_ohm": 18.068200576425472,
+        "X11_ref_ohm": 18.145781679634197,
+        "X22_ohm": 18.09110750163312,
+        "X22_ref_ohm": 18.134047450259995
+      },
+      {
+        "name": "D01",
+        "cold_Z_pct": 0.8100497751696332,
+        "cold_current_pct": 6.1739577686869325,
+        "X11_ohm": 17.22216624326138,
+        "X11_ref_ohm": 17.066156990975813,
+        "X22_ohm": 19.61650238812235,
+        "X22_ref_ohm": 19.759895109011776
+      },
+      {
+        "name": "D02",
+        "cold_Z_pct": 1.3260876171064968,
+        "cold_current_pct": 12.810429903399845,
+        "X11_ohm": 18.297388472776362,
+        "X11_ref_ohm": 18.629920585127117,
+        "X22_ohm": 17.960251407881003,
+        "X22_ref_ohm": 17.87623857798455
+      },
+      {
+        "name": "D03",
+        "cold_Z_pct": 0.902056967375784,
+        "cold_current_pct": 7.952973910064692,
+        "X11_ohm": 17.565033414325594,
+        "X11_ref_ohm": 17.804559540119374,
+        "X22_ohm": 19.796216019553373,
+        "X22_ref_ohm": 19.778430603803336
+      },
+      {
+        "name": "D04",
+        "cold_Z_pct": 1.4445568083555467,
+        "cold_current_pct": 10.425558354134273,
+        "X11_ohm": 15.876729534355853,
+        "X11_ref_ohm": 15.58299976572214,
+        "X22_ohm": 16.298253926350725,
+        "X22_ref_ohm": 16.165785969532433
+      }
+    ]
+  },
+  "trials": [
+    {
+      "dims": 2,
+      "ell": 1,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 20.89052363712587,
+      "replay_dynamic_Z_pct": 9.01546364554105,
+      "passes": false
+    },
+    {
+      "dims": 2,
+      "ell": 1,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 18.727174853126478,
+      "replay_dynamic_Z_pct": 13.931506306679447,
+      "passes": false
+    },
+    {
+      "dims": 2,
+      "ell": 2.5,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 23.105464526123633,
+      "replay_dynamic_Z_pct": 11.991225193989369,
+      "passes": false
+    },
+    {
+      "dims": 2,
+      "ell": 2.5,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 14.812247380009246,
+      "replay_dynamic_Z_pct": 22.35609347396137,
+      "passes": false
+    },
+    {
+      "dims": 2,
+      "ell": 5,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 17.643199160084276,
+      "replay_dynamic_Z_pct": 17.860650361971985,
+      "passes": false
+    },
+    {
+      "dims": 2,
+      "ell": 5,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 25.072461827755337,
+      "replay_dynamic_Z_pct": 30.911285675871024,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 1,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 25.973019754599907,
+      "replay_dynamic_Z_pct": 9.280203449367733,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 1,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 21.178485849009952,
+      "replay_dynamic_Z_pct": 16.44723979517128,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 2.5,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 25.28546856862654,
+      "replay_dynamic_Z_pct": 13.33147527655831,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 2.5,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 23.0531432803061,
+      "replay_dynamic_Z_pct": 25.851343215739707,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 5,
+      "lam": 0.01,
+      "dev_dynamic_Z_pct": 15.436045720080834,
+      "replay_dynamic_Z_pct": 21.50064357919219,
+      "passes": false
+    },
+    {
+      "dims": 3,
+      "ell": 5,
+      "lam": 0.1,
+      "dev_dynamic_Z_pct": 32.25053317474028,
+      "replay_dynamic_Z_pct": 34.131833266782785,
+      "passes": false
+    }
+  ],
+  "note": "BB already opened: diagnostic only, never used for selecting hyperparameters"
+}
