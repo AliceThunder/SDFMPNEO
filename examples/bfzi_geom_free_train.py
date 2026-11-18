@@ -65,6 +65,8 @@ def main():
     p.add_argument('--patience',type=int,default=25)
     p.add_argument('--temp-weight',type=float,default=.01)
     p.add_argument('--replay-tol',type=float,default=.005)
+    p.add_argument('--min-improve',type=float,default=.001,
+                   help='minimum absolute unseen dynamic-Z error reduction for promotion')
     a=p.parse_args()
     torch.manual_seed(41)
     torch.set_num_threads(2)
@@ -169,7 +171,8 @@ def main():
     net.load_state_dict(saved)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(dict(ck,state=net.state_dict()),a.out)
-    report=dict(status='accepted' if best_ep>0 else 'rejected',
+    promote=best_ep>0 and base_dev-best_dev>=a.min_improve
+    report=dict(status='accepted' if promote else 'rejected',
                 best_epoch=best_ep,epochs_trained=ep,
                 train_geometries=len(mf['train']),
                 unseen_geometries=len({_name(r) for r in dev}),
@@ -180,6 +183,8 @@ def main():
                 best_unseen_Z_pct=100*best_dev,
                 baseline_replay_Z_pct=100*base_rep,
                 best_replay_Z_pct=100*best_rep,
+                dev_improvement_pp=100*(base_dev-best_dev),
+                promotion_min_improvement_pp=100*a.min_improve,
                 forward_parity_Z=zerr,forward_parity_T_K=terr,
                 shape_mix=float(cfg['shape_mix']),history=history,
                 data_manifest=str(a.manifest),base_model=str(a.init_model))
