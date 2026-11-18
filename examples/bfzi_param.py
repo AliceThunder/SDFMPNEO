@@ -35,7 +35,7 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
            pitch_deg=0.,box_mm=None,box1_mm=None,box2_mm=None,
            grid_xz=None,grid_y=None,grid_layers=0,grid_factor=.5,
            grid_max_nodes=1400,mesh_only=False,physical_box_only=False,
-           sea_void="aabb"):
+           sea_void="aabb",coils_only=False):
     """Rebuild the genuine BFZI field operators for modified native coils."""
     sid=sid.upper()
     if sid=="M4":
@@ -145,6 +145,8 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                  ENV_RESOLVENT_BOUNDARY_LAYER_COUNT=int(grid_layers),
                  ENV_RESOLVENT_BOUNDARY_LAYER_FACTOR=float(grid_factor),
                  ENV_RESOLVENT_MAX_NODES=int(grid_max_nodes))
+    if coils_only:
+        return dict(coils=coils,cfg=cfg),dict(coils_only=True)
     # Each operator is called directly from original BFZI; no alternate
     # geometry generator, approximation to the source, or FEM mesh.
     t0=time.perf_counter()
