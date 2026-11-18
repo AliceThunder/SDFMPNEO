@@ -199,6 +199,31 @@ class GeomInit:
         return cls(raw)
 
 
+def balance_cu(init):
+    """Restore exact copper-package heat-exchange balance in a shared ROM.
+
+    A copper lump exchanges conductive heat only with its adjacent package.
+    In capacity-orthonormal coordinates the copper diagonal determines G,
+    so K[c,p] = -G/sqrt(C[c]*C[p]). Correct the package diagonal by the
+    change in exchange G to preserve the material-pair energy budget.
+    """
+    out=dict(init)
+    cap=np.asarray(init["cap"],float)
+    k=np.asarray(init["k"],float).copy()
+    if cap.shape!=(5,) or k.shape[0]!=k.shape[1] or k.shape[0]<5:
+        raise ValueError("expected five material capacities and 32-mode K")
+    if np.min(cap)<=0 or not np.isfinite(k).all():
+        raise ValueError("invalid capacity or thermal operator")
+    for p,c in ((1,3),(2,4)):
+        old=-k[p,c]*np.sqrt(cap[p]*cap[c])
+        goal=k[c,c]*cap[c]
+        correction=goal-old
+        k[p,c]=k[c,p]=-goal/np.sqrt(cap[p]*cap[c])
+        k[p,p]+=correction/cap[p]
+    out["k"]=k
+    return out
+
+
 def mix_init(case,base,extra=None,weight=0.):
     """Cold electrical blending; preserve the base dissipative thermal operator."""
     w=float(weight)
