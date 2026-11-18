@@ -66,7 +66,7 @@ python -m examples.bfzi_geom_init --plan runs/geomfrac_pose42_plan.json --manife
 python -m examples.bfzi_geom_multi --manifest runs/geomfrac_s5_v6_36g_hold6_manifest.json --init-model runs/geomfrac_et_v5_closed.pt --reuse-scales --heat-only --select free_dynamic_z --free-plan runs/geomfrac_pose42_plan.json --free-config runs/geomfrac_free_pose42_kell_v1.json --epochs 180 --patience 45 --val-every 5 --lr 0.0003 --batch-hist 36 --closed-weight 0.2 --closed-warmup 10 --closed-ramp 20 --out runs/geomfrac_et_pose42_kell_v1.pt --report runs/geomfrac_et_pose42_kell_v1.json
 ```
 
-训练报告包含 `initial_selection_score` 和 `selection_improvement_pct`，用于候选与初始化 V5 在完全相同的 11 组/33 条历史上比较。原开发集 V5 的 11.4614% 是 5 组/15 条历史指标，只作历史参照，不能替代本轮同集基线。当前状态：输入清单与配置已冻结，训练和模型升级验收待 XEnergy 执行。
+训练报告包含 `initial_selection_score` 和 `selection_improvement_pct`，用于候选与初始化 V5 在完全相同的 11 组/33 条历史上比较。原开发集 V5 的 11.4614% 是 5 组/15 条历史指标，只作历史参照，不能替代本轮同集基线。36G atlas 详细逐几何指标见 [atlas summary](../../../../runs/geomfrac_init_pose42_kell_36g_v1_summary.json)。当前状态：atlas 已完成，heat_head 训练正在 XEnergy 执行，模型升级验收待完成。
 
 
 ### 36G 热算子重建结果与闭环训练状态
