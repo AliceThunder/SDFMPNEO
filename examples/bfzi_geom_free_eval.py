@@ -77,7 +77,7 @@ def metric(pred,row):
         energy_budget_W=float(np.max(abs(pred['material_budget_W']))))
 
 
-def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False,analytic_cu='off',cu_link=None):
+def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False,analytic_cu='off',cu_link=None,heat_mode='neural'):
     rows=[]
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
@@ -104,12 +104,14 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
         for hi,hist in enumerate(prepare(spec,32)):
             t0=time.perf_counter()
             pred=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
-                         init_override=init,extra=dyn,shape_mix=shape_mix)
+                         init_override=init,extra=dyn,shape_mix=shape_mix,
+                         heat_mode=heat_mode)
             dt=time.perf_counter()-t0
             result=metric(pred,hist)
             t2=time.perf_counter()
             rep=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
-                        init_override=init,extra=dyn,shape_mix=shape_mix)
+                        init_override=init,extra=dyn,shape_mix=shape_mix,
+                         heat_mode=heat_mode)
             result['repeat_s']=time.perf_counter()-t2
             if not np.allclose(rep['z6'],pred['z6'],atol=1e-10,rtol=1e-10):
                 raise RuntimeError(f'{name}: repeated rollout differs')
@@ -188,6 +190,7 @@ def main():
     p.add_argument('--cu-balance',action='store_true',help='enforce copper-package ROM energy exchange identity')
     p.add_argument('--conductance-mix',action='store_true',help='interpolate capacity-scaled heat conductances with passive copper exchanges')
     p.add_argument('--analytic-cu',choices=('off','cap','exchange'),default='off',help='continuous-winding Cu heat capacity and optional insulated exchange')
+    p.add_argument('--heat-mode',choices=('neural','rom'),default='neural',help='online neural heat state or full implicit 32D shared heat ROM')
     p.add_argument('--cu-link-model',type=Path,default=None,help='cold-trained copper/package spatial contact kernel')
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,default=Path('runs/geomfrac_et_v9_ztune.pt'))
@@ -250,8 +253,9 @@ def main():
                  extra,args.cold_weight,field,dyn,skin,port_self,mutual,source,
                  args.shape_mix,cu_balance=args.cu_balance,
                  conductance_mix=args.conductance_mix,analytic_cu=args.analytic_cu,
-                 cu_link=cu_link)
+                 cu_link=cu_link,heat_mode=args.heat_mode)
     res['analytic_copper_mode']=args.analytic_cu
+    res['heat_mode']=args.heat_mode
     res['copper_link_model']=str(args.cu_link_model) if args.cu_link_model else None
     res['copper_exchange_balance']=bool(args.cu_balance)
     res['conductance_space_mixing']=bool(args.conductance_mix)
