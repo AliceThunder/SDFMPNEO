@@ -1,0 +1,94 @@
+{
+  "status": "pose42_training_and_free11_independent_physics_running",
+  "formal_model": "V6 base frozen",
+  "best_prior_candidate": "runs/geomfrac_et_v5_closed.pt",
+  "heat_rom": {
+    "status": "diagnostic_closed_not_promoted_for_dynamic_Z",
+    "mode": "--heat-mode rom",
+    "summary": "runs/geomfrac_heatrom_v1_summary.json",
+    "development_dynamic_z_pct": {
+      "neural": 11.461418858986038,
+      "rom": 12.468978698622891
+    },
+    "aa_dynamic_z_pct": {
+      "neural": 38.3563650278309,
+      "rom": 37.828642409949595
+    },
+    "aa_full3d_rmse_K": {
+      "neural": 0.20992002542471921,
+      "rom": 0.16569297069170208
+    },
+    "aa_repeat_s": {
+      "neural": 0.19235695000194633,
+      "rom": 0.0911685777860435
+    },
+    "aa_dynamic_geometry_improved": 2,
+    "aa_dynamic_history_improved": 8
+  },
+  "data_expansion": {
+    "train_manifest": "runs/geomfrac_s5_v6_42g_manifest.json",
+    "train_geometries": 42,
+    "train_histories": 126,
+    "added_geometries": [
+      "AA01",
+      "AA02",
+      "AA03",
+      "AA04",
+      "AA05",
+      "AA06"
+    ],
+    "original_dev_geometries": 5,
+    "original_dev_histories": 15,
+    "new_holdout_plan": "runs/geomfrac_s5_free11_plan.json",
+    "new_holdout_geometries": [
+      "BB01",
+      "BB02",
+      "BB03",
+      "BB04",
+      "BB05",
+      "BB06"
+    ],
+    "new_holdout_histories": 18,
+    "new_holdout_tag": "free11",
+    "preflight_6_of_6": "PASSED on original BFZI V150 oriented S5 ultra mesh, 2652–2672 sea cells",
+    "holdout_status": "running",
+    "holdout_completed_histories_last_checked": 1,
+    "holdout_failures_last_checked": 0
+  },
+  "train": {
+    "status": "running",
+    "source": "runs/geomfrac_et_v5_closed.pt",
+    "output": "runs/geomfrac_et_pose42.pt",
+    "report": "runs/geomfrac_et_pose42_dev.json",
+    "log": "runs/pose42_train.log",
+    "stderr": "runs/pose42_train.err",
+    "select": "full BFZI-free closed-loop dev dynamic Z",
+    "trainable": "heat_head only",
+    "epochs_max": 160,
+    "patience": 50,
+    "lr": 0.0003,
+    "initial_dev_dynamic_z_pct": 11.461418858986038,
+    "xenergy_shell_pid": 28548
+  },
+  "physics": {
+    "status": "running",
+    "original_solver": "BFZI V150",
+    "reference": "S5 ultra, inner thermal step 1.875 s",
+    "log": "runs/free11_build.log",
+    "stderr": "runs/free11_build.err",
+    "manifest": "runs/geomfrac_s5_free11_manifest.json",
+    "report": "runs/geomfrac_s5_free11_build_report.json",
+    "xenergy_shell_pid": 30552
+  },
+  "evaluation": {
+    "status": "waiting_for_both_jobs",
+    "xenergy_shell_pid": 2276,
+    "guard": "requires valid candidate statuses and existing files for BB01-BB06 all 18 histories",
+    "log": "runs/pose42_accept.log",
+    "stderr": "runs/pose42_accept.err",
+    "baseline_out": "runs/geomfrac_free11_v5.json",
+    "candidate_out": "runs/geomfrac_free11_pose42.json",
+    "summary_out": "runs/geomfrac_free11_acceptance.json"
+  },
+  "decision": "Retain formal V6 and independently accepted V5 candidate. Hold BB split sealed until pose42 training/dev model selection completes. Never use BB for training or checkpoint selection."
+}
