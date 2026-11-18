@@ -1,0 +1,57 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_AA01_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA01_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA01_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA01_ultra_free10_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_AA02_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA02_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA02_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA02_ultra_free10_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_AA03_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA03_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA03_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA03_ultra_free10_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_AA04_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA04_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA04_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA04_ultra_free10_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_AA05_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA05_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA05_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA05_ultra_free10_drive3.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_AA06_ultra_free10_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_AA06_ultra_free10_drive1.npz",
+        "runs\\bfzi_s5_AA06_ultra_free10_drive2.npz",
+        "runs\\bfzi_s5_AA06_ultra_free10_drive3.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 600
+}
