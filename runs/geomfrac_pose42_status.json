@@ -1,5 +1,5 @@
 {
-  "status": "pose42_training_and_free11_independent_physics_running",
+  "status": "pose42_rejected_for_dev_gain_bb_acceptance_running",
   "formal_model": "V6 base frozen",
   "best_prior_candidate": "runs/geomfrac_et_v5_closed.pt",
   "heat_rom": {
@@ -53,10 +53,12 @@
     "preflight_6_of_6": "PASSED on original BFZI V150 oriented S5 ultra mesh, 2652–2672 sea cells",
     "holdout_status": "running",
     "holdout_completed_histories_last_checked": 1,
-    "holdout_failures_last_checked": 0
+    "holdout_failures_last_checked": 0,
+    "completed_histories_last_checked": 12,
+    "failures_last_checked": 0
   },
   "train": {
-    "status": "running",
+    "status": "complete_rejected",
     "source": "runs/geomfrac_et_v5_closed.pt",
     "output": "runs/geomfrac_et_pose42.pt",
     "report": "runs/geomfrac_et_pose42_dev.json",
@@ -68,7 +70,12 @@
     "patience": 50,
     "lr": 0.0003,
     "initial_dev_dynamic_z_pct": 11.461418858986038,
-    "xenergy_shell_pid": 28548
+    "xenergy_shell_pid": 28548,
+    "epochs_trained": 80,
+    "best_epoch": 0,
+    "best_score": 0.11461418858986037,
+    "final_val_dynamic_Z_mean_rel_L2": 0.1562893522102465,
+    "decision": "No development improvement: best epoch remains the V5 initialization; final/late validation is 15.6289% versus V5 11.4614%. Do not promote pose42. BB independent physical acceptance remains useful for the frozen V5 baseline and sealed holdout; candidate comparison may be retained diagnostically."
   },
   "physics": {
     "status": "running",
@@ -81,7 +88,7 @@
     "xenergy_shell_pid": 30552
   },
   "evaluation": {
-    "status": "waiting_for_both_jobs",
+    "status": "waiting_for_all_18_BB_histories",
     "xenergy_shell_pid": 2276,
     "guard": "requires valid candidate statuses and existing files for BB01-BB06 all 18 histories",
     "log": "runs/pose42_accept.log",
