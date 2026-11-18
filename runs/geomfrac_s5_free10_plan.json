@@ -1,5 +1,5 @@
 {
-  "description": "Corrected independent AA01-AA06 holdout; original free9 plan misassigned alpha_per_K and ins_k; use tag free10 only",
+  "description": "Corrected AA01-AA06 independent holdout; free9 thermal parameters invalid; AA06 pose/package adjusted to remain inside BFZI seawater domain. Use tag free10.",
   "train": [],
   "val": [],
   "test": [
@@ -354,15 +354,15 @@
         "core1_mm": 16,
         "core2_mm": 13,
         "shift_mm": [
-          -22,
-          115,
-          8
+          -12,
+          90,
+          5
         ],
-        "tilt_deg": -18,
-        "yaw_deg": -22,
-        "pitch_deg": -9,
+        "tilt_deg": -12,
+        "yaw_deg": -9,
+        "pitch_deg": -5,
         "box1_mm": 214,
-        "box2_mm": 236
+        "box2_mm": 228
       },
       "alpha_per_K": 0.02,
       "thermal": {
@@ -418,5 +418,6 @@
   "grid": "ultra",
   "inner_step_s": 1.875,
   "reference_tag": "free10",
-  "corrects": "runs/geomfrac_s5_free9_plan.json"
+  "corrects": "runs/geomfrac_s5_free9_plan.json",
+  "physical_geometry_note": "AA06 prior geometry shift [-22,115,8], rotation [-18,-22,-9] and box2 236 mm failed S5 oriented package domain; revised before any free10 teachers were generated."
 }
