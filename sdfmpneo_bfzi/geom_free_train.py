@@ -88,7 +88,7 @@ def _thermal(prev,guess,dt,voltage,tm,d):
     target=guess
     for _ in range(12):
         q,pc=_source(target,d,voltage,tm)
-        q=torch.cat((q[:3],q[3:]+pc/s[3:]))
+        q=torch.cat((q[:3],q[3:5]+pc/s[3:5],q[5:]))
         rhs=prev[:5]/dt+q[:5]-k[:5,5:]@target[5:]
         nxt=torch.linalg.solve(jac,rhs)
         done=bool(torch.max(torch.abs(nxt-target[:5])/s).detach()<1e-10)
@@ -96,7 +96,7 @@ def _thermal(prev,guess,dt,voltage,tm,d):
         if done:
             break
     q,pc=_source(target,d,voltage,tm)
-    q=torch.cat((q[:3],q[3:]+pc/s[3:]))
+    q=torch.cat((q[:3],q[3:5]+pc/s[3:5],q[5:]))
     budget=s*((target[:5]-prev[:5])/dt+k[:5]@target-q[:5])
     return target,budget
 
