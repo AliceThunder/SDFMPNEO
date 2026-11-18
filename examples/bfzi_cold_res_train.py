@@ -140,6 +140,10 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                 baseline_new_dev=ref_new,residual_new_dev=score(dev,net,mut),
                 baseline_new_test=score(test,frozen,mut),
                 residual_new_test=score(test,net,mut),
+                baseline_BB_diagnostic=score(old.get('bb_diagnostic',[]),
+                                             frozen,mut),
+                residual_BB_diagnostic=score(old.get('bb_diagnostic',[]),
+                                             net,mut),
                 history=hist)
 
 
