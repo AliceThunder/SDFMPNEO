@@ -67,7 +67,8 @@ V5 使用冻结的物理端口、冷态几何和三维热解码，仅训练 `hea
 - 冻结几何和正确热参数：`runs/geomfrac_s5_free10_plan.json`
 - 开发集训练状态及参数：`runs/geomfrac_et_v5_closed_status.json`
 - 候选权重：`runs/geomfrac_et_v5_closed.pt`
-- XEnergy 本地原始 V6/V5 评估：`runs/geomfrac_free10_v6.json`、`runs/geomfrac_free10_v5.json`
+- 已提交 GitHub 的原始 V6/V5 评估：`runs/geomfrac_free10_v6.json`、`runs/geomfrac_free10_v5.json`（各 18 条完整逐历史记录）
+- 已提交 GitHub 的 S5 教师文件路径清单：`runs/geomfrac_s5_free10_manifest.json`
 - XEnergy 本地完整 S5 物理报告：`runs/geomfrac_s5_free10_build_report.json`
 
 评估用 `examples.bfzi_geom_free_eval`，分别指定 `--model runs/geomfrac_et_v4_8g_quality.pt` 与 `--model runs/geomfrac_et_v5_closed.pt`，其他物理代理与空间解码参数完全一致。
