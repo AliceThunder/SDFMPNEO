@@ -1,0 +1,94 @@
+{
+  "status": "reference_geometry_invalidity_discovered",
+  "source": "Native BFZI V150 M4 +Z leads, circle_cfg lane separation 12 mm",
+  "insulated_wire_diameter_mm": 2.3,
+  "counts": {
+    "new_cold_initial": {
+      "checked": 517,
+      "rejected": 201,
+      "by_split": {
+        "train": 149,
+        "val": 28,
+        "test": 24
+      }
+    },
+    "legacy_pose42": {
+      "checked": 47,
+      "rejected": 27,
+      "by_split": {
+        "train": 24,
+        "val": 3,
+        "test": 0
+      },
+      "invalid_old_val": [
+        "D01",
+        "D03",
+        "D04"
+      ]
+    },
+    "bb": {
+      "checked": 6,
+      "rejected": 2,
+      "invalid": [
+        "BB01",
+        "BB06"
+      ]
+    }
+  },
+  "examples": {
+    "C0459": {
+      "tx_terminal_gap_mm": 0.1743355,
+      "tx_body_air_uH": 13.554102207367965,
+      "tx_lead_air_uH": -7.749296403356249,
+      "tx_air_original_uH": 5.805982837742939,
+      "tx_air_sensitivity_16mm_uH": 13.811285839920643,
+      "tx_lead_gap_16mm_mm": 3.8256645
+    },
+    "C0171": {
+      "tx_terminal_gap_mm": 0.1163875,
+      "tx_body_air_uH": 13.541119374829597,
+      "tx_lead_air_uH": -10.922177082055848,
+      "tx_air_original_uH": 2.620595750187718,
+      "tx_air_sensitivity_16mm_uH": 13.806600893464207,
+      "tx_lead_gap_16mm_mm": 3.8836125
+    },
+    "C0013": {
+      "tx_terminal_gap_mm": 0.42855,
+      "tx_body_air_uH": 13.611738764764086,
+      "tx_lead_air_uH": -3.0989248736567583,
+      "tx_air_original_uH": 10.511901911700338
+    },
+    "C0510": {
+      "tx_terminal_gap_mm": 0.160832,
+      "tx_body_air_uH": 13.479624395764995,
+      "tx_lead_air_uH": -11.697030619562545,
+      "tx_air_original_uH": 1.7865284536806698
+    },
+    "BB01": {
+      "tx_terminal_gap_mm": 0.135
+    },
+    "BB06": {
+      "tx_lead_min_gap_mm": 1.4723982576100287
+    }
+  },
+  "numeric_check": "Reordering terminal leads and winding changes air L by approx 0.011 uH; physical near-overlap is the decisive inconsistency.",
+  "repair": {
+    "operator": "examples/bfzi_cold_lead_guard.py",
+    "production": "examples/bfzi_cold_finish.py",
+    "new_candidate_prefilter": "examples/bfzi_cold_plan.py",
+    "dynamic_valid_subset": "examples/bfzi_cold_closed_eval.py",
+    "source_reference_files": "runs/geomfrac_cold500/samples/Cxxxx.npz remain on XEnergy",
+    "process": "EXZA job-17",
+    "current_exclusions": {
+      "train": 149,
+      "val": 28,
+      "test": 24
+    },
+    "first_topup_candidates": {
+      "train": 172,
+      "val": 32,
+      "test": 28
+    }
+  },
+  "decision": "Retain V5 as historical engineering baseline; regenerate physically non-overlapping cold labels and use valid geometry for physical acceptance."
+}
