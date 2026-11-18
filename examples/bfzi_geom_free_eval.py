@@ -77,7 +77,7 @@ def metric(pred,row):
         energy_budget_W=float(np.max(abs(pred['material_budget_W']))))
 
 
-def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False):
+def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False,analytic_cu='off'):
     rows=[]
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
@@ -96,6 +96,9 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
         if conductance_mix:
             from sdfmpneo_bfzi.geom_init import conductance_mix as cmix
             init=cmix(atlas,init)
+        if analytic_cu!='off':
+            from sdfmpneo_bfzi.geom_cu import apply as cu_apply
+            init=cu_apply(case,init,exchange=(analytic_cu=='exchange'))
         prep_s=time.perf_counter()-tprep
         for hi,hist in enumerate(prepare(spec,32)):
             t0=time.perf_counter()
@@ -183,6 +186,7 @@ def main():
     p.add_argument('--shape-mix',type=float,default=0.)
     p.add_argument('--cu-balance',action='store_true',help='enforce copper-package ROM energy exchange identity')
     p.add_argument('--conductance-mix',action='store_true',help='interpolate capacity-scaled heat conductances with passive copper exchanges')
+    p.add_argument('--analytic-cu',choices=('off','cap','exchange'),default='off',help='continuous-winding Cu heat capacity and optional insulated exchange')
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,default=Path('runs/geomfrac_et_v9_ztune.pt'))
     p.add_argument('--out',type=Path,required=True)
@@ -232,10 +236,13 @@ def main():
     mf=json.loads(args.manifest.read_text(encoding='utf-8'))
     if args.cu_balance and args.conductance_mix:
         p.error('choose at most one heat-operator correction')
+    if args.analytic_cu!='off' and (args.cu_balance or args.conductance_mix):
+        p.error('analytic copper and alternate heat operators must run separately')
     res=evaluate(atlas,net,ck,tan,pl,mf,args.split,
                  extra,args.cold_weight,field,dyn,skin,port_self,mutual,source,
                  args.shape_mix,cu_balance=args.cu_balance,
-                 conductance_mix=args.conductance_mix)
+                 conductance_mix=args.conductance_mix,analytic_cu=args.analytic_cu)
+    res['analytic_copper_mode']=args.analytic_cu
     res['copper_exchange_balance']=bool(args.cu_balance)
     res['conductance_space_mixing']=bool(args.conductance_mix)
     args.out.parent.mkdir(parents=True,exist_ok=True)
