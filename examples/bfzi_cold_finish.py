@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 from examples.bfzi_cold_generate import generate
@@ -62,6 +65,14 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
                               newtest=rres['residual_new_test']),
                 baseline_new_test=rres['baseline_new_test'],
                 note='Frozen dynamic V5 closed-loop acceptance is a separate run')
+    for label,path in [('plain','runs/geomfrac_coldnet_v1.pt'),
+                       ('residual','runs/geomfrac_coldres_v1.pt')]:
+        cmd=[sys.executable,'-m','examples.bfzi_cold_closed_eval',
+             '--cold-model',path,
+             '--out',f'runs/geomfrac_cold_{label}_closed_v1.json']
+        subprocess.run(cmd,check=True)
+        check=_read(f'runs/geomfrac_cold_{label}_closed_v1.json')
+        report[label+'_closed']=check
     _save('runs/geomfrac_cold500_final.json',report)
     print('COLD_FINISH_DONE',json.dumps(counts),
           'plain_test',nres['test']['cold_Z_pct'],
@@ -77,7 +88,17 @@ def main():
                    default=Path('runs/geomfrac_cold500_plan.json'))
     p.add_argument('--store',type=Path,
                    default=Path('runs/geomfrac_cold500'))
+    p.add_argument('--watch',action='store_true',
+                   help='wait for active cold producer before finishing')
     a=p.parse_args()
+    if a.watch:
+        print('COLD_FINISH_WATCH',a.store,flush=True)
+        start=time.monotonic()
+        while (a.store/'progress.json').exists() and (
+                _read(a.store/'progress.json').get('status')=='running'):
+            if time.monotonic()-start>2.5*3600:
+                raise TimeoutError('producer did not finish within watch window')
+            time.sleep(20)
     finish(a.plan,a.store,a.bfzi_root)
 
 
