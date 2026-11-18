@@ -44,12 +44,20 @@
     "percent": 16.5013
   },
   "training": {
-    "status": "running",
+    "status": "complete_rejected",
     "output": "runs/geomfrac_et_pose42_kell_v1.pt",
     "report": "runs/geomfrac_et_pose42_kell_v1.json",
     "log": "runs/geomfrac_et_pose42_kell_v1.log",
     "epochs_max": 180,
     "val_every": 5,
-    "trainable_parameters": "heat_head only"
+    "trainable_parameters": "heat_head only",
+    "best_epoch": 55,
+    "epochs_trained": 100,
+    "initial_free_dynamic_z_pct": 16.50131,
+    "candidate_free_dynamic_z_pct": 16.49222,
+    "unseen_v5_pct": 12.32451,
+    "unseen_candidate_pct": 12.62209,
+    "decision": "retain V5; 36G heat_head only adaptation did not improve original unseen development geometries",
+    "followup": "Deployment-aligned thermal training V1 also rejected; see runs/geomfrac_et_free_v1_status.json."
   }
 }
