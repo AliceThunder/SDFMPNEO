@@ -77,8 +77,8 @@ def main():
     seen=set(_name(r) for r in tr)
     dev=[r for r in va if _name(r) not in seen
          and _name(r).startswith(('D','T'))]
-    replay=[r for r in va if r not in dev] if False else [
-        r for r in va if _name(r) not in { _name(v) for v in dev }]
+    dev_names={_name(r) for r in dev}
+    replay=[r for r in va if _name(r) not in dev_names]
     if not tr or not dev or not replay:
         p.error('need nonempty training, unseen development and replay data')
     atlas,ps,mu,src,tan=_free(plan,cfg)
