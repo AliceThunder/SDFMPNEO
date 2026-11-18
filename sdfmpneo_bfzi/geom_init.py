@@ -200,27 +200,34 @@ class GeomInit:
 
 
 def balance_cu(init):
-    """Restore exact copper-package heat-exchange balance in a shared ROM.
+    """Reconcile Cu/package conductance while retaining a positive heat ROM.
 
-    A copper lump exchanges conductive heat only with its adjacent package.
-    In capacity-orthonormal coordinates the copper diagonal determines G,
-    so K[c,p] = -G/sqrt(C[c]*C[p]). Correct the package diagonal by the
-    change in exchange G to preserve the material-pair energy budget.
+    The copper self block D specifies heat exchange G=Kcc*Ccu.
+    Replace the interpolated Cu-to-package mean coupling B by the
+    physically required -G/sqrt(Cpkg*Ccu), preserving the original
+    non-copper Schur complement A-B*inv(D)*B.T. This maintains the
+    dissipative 32-mode operator instead of altering an isolated 5x5 block.
     """
     out=dict(init)
     cap=np.asarray(init["cap"],float)
     k=np.asarray(init["k"],float).copy()
-    if cap.shape!=(5,) or k.shape[0]!=k.shape[1] or k.shape[0]<5:
+    if cap.shape!=(5,) or k.shape!=(32,32):
         raise ValueError("expected five material capacities and 32-mode K")
     if np.min(cap)<=0 or not np.isfinite(k).all():
         raise ValueError("invalid capacity or thermal operator")
-    for p,c in ((1,3),(2,4)):
-        old=-k[p,c]*np.sqrt(cap[p]*cap[c])
-        goal=k[c,c]*cap[c]
-        correction=goal-old
-        k[p,c]=k[c,p]=-goal/np.sqrt(cap[p]*cap[c])
-        k[p,p]+=correction/cap[p]
-    out["k"]=k
+    cu=np.array([3,4])
+    rest=np.array([i for i in range(len(k)) if i not in cu])
+    dc=k[np.ix_(cu,cu)]
+    old=k[np.ix_(rest,cu)]
+    new=old.copy()
+    for j,p in enumerate((1,2)):
+        new[int(np.flatnonzero(rest==p)[0]),j]=(
+            -dc[j,j]*np.sqrt(cap[cu[j]]/cap[p]))
+    delta=new@np.linalg.solve(dc,new.T)-old@np.linalg.solve(dc,old.T)
+    k[np.ix_(rest,rest)]+=delta
+    k[np.ix_(rest,cu)]=new
+    k[np.ix_(cu,rest)]=new.T
+    out["k"]=.5*(k+k.T)
     return out
 
 
