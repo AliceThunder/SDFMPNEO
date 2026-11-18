@@ -120,8 +120,8 @@ def _port_src(row, rom, a, y, sy, voltage, tangent=None, geom=None):
         cap=rom.cap[rom.cu]
         amb=rom.amb
         copper=np.asarray(rom.port.copper(np.full(2,amb)),complex)
-        tangent=(rom.port.copper(np.full(2,amb+.1))
-                 -rom.port.copper(np.full(2,amb-.1)))/.2
+        cu_slope=(rom.port.copper(np.full(2,amb+.1))
+                   -rom.port.copper(np.full(2,amb-.1)))/.2
         sc=mode_scale(rom,rom.rank) if 'K' in row else np.ones(rom.rank)
         from sdfmpneo_bfzi.geom_rom import groups
         cap_phi=rom.cap[:,None]*rom.phi
@@ -134,7 +134,7 @@ def _port_src(row, rom, a, y, sy, voltage, tangent=None, geom=None):
             phi=torch.as_tensor(rom.phi*sc[None,:],dtype=torch.float32),
             cold=ztorch(torch.tensor(rom.z0[None],dtype=torch.float32)),
             cu=torch.as_tensor(copper,dtype=torch.complex64),
-            deriv=torch.as_tensor(tangent,dtype=torch.complex64),
+            deriv=torch.as_tensor(cu_slope,dtype=torch.complex64),
             cu_map=torch.as_tensor(rom.phi[rom.cu]*sc[None,:],
                                    dtype=torch.float32),
             sea_air=torch.as_tensor(1j*rom.port.omega*rom.port.air,
