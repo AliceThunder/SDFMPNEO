@@ -138,20 +138,23 @@ def main():
     if best_self[1] is not None:
         model.fit_self(tr,best_self[2],best_self[3],dims=best_self[1])
     model.set_guard(guard)
-    best_k=(float('inf'),None)
-    for exp in itertools.product((0.,.25,.5,1.),repeat=3):
-        model.set_kscale(exp)
-        err=np.mean([np.linalg.norm(model.predict(r['case'])['k']-r['k'])/
-                     np.linalg.norm(r['k']) for r in dev])
-        if err<best_k[0]:
-            best_k=(err,exp)
-    model.set_kscale(best_k[1])
+    best_k=(float('inf'),None,None)
+    for kell in (.6,1.,1.7,2.8,4.,6.):
+        model.set_kell(kell)
+        for exp in itertools.product((0.,.25,.5,1.),repeat=3):
+            model.set_kscale(exp)
+            err=np.mean([np.linalg.norm(model.predict(r['case'])['k']-r['k'])/
+                         np.linalg.norm(r['k']) for r in dev])
+            if err<best_k[0]:
+                best_k=(err,kell,exp)
+    model.set_kell(best_k[1]).set_kscale(best_k[2])
     devres=report(model,dev)
     trainres=report(model,tr)
     data=dict(status='first geometry-only cold and shared-operator emulator',
               train_geometries=len(tr),dev_geometries=len(dev),
               rank=a.rank,
-              ell=ell,lam=lam,thermal_scale_exp=list(best_k[1]),
+              ell=ell,lam=lam,thermal_kernel_ell=best_k[1],
+              thermal_scale_exp=list(best_k[2]),
               self_dims=best_self[1],self_ell=best_self[2],
               self_lambda=best_self[3],
               baseline_dev_current_rel_L2=baseline_current,
@@ -171,7 +174,7 @@ def main():
                    'heat_K_rel_F','cap_rel_L2','source_rel_F'):
         print('INIT_DEV',metric,round(devres[metric+'_mean'],8),flush=True)
     print('INIT_ATLAS',a.out,'train',len(tr),'dev',len(dev),
-          'ell',ell,'lambda',lam,flush=True)
+          'ell',ell,'lambda',lam,'kell',best_k[1],flush=True)
 
 
 if __name__=='__main__':
