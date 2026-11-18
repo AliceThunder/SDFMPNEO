@@ -64,6 +64,12 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
     if any(counts[k]<GOAL[k] for k in GOAL):
         raise RuntimeError(f'cold dataset still incomplete: {counts}')
     old=_read(Path('runs/geomfrac_cold_ports_v1.json'))
+    legacy_before={k:len(old[k]) for k in ('train','dev')}
+    for group in ('train','dev'):
+        old[group]=[r for r in old[group]
+                    if all(p['clear'] for p in gap(bf,r['geometry']))]
+    legacy_valid={k:len(old[k]) for k in ('train','dev')}
+    print('COLD_LEGACY_CLEAN',legacy_before,'valid',legacy_valid,flush=True)
     cfg=_read(Path('runs/geomfrac_free_pose42_kell_v1.json'))
     nres=cold_fit(data,old,epochs=400,
                   out='runs/geomfrac_coldnet_v1.pt')
@@ -72,7 +78,8 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
     _save('runs/geomfrac_coldnet_v1.json',nres)
     _save('runs/geomfrac_coldres_v1.json',rres)
     report=dict(status='cold_independent_evaluation_complete',
-                valid_cases=counts,
+                valid_cases=counts,legacy_valid=legacy_valid,
+                legacy_all=legacy_before,
                 plain=dict(olddev=nres['val'],newtest=nres['test']),
                 residual=dict(olddev=rres['residual_old_dev'],
                               newtest=rres['residual_new_test']),
