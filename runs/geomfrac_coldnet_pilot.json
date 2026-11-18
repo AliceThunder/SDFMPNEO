@@ -1,0 +1,170 @@
+{
+  "status": "trained_candidate",
+  "checkpoint": "runs\\geomfrac_coldnet_pilot.pt",
+  "best_epoch": 120,
+  "epochs_trained": 120,
+  "train_geometries": 45,
+  "val_geometries": 5,
+  "independent_test_geometries": 0,
+  "val": {
+    "geometries": 5,
+    "cold_Z_pct": 2.831340800097366,
+    "air_L_pct": 2.8492855627530465,
+    "current_pct": 23.64037280486301,
+    "per_geometry": {
+      "T04": 4.595842170522951,
+      "D01": 3.167670313278057,
+      "D02": 3.1317693035140697,
+      "D03": 2.199776928129325,
+      "D04": 1.0616452850424296
+    }
+  },
+  "test": null,
+  "history": [
+    {
+      "epoch": 5,
+      "train_loss": 0.7330045104026794,
+      "dev_Z_pct": 6.6147932681989445,
+      "dev_current_pct": 75.89002454055438
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.7077466249465942,
+      "dev_Z_pct": 6.607900974049585,
+      "dev_current_pct": 75.46963390403863
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.6750262379646301,
+      "dev_Z_pct": 6.597925180563285,
+      "dev_current_pct": 75.03805846359685
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.6302844285964966,
+      "dev_Z_pct": 6.582414263019529,
+      "dev_current_pct": 74.50075376828003
+    },
+    {
+      "epoch": 25,
+      "train_loss": 0.5696344971656799,
+      "dev_Z_pct": 6.557107600374638,
+      "dev_current_pct": 73.67909291143582
+    },
+    {
+      "epoch": 30,
+      "train_loss": 0.4923851490020752,
+      "dev_Z_pct": 6.514779216725033,
+      "dev_current_pct": 72.27234430143031
+    },
+    {
+      "epoch": 35,
+      "train_loss": 0.40618300437927246,
+      "dev_Z_pct": 6.442528623385652,
+      "dev_current_pct": 69.88527117826439
+    },
+    {
+      "epoch": 40,
+      "train_loss": 0.32975539565086365,
+      "dev_Z_pct": 6.316502896459678,
+      "dev_current_pct": 66.2063795076999
+    },
+    {
+      "epoch": 45,
+      "train_loss": 0.2724452316761017,
+      "dev_Z_pct": 6.109325358175961,
+      "dev_current_pct": 61.544565436505835
+    },
+    {
+      "epoch": 50,
+      "train_loss": 0.2193083018064499,
+      "dev_Z_pct": 5.814633819605537,
+      "dev_current_pct": 56.616819120274734
+    },
+    {
+      "epoch": 55,
+      "train_loss": 0.17645613849163055,
+      "dev_Z_pct": 5.426044307181269,
+      "dev_current_pct": 51.34389186937739
+    },
+    {
+      "epoch": 60,
+      "train_loss": 0.14977696537971497,
+      "dev_Z_pct": 4.959689801503699,
+      "dev_current_pct": 45.93687381204779
+    },
+    {
+      "epoch": 65,
+      "train_loss": 0.12614956498146057,
+      "dev_Z_pct": 4.505979366690781,
+      "dev_current_pct": 41.28087863862797
+    },
+    {
+      "epoch": 70,
+      "train_loss": 0.10410088300704956,
+      "dev_Z_pct": 4.123541428438059,
+      "dev_current_pct": 37.51780645351352
+    },
+    {
+      "epoch": 75,
+      "train_loss": 0.08622892200946808,
+      "dev_Z_pct": 3.7935992159072436,
+      "dev_current_pct": 34.00071477182476
+    },
+    {
+      "epoch": 80,
+      "train_loss": 0.07114654034376144,
+      "dev_Z_pct": 3.4851150132546485,
+      "dev_current_pct": 30.318682648634553
+    },
+    {
+      "epoch": 85,
+      "train_loss": 0.05824975669384003,
+      "dev_Z_pct": 3.230265943118512,
+      "dev_current_pct": 26.964647018045312
+    },
+    {
+      "epoch": 90,
+      "train_loss": 0.04805002734065056,
+      "dev_Z_pct": 3.1532397332043347,
+      "dev_current_pct": 25.353435852735203
+    },
+    {
+      "epoch": 95,
+      "train_loss": 0.04047456756234169,
+      "dev_Z_pct": 3.160000246193595,
+      "dev_current_pct": 25.54924110680028
+    },
+    {
+      "epoch": 100,
+      "train_loss": 0.034991517663002014,
+      "dev_Z_pct": 3.1632845247906993,
+      "dev_current_pct": 26.200464130328516
+    },
+    {
+      "epoch": 105,
+      "train_loss": 0.030983226373791695,
+      "dev_Z_pct": 3.1210140242164703,
+      "dev_current_pct": 26.382528197226407
+    },
+    {
+      "epoch": 110,
+      "train_loss": 0.027806611731648445,
+      "dev_Z_pct": 3.0333255073375747,
+      "dev_current_pct": 25.80248759722823
+    },
+    {
+      "epoch": 115,
+      "train_loss": 0.02517140656709671,
+      "dev_Z_pct": 2.9281894785404003,
+      "dev_current_pct": 24.755581499116015
+    },
+    {
+      "epoch": 120,
+      "train_loss": 0.0230775885283947,
+      "dev_Z_pct": 2.831340800097366,
+      "dev_current_pct": 23.64037280486301
+    }
+  ],
+  "model": "ColdNet air+sea/copper-decomposed z6"
+}
