@@ -1,0 +1,69 @@
+{
+  "status": "cold-self-rbf-candidates-rejected",
+  "date": "2026-11-18",
+  "official_model": "V5; cold TX/RX PortSelf V5 remains frozen",
+  "split": {
+    "train_cold_geometries": 42,
+    "development_geometries": 5,
+    "development_histories": 15,
+    "replay_geometries": 6,
+    "replay_histories": 18,
+    "opened_BB_geometries": 6,
+    "opened_BB_histories": 18
+  },
+  "baseline": {
+    "development_dynamic_Z_pct": 12.324512014899105,
+    "replay_dynamic_Z_pct": 19.98196846990392,
+    "BB_dynamic_Z_pct": 40.53681620512771
+  },
+  "cold_42G": {
+    "model": "runs/geomfrac_portself_v6.npz (XEnergy diagnostic, not deployed)",
+    "dims": 2,
+    "ell": 1.5,
+    "lambda": 0.1,
+    "development_dynamic_Z_pct": 16.440005432500257,
+    "BB_dynamic_Z_pct": 38.14075101789139,
+    "BB01_X11_ref_ohm": 14.701473152491156,
+    "BB01_X11_v5_ohm": 17.250068577039062,
+    "BB01_X11_candidate_ohm": 16.909397389382086
+  },
+  "terminal_blend": {
+    "trials": 16,
+    "selected_TX_weight": 0,
+    "selected_RX_weight": 0,
+    "development_dynamic_Z_pct": 12.324512014899105,
+    "decision": "reject"
+  },
+  "closed_loop_port_refit": {
+    "trials": 12,
+    "physical_inputs": "alpha,core and optional box size",
+    "best_diagnostic": {
+      "dims": 2,
+      "ell": 2.5,
+      "lam": 0.1,
+      "development_dynamic_Z_pct": 14.812247380009246,
+      "replay_dynamic_Z_pct": 22.35609347396137,
+      "BB_dynamic_Z_pct": 41.11109191756627
+    },
+    "decision": "reject"
+  },
+  "physical_self_reactance": {
+    "model": "Xjj = omega*Lair_jj + Xsea_jj + Xcu_jj",
+    "train_TX_air_X_std_ohm": 1.2662701452158214,
+    "train_TX_remainder_std_ohm": 0.0017775281126026976,
+    "train_RX_air_X_std_ohm": 1.1334713757146009,
+    "train_RX_remainder_std_ohm": 0.0018675739223863901,
+    "BB01_air_X11_ohm": 14.58688170732803,
+    "BB01_cold_self_X11_error_ohm": 2.548595424547906,
+    "primary_next_target": "geometry-derived self air inductance using coil centerline and Neumann/GMD, no seawater BFZI solve"
+  },
+  "tests": "12 passed: geom_portblend, geom_free_train, geom_init",
+  "compact_reference": "runs/geomfrac_cold_ports_v1.json",
+  "report_files": [
+    "runs/geomfrac_portself_v6.json",
+    "runs/geomfrac_portblend_v1_dev.json",
+    "runs/geomfrac_portself_v7.json"
+  ],
+  "method_document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_COLD_SELF_AIR_V1.md",
+  "decision": "retain formal V5 and do not promote 42G cold self candidates"
+}
