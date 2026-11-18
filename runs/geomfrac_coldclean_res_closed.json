@@ -1,0 +1,39 @@
+{
+  "status": "rejected",
+  "independent_new_cold_test": "see coldnet training report",
+  "original_unseen_geometry_count": 5,
+  "original_unseen_history_count": 15,
+  "original_replay_count": 6,
+  "replay_histories": 18,
+  "frozen_thermal_model": "runs\\geomfrac_et_v5_closed.pt",
+  "baseline_original_unseen_Z_pct": 12.324512014899105,
+  "candidate_original_unseen_Z_pct": 15.12725543523414,
+  "baseline_replay_Z_pct": 19.98196846990392,
+  "candidate_replay_Z_pct": 17.97608123343583,
+  "BB_opened_diagnostic": {
+    "baseline_Z_pct": 40.53681620512771,
+    "candidate_Z_pct": 55.189804997667316
+  },
+  "lead_valid_subset": {
+    "unseen": {
+      "geometries": 2,
+      "histories": 6,
+      "v5_Z_pct": 13.519675898846891,
+      "candidate_Z_pct": 15.731881144001388
+    },
+    "replay": {
+      "geometries": 3,
+      "histories": 9,
+      "v5_Z_pct": 19.321152600450358,
+      "candidate_Z_pct": 10.198161415826942
+    },
+    "bb": {
+      "geometries": 4,
+      "histories": 12,
+      "v5_Z_pct": 22.113605636486167,
+      "candidate_Z_pct": 29.518065636129375
+    }
+  },
+  "original_full_dynamic_includes_overlapping_leads": true,
+  "decision": "retain V5 cold model"
+}
