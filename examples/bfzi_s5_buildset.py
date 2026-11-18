@@ -20,6 +20,8 @@ from sdfmpneo_bfzi.s5_bridge import from_skin, teacher_temp
 
 
 def check_plan(plan):
+    if plan.get("invalid_for_physics"):
+        raise ValueError("invalid physical plan; use "+str(plan.get("superseded_by","corrected plan")))
     cases = plan["cases"]
     tr, val = list(plan["train"]), list(plan["val"])
     test=list(plan.get("test",[]))
