@@ -23,7 +23,7 @@ def _coil(a,core):
     return inner_r>1.25*.790569415 and inner_chi>=0
 
 
-def sample(seed=62026,n=500,existing=()):
+def sample(seed=62026,n=500,existing=(),accept=None):
     """Create geometry-disjoint train/dev/test samples with broad S5 coverage."""
     rng=np.random.default_rng(seed)
     occupied={_key(g) for g in existing}
@@ -63,7 +63,8 @@ def sample(seed=62026,n=500,existing=()):
                    box1_mm=int(round(210+32*u[10])),
                    box2_mm=int(round(210+32*u[11])))
             k=_key(g)
-            if k in occupied:continue
+            if k in occupied or (accept is not None and not accept(g)):
+                continue
             occupied.add(k)
             name=f'C{i+1:04d}'
             cases[name]=g
