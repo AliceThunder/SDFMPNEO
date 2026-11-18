@@ -88,7 +88,7 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
     for label,path in [('plain','runs/geomfrac_coldnet_v1.pt'),
                        ('residual','runs/geomfrac_coldres_v1.pt')]:
         cmd=[sys.executable,'-m','examples.bfzi_cold_closed_eval',
-             '--cold-model',path,
+             '--cold-model',path,'--bfzi-root',str(bfzi_root),
              '--out',f'runs/geomfrac_cold_{label}_closed_v1.json']
         subprocess.run(cmd,check=True)
         check=_read(f'runs/geomfrac_cold_{label}_closed_v1.json')
