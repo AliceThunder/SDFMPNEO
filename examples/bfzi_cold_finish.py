@@ -12,6 +12,8 @@ from examples.bfzi_cold_generate import generate
 from examples.bfzi_cold_topup import topup
 from examples.bfzi_cold_train import train as cold_fit
 from examples.bfzi_cold_res_train import fit as res_fit
+from examples.bfzi_param import originals
+from examples.bfzi_cold_lead_guard import gap,scan,apply
 
 
 GOAL=dict(train=400,val=50,test=50)
@@ -32,6 +34,17 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
     if _read(pp).get('status')=='running':
         print('COLD_FINISH_PENDING','producer still running',flush=True)
         return None
+    bf,_=originals(bfzi_root)
+    plan=_read(plan_path)
+    guard=scan(plan,bf)
+    rejected=apply(plan,guard)
+    if any(rejected.values()):
+        _save(plan_path,plan)
+        print('COLD_LEAD_EXCLUDED',{k:len(v) for k,v in rejected.items()},
+              flush=True)
+        # Raw sample NPZ files are retained; only eligible split IDs change.
+        generate(plan,bfzi_root,store,timeout=600)
+    accept=lambda g:all(p['clear'] for p in gap(bf,g))
     for j in range(max_rounds):
         plan=_read(plan_path)
         data=_read(store/'data.json')
@@ -39,7 +52,7 @@ def finish(plan_path,store,bfzi_root,max_rounds=4):
         print('COLD_COUNTS',counts,flush=True)
         if all(counts[k]>=GOAL[k] for k in GOAL):
             break
-        plan,done,added=topup(plan,store,62027+j)
+        plan,done,added=topup(plan,store,62027+j,accept=accept)
         if not added:
             raise RuntimeError('insufficient valid cases with no top-up candidates')
         _save(plan_path,plan)
