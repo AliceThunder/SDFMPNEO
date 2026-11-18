@@ -15,7 +15,7 @@ from sdfmpneo_bfzi.geom_ztune import restore as load_z
 
 
 def records(mf,pl,atlas,net,ck,tan,split,report=True,
-            port_self=None,mutual=None,source=None):
+            port_self=None,mutual=None,source=None,shape_mix=0.):
     rows=[]
     for i,spec in enumerate(mf[split]):
         name=Path(spec['anchor']).stem.split('_')[2]
@@ -30,7 +30,7 @@ def records(mf,pl,atlas,net,ck,tan,split,report=True,
         for row in prepare(spec,32):
             with torch.no_grad():
                 pred=rollout(case,atlas,net,ck,row['time'],
-                             row['voltage'],tan,init_override=init)
+                             row['voltage'],tan,init_override=init,shape_mix=shape_mix)
             truth=np.asarray(row['z6'])
             base=np.asarray(pred['z6'])
             target=(truth-truth[0])-(base-base[0])
@@ -58,7 +58,7 @@ def objective(model,rows,weights):
     return torch.stack(errs).mean()+.01*torch.stack(reg).mean()
 
 
-def closed_score(model,rows,atlas,net,ck,tan,field=None):
+def closed_score(model,rows,atlas,net,ck,tan,field=None,shape_mix=0.):
     from examples.bfzi_geom_free_eval import metric
     model.eval()
     out=[]
@@ -67,7 +67,7 @@ def closed_score(model,rows,atlas,net,ck,tan,field=None):
             case=r['case']
             row=r['row']
             pred=rollout(case,atlas,net,ck,row['time'],
-                         row['voltage'],tan,init_override=r['init'],extra=model)
+                         row['voltage'],tan,init_override=r['init'],extra=model,shape_mix=shape_mix)
             out.append(metric(pred,row))
     return dict(dynamic_Z_pct=float(np.mean([e['dynamic_z_rel_L2']
                                              for e in out])*100),
@@ -94,6 +94,7 @@ def main():
     parser.add_argument('--report',type=Path,
                         default=Path('runs/geomfrac_free_dyn_v4_dev.json'))
     parser.add_argument('--geom-strength',type=float,default=1.)
+    parser.add_argument('--shape-mix',type=float,default=0.5)
     parser.add_argument('--holdout',action='store_true')
     parser.add_argument('--epochs',type=int,default=240)
     parser.add_argument('--eval-every',type=int,default=40)
@@ -133,7 +134,7 @@ def main():
         held=dict(mf,val=[s for s in mf['train']
             if Path(s['anchor']).stem.split('_')[2] in hold_names])
         hold=records(held,pl,atlas,net,ck,tan,'val',
-                      port_self=port_self,mutual=mutual,source=source)
+                      port_self=port_self,mutual=mutual,source=source,shape_mix=args.shape_mix)
     else:
         training=mf
         hold=[]
@@ -153,8 +154,8 @@ def main():
     history=[]
     def measure(ep):
         nonlocal best_score,best_ep,saved
-        score=closed_score(model,dev,atlas,net,ck,tan)
-        hold_score=(closed_score(model,hold,atlas,net,ck,tan)
+        score=closed_score(model,dev,atlas,net,ck,tan,shape_mix=args.shape_mix)
+        hold_score=(closed_score(model,hold,atlas,net,ck,tan,shape_mix=args.shape_mix)
                     if hold else None)
         selection=(.5*score['dynamic_Z_pct']+
                    .5*hold_score['dynamic_Z_pct'] if hold_score else
@@ -199,7 +200,8 @@ def main():
         atlas=str(args.atlas),head=str(args.out),
         port_self_model=str(args.port_self_model) if args.port_self_model else None,
         mutual_model=str(args.mutual_model) if args.mutual_model else None,
-        source_model=str(args.source_model) if args.source_model else None)
+        source_model=str(args.source_model) if args.source_model else None,
+        shape_mix=args.shape_mix)
     args.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(dict(state=model.state_dict(),mu=model.mu,std=model.std,
                     scale=model.scale,ys=model.ys,
