@@ -1,0 +1,18 @@
+{
+  "status": "rejected",
+  "independent_new_cold_test": "see coldnet training report",
+  "original_unseen_geometry_count": 5,
+  "original_unseen_history_count": 15,
+  "original_replay_count": 6,
+  "replay_histories": 18,
+  "frozen_thermal_model": "runs\\geomfrac_et_v5_closed.pt",
+  "baseline_original_unseen_Z_pct": 12.324512014899105,
+  "candidate_original_unseen_Z_pct": 34.5943317370393,
+  "baseline_replay_Z_pct": 19.98196846990392,
+  "candidate_replay_Z_pct": 22.71224681870346,
+  "BB_opened_diagnostic": {
+    "baseline_Z_pct": 40.53681620512771,
+    "candidate_Z_pct": 57.68106417547004
+  },
+  "decision": "retain V5 cold model"
+}
