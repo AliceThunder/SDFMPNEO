@@ -139,9 +139,11 @@ def main():
         training=mf
         hold=[]
     train=records(training,pl,atlas,net,ck,tan,'train',
-                  port_self=port_self,mutual=mutual,source=source)
+                  port_self=port_self,mutual=mutual,source=source,
+                  shape_mix=args.shape_mix)
     dev=records(mf,pl,atlas,net,ck,tan,'val',
-                port_self=port_self,mutual=mutual,source=source)
+                port_self=port_self,mutual=mutual,source=source,
+                shape_mix=args.shape_mix)
     model=DynFix(atlas.mu,atlas.std,
         np.asarray(ck['a_scale']),np.asarray(ck['y_scale'])[:6],
         geom_strength=args.geom_strength)
