@@ -1,0 +1,58 @@
+{
+  "status": "complete",
+  "metric": "free_metric: BFZI-free rollout, delta-Z relative L2 averaged over histories",
+  "split": {
+    "geometries": 11,
+    "histories": 33,
+    "unseen": [
+      "T04",
+      "D01",
+      "D02",
+      "D03",
+      "D04"
+    ],
+    "replay": [
+      "N05",
+      "N10",
+      "N15",
+      "N20",
+      "N25",
+      "N27"
+    ]
+  },
+  "results_pct": {
+    "v5": {
+      "all": 16.50130644490173,
+      "unseen": 12.324512014899105,
+      "replay": 19.98196846990392
+    },
+    "v2": {
+      "all": 16.50130644490173,
+      "unseen": 12.324512014899105,
+      "replay": 19.98196846990392
+    }
+  },
+  "improvement_pp": {
+    "all": 0,
+    "unseen": 0,
+    "replay": 0
+  },
+  "per_geometry": {
+    "D01": 7.201640162813443,
+    "D02": 18.626474793876923,
+    "D03": 21.88506076308089,
+    "D04": 5.496507350907413,
+    "T04": 8.412877003816856,
+    "N05": 8.176193584807022,
+    "N10": 17.813172289950828,
+    "N15": 11.005907272613939,
+    "N20": 26.25172761265327,
+    "N25": 35.93898714331461,
+    "N27": 20.705822916083857
+  },
+  "parameter_comparison": {
+    "changed_tensors": 0,
+    "checkpoint_identical_to_v5": true
+  },
+  "decision": "do not promote; retain V5"
+}
