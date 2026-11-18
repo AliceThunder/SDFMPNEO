@@ -47,6 +47,29 @@ def prepare(spec,rank=32):
     return result
 
 
+def free_metric(rows,free,net,ck):
+    """Select with the same BFZI-free closed loop used for deployment."""
+    from sdfmpneo_bfzi.geom_free import rollout
+    plan,atlas,ps,mu,src,tan,mix=free
+    cache={}
+    errs=[]
+    for r in rows:
+        name=Path(r['file'].split('#')[0]).stem.split('_')[2]
+        case=plan['cases'][name]
+        if name not in cache:
+            init=atlas.predict(case)
+            for model in (ps,mu,src):
+                if model is not None:
+                    init=model.apply(case,init)
+            cache[name]=init
+        pred=rollout(case,atlas,net,ck,r['time'],r['voltage'],tan,
+                     init_override=cache[name],shape_mix=mix)['z6']
+        dz=pred-pred[0]
+        true=r['z6']-r['z6'][0]
+        errs.append(np.linalg.norm(dz-true)/max(np.linalg.norm(true),1e-12))
+    return float(np.mean(errs))
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',type=Path,required=True)
@@ -85,10 +108,14 @@ def main():
                    help='histories per stochastic step; 0 uses full training set')
     p.add_argument('--val-every',type=int,default=1,
                    help='validate every N training epochs')
-    p.add_argument('--select',choices=('loss','dynamic_z','thermal'),default='loss',
+    p.add_argument('--select',choices=('loss','dynamic_z','thermal','free_dynamic_z'),default='loss',
                    help='best-checkpoint criterion for validation')
     p.add_argument('--proj-tau',type=float,default=0.,
                    help='projection quality scale in K for history sampling; 0=uniform')
+    p.add_argument('--free-plan',type=Path,default=None,
+                   help='geometry case plan for BFZI-free development selection')
+    p.add_argument('--free-config',type=Path,default=Path('runs/geomfrac_free_v7_selection.json'),
+                   help='frozen geometry-free port/thermal model configuration')
     a=p.parse_args()
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
@@ -140,6 +167,27 @@ def main():
         tangent=restore(a.tangent_model)
     if a.tangent_loss_weight<0 or (a.tangent_loss_weight and tangent is None):
         p.error('nonnegative tangent loss requires --tangent-model')
+    free=None
+    if a.select=='free_dynamic_z':
+        if not a.free_plan:
+            p.error('--select free_dynamic_z requires --free-plan')
+        plan=json.loads(a.free_plan.read_text(encoding='utf-8-sig'))
+        cfg=json.loads(a.free_config.read_text(encoding='utf-8-sig'))
+        if plan.get('invalid_for_physics'):
+            p.error('invalid BFZI-free selection plan')
+        from sdfmpneo_bfzi.geom_init import GeomInit
+        from sdfmpneo_bfzi.geom_portself import PortSelf
+        from sdfmpneo_bfzi.geom_mutual import MutFix
+        from sdfmpneo_bfzi.geom_srcfix import SrcFix
+        from sdfmpneo_bfzi.geom_ztune import restore as load_z
+        if any(Path(r['file'].split('#')[0]).stem.split('_')[2]
+               not in plan['cases'] for r in val):
+            p.error('development geometry missing from BFZI-free selection plan')
+        free=(plan,GeomInit.load(cfg['atlas']),
+              PortSelf.load(cfg['port_self_model']),
+              MutFix.load(cfg['mutual_model']),
+              SrcFix.load(cfg['source_model']),
+              load_z(cfg['z_fix_model']),float(cfg['shape_mix']))
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=a.weight_decay)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -152,12 +200,15 @@ def main():
     best_loss=None
     eck=dict(src_scale=sx,y_scale=sy,a_scale=sa,
              canonical=True,port_sea=True)
-    if a.select in ('dynamic_z','thermal') and a.init_model:
+    if a.select in ('dynamic_z','thermal','free_dynamic_z') and a.init_model:
         net.eval()
         with torch.no_grad():
-            init_z=eval_rollout(None,net,eck,val,tangent=tangent)
-        key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
-        best=float(np.mean([x[key] for x in init_z]))
+            if a.select=='free_dynamic_z':
+                best=free_metric(val,free,net,eck)
+            else:
+                init_z=eval_rollout(None,net,eck,val,tangent=tangent)
+                key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
+                best=float(np.mean([x[key] for x in init_z]))
         saved={k:v.detach().clone() for k,v in net.state_dict().items()}
         print('INIT',a.select,round(best,6),flush=True)
     if a.val_every<1 or a.batch_hist<0 or a.proj_tau<0:
@@ -207,7 +258,10 @@ def main():
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight))
         if not np.isfinite(v):
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
-        if a.select in ('dynamic_z','thermal'):
+        if a.select=='free_dynamic_z':
+            with torch.no_grad():
+                metric=free_metric(val,free,net,eck)
+        elif a.select in ('dynamic_z','thermal'):
             with torch.no_grad():
                 zval=eval_rollout(None,net,eck,val,tangent=tangent)
             key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
@@ -227,7 +281,7 @@ def main():
             print("TRAIN",ep+1,"train",round(float(loss.detach()),6),
                   "val",round(v,6),"select",round(metric,6),
                   "best",best_epoch,flush=True)
-        if saved is not None and ep+1-best_epoch>=a.patience:
+        if saved is not None and ep+1>=warmup and ep+1-max(best_epoch,warmup)>=a.patience:
             break
     if saved is None:
         raise RuntimeError("training requires enough epochs for closed-loop source warmup")
@@ -273,6 +327,8 @@ def main():
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best_loss if a.select!='loss' else best,
                  select=a.select,best_score=best,
+                 free_plan=str(a.free_plan) if a.free_plan else None,
+                 free_config=str(a.free_config) if free is not None else None,
                  val_dynamic_Z_mean_rel_L2=float(np.mean(
                      [v['dynamic_Z_rel_L2'] for v in autonomous])),
                  train_loss_at_best=best_train,epochs_trained=ep+1,
