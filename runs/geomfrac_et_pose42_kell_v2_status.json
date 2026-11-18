@@ -1,5 +1,5 @@
 {
-  "status": "running",
+  "status": "complete_rejected",
   "device": "XEnergy-Zhucy",
   "process_id": 31032,
   "experiment": "36G heat_head V2 with direct full dynamic-Z supervision",
@@ -26,5 +26,33 @@
   "output_checkpoint": "runs/geomfrac_et_pose42_kell_v2.pt",
   "output_report": "runs/geomfrac_et_pose42_kell_v2.json",
   "output_log": "runs/geomfrac_et_pose42_kell_v2.log",
-  "reason": "V1 heat-head training without direct Z loss barely changed overall free_metric and worsened the original five unseen geometries. V2 adds zrel_weight=0.5, keeping all other settings fixed."
+  "reason": "V1 heat-head training without direct Z loss barely changed overall free_metric and worsened the original five unseen geometries. V2 adds zrel_weight=0.5, keeping all other settings fixed.",
+  "completed": true,
+  "best_epoch": 0,
+  "epochs_trained": 75,
+  "best_score_pct": 16.50130644490173,
+  "initial_score_pct": 16.50130644490173,
+  "selection_improvement_pct": 0,
+  "val_dynamic_Z_mean_rel_L2": 0.15908608000380015,
+  "checkpoint_matches_v5": true,
+  "same_split_free_metric_pct": {
+    "v5": {
+      "all": 16.50130644490173,
+      "unseen": 12.324512014899105,
+      "replay": 19.98196846990392
+    },
+    "v2": {
+      "all": 16.50130644490173,
+      "unseen": 12.324512014899105,
+      "replay": 19.98196846990392
+    }
+  },
+  "improvement_pp": {
+    "all": 0,
+    "unseen": 0,
+    "replay": 0
+  },
+  "decision": "reject V2; checkpoint is identical to V5; retain V5",
+  "root_cause": "V2 zrel loss used GeomFracET zhat, while deployment ignores zhat and computes seawater dynamic impedance from the geometry-conditioned ZFix tangent plus copper-temperature resistance.",
+  "next_step": "Implement a differentiable training rollout using the same atlas-predicted operators, ZFix tangent, shape_mix, thermal_step and shape_step as geom_free.rollout."
 }
