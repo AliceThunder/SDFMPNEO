@@ -51,7 +51,13 @@
     "D03",
     "D04"
   ],
-  "test": [],
+  "test": [
+    "E01",
+    "E02",
+    "E03",
+    "E04",
+    "E05"
+  ],
   "cases": {
     "T01": {
       "family": "round",
@@ -998,3 +1004,2531 @@
       "thermal": {
         "ins_k": 0.2672,
         "ins_t": 0.000336,
+        "pkg_k": 0.3029,
+        "pkg_sea_h": 16.139,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 60.61,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 83.92,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 77.7,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N12": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.887,
+        "alpha2": 0.869,
+        "core1_mm": 16,
+        "core2_mm": 21,
+        "shift_mm": [
+          6,
+          105,
+          -5
+        ],
+        "tilt_deg": 13,
+        "yaw_deg": 9,
+        "pitch_deg": -3,
+        "box1_mm": 217,
+        "box2_mm": 228
+      },
+      "alpha_per_K": 0.02389,
+      "thermal": {
+        "ins_k": 0.2649,
+        "ins_t": 0.000359,
+        "pkg_k": 0.2147,
+        "pkg_sea_h": 23.211,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 68.59,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 94.97,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 87.93,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N13": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.895,
+        "alpha2": 0.701,
+        "core1_mm": 12,
+        "core2_mm": 16,
+        "shift_mm": [
+          -4,
+          100,
+          -5
+        ],
+        "tilt_deg": 17,
+        "yaw_deg": -2,
+        "pitch_deg": -5,
+        "box1_mm": 220,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.01849,
+      "thermal": {
+        "ins_k": 0.2259,
+        "ins_t": 0.000427,
+        "pkg_k": 0.3379,
+        "pkg_sea_h": 28.086,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 60.36,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 83.58,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 77.39,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N14": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.901,
+        "alpha2": 0.919,
+        "core1_mm": 17,
+        "core2_mm": 15,
+        "shift_mm": [
+          7,
+          90,
+          4
+        ],
+        "tilt_deg": 13,
+        "yaw_deg": -6,
+        "pitch_deg": 5,
+        "box1_mm": 227,
+        "box2_mm": 219
+      },
+      "alpha_per_K": 0.01711,
+      "thermal": {
+        "ins_k": 0.2807,
+        "ins_t": 0.000385,
+        "pkg_k": 0.2023,
+        "pkg_sea_h": 17.662,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 72.83,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 100.84,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 93.37,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N15": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.872,
+        "alpha2": 0.834,
+        "core1_mm": 23,
+        "core2_mm": 16,
+        "shift_mm": [
+          6,
+          84,
+          -4
+        ],
+        "tilt_deg": 11,
+        "yaw_deg": 3,
+        "pitch_deg": 2,
+        "box1_mm": 220,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.02615,
+      "thermal": {
+        "ins_k": 0.1823,
+        "ins_t": 0.000396,
+        "pkg_k": 0.1943,
+        "pkg_sea_h": 23.594,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 57.6,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 79.75,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 73.84,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N16": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.946,
+        "alpha2": 0.925,
+        "core1_mm": 17,
+        "core2_mm": 12,
+        "shift_mm": [
+          3,
+          100,
+          3
+        ],
+        "tilt_deg": 10,
+        "yaw_deg": 5,
+        "pitch_deg": -5,
+        "box1_mm": 227,
+        "box2_mm": 219
+      },
+      "alpha_per_K": 0.02194,
+      "thermal": {
+        "ins_k": 0.2662,
+        "ins_t": 0.000418,
+        "pkg_k": 0.3255,
+        "pkg_sea_h": 22.681,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 68.5,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 94.85,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 87.82,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N17": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.813,
+        "alpha2": 0.98,
+        "core1_mm": 15,
+        "core2_mm": 14,
+        "shift_mm": [
+          -2,
+          82,
+          6
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": -4,
+        "pitch_deg": -3,
+        "box1_mm": 226,
+        "box2_mm": 230
+      },
+      "alpha_per_K": 0.01908,
+      "thermal": {
+        "ins_k": 0.3577,
+        "ins_t": 0.000393,
+        "pkg_k": 0.338,
+        "pkg_sea_h": 27.892,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 66.36,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 91.88,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 85.08,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N18": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.972,
+        "alpha2": 0.771,
+        "core1_mm": 14,
+        "core2_mm": 13,
+        "shift_mm": [
+          -5,
+          107,
+          6
+        ],
+        "tilt_deg": 9,
+        "yaw_deg": 7,
+        "pitch_deg": 1,
+        "box1_mm": 225,
+        "box2_mm": 236
+      },
+      "alpha_per_K": 0.01917,
+      "thermal": {
+        "ins_k": 0.2591,
+        "ins_t": 0.000333,
+        "pkg_k": 0.3364,
+        "pkg_sea_h": 23.941,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 63.81,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 88.35,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 81.8,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N19": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.977,
+        "alpha2": 0.971,
+        "core1_mm": 13,
+        "core2_mm": 20,
+        "shift_mm": [
+          -1,
+          87,
+          -7
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": -5,
+        "pitch_deg": 7,
+        "box1_mm": 219,
+        "box2_mm": 225
+      },
+      "alpha_per_K": 0.02191,
+      "thermal": {
+        "ins_k": 0.3022,
+        "ins_t": 0.000377,
+        "pkg_k": 0.3221,
+        "pkg_sea_h": 27.957,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 59.61,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 82.54,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 76.42,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N20": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.711,
+        "alpha2": 0.82,
+        "core1_mm": 16,
+        "core2_mm": 12,
+        "shift_mm": [
+          5,
+          93,
+          -3
+        ],
+        "tilt_deg": 8,
+        "yaw_deg": 7,
+        "pitch_deg": -3,
+        "box1_mm": 232,
+        "box2_mm": 219
+      },
+      "alpha_per_K": 0.02118,
+      "thermal": {
+        "ins_k": 0.2407,
+        "ins_t": 0.000438,
+        "pkg_k": 0.281,
+        "pkg_sea_h": 19.24,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 67.31,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 93.2,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 86.3,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N21": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.91,
+        "alpha2": 0.913,
+        "core1_mm": 22,
+        "core2_mm": 11,
+        "shift_mm": [
+          9,
+          108,
+          -2
+        ],
+        "tilt_deg": 10,
+        "yaw_deg": -5,
+        "pitch_deg": -4,
+        "box1_mm": 228,
+        "box2_mm": 233
+      },
+      "alpha_per_K": 0.02274,
+      "thermal": {
+        "ins_k": 0.1738,
+        "ins_t": 0.000359,
+        "pkg_k": 0.2689,
+        "pkg_sea_h": 18.588,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 69.31,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 95.97,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 88.86,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N22": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.932,
+        "alpha2": 0.749,
+        "core1_mm": 15,
+        "core2_mm": 14,
+        "shift_mm": [
+          3,
+          107,
+          -5
+        ],
+        "tilt_deg": 6,
+        "yaw_deg": 6,
+        "pitch_deg": 6,
+        "box1_mm": 236,
+        "box2_mm": 235
+      },
+      "alpha_per_K": 0.01856,
+      "thermal": {
+        "ins_k": 0.3569,
+        "ins_t": 0.000416,
+        "pkg_k": 0.274,
+        "pkg_sea_h": 24.558,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 62.7,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 86.82,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 80.39,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N23": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.833,
+        "alpha2": 0.922,
+        "core1_mm": 23,
+        "core2_mm": 8,
+        "shift_mm": [
+          8,
+          86,
+          -3
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": -2,
+        "pitch_deg": -3,
+        "box1_mm": 220,
+        "box2_mm": 236
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.1707,
+        "ins_t": 0.000466,
+        "pkg_k": 0.2759,
+        "pkg_sea_h": 17.647,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 68.84,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 95.31,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 88.25,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N24": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.757,
+        "alpha2": 0.941,
+        "core1_mm": 14,
+        "core2_mm": 21,
+        "shift_mm": [
+          -8,
+          89,
+          -1
+        ],
+        "tilt_deg": 6,
+        "yaw_deg": 9,
+        "pitch_deg": -3,
+        "box1_mm": 232,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.01609,
+      "thermal": {
+        "ins_k": 0.2784,
+        "ins_t": 0.000371,
+        "pkg_k": 0.2433,
+        "pkg_sea_h": 30.605,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.6,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 78.37,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 72.56,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N25": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.784,
+        "alpha2": 0.936,
+        "core1_mm": 21,
+        "core2_mm": 10,
+        "shift_mm": [
+          -6,
+          106,
+          -5
+        ],
+        "tilt_deg": 12,
+        "yaw_deg": -3,
+        "pitch_deg": -6,
+        "box1_mm": 231,
+        "box2_mm": 228
+      },
+      "alpha_per_K": 0.02658,
+      "thermal": {
+        "ins_k": 0.2488,
+        "ins_t": 0.000395,
+        "pkg_k": 0.1983,
+        "pkg_sea_h": 32.883,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 64.81,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 89.74,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 83.09,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N26": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.705,
+        "alpha2": 0.848,
+        "core1_mm": 18,
+        "core2_mm": 24,
+        "shift_mm": [
+          -7,
+          102,
+          4
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": -4,
+        "pitch_deg": 8,
+        "box1_mm": 221,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.01924,
+      "thermal": {
+        "ins_k": 0.2447,
+        "ins_t": 0.000374,
+        "pkg_k": 0.2397,
+        "pkg_sea_h": 24.899,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58.3,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 80.73,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 74.75,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "N27": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.725,
+        "alpha2": 0.926,
+        "core1_mm": 23,
+        "core2_mm": 17,
+        "shift_mm": [
+          7,
+          103,
+          1
+        ],
+        "tilt_deg": 10,
+        "yaw_deg": -1,
+        "pitch_deg": 8,
+        "box1_mm": 228,
+        "box2_mm": 221
+      },
+      "alpha_per_K": 0.01918,
+      "thermal": {
+        "ins_k": 0.2931,
+        "ins_t": 0.000441,
+        "pkg_k": 0.2219,
+        "pkg_sea_h": 29.301,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 64.31,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 89.05,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 82.45,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "D01": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.768,
+        "alpha2": 0.761,
+        "core1_mm": 18,
+        "core2_mm": 14,
+        "shift_mm": [
+          7,
+          87,
+          -1
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": -2,
+        "pitch_deg": 5,
+        "box1_mm": 235,
+        "box2_mm": 221
+      },
+      "alpha_per_K": 0.01734,
+      "thermal": {
+        "ins_k": 0.2307,
+        "ins_t": 0.000363,
+        "pkg_k": 0.2111,
+        "pkg_sea_h": 19.541,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 60.29,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 83.47,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 77.29,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "D02": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.712,
+        "alpha2": 0.727,
+        "core1_mm": 19,
+        "core2_mm": 23,
+        "shift_mm": [
+          3,
+          93,
+          4
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": 2,
+        "pitch_deg": -8,
+        "box1_mm": 231,
+        "box2_mm": 227
+      },
+      "alpha_per_K": 0.02023,
+      "thermal": {
+        "ins_k": 0.1918,
+        "ins_t": 0.000358,
+        "pkg_k": 0.2644,
+        "pkg_sea_h": 29.573,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 62.3,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 86.25,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 79.87,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "D03": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.753,
+        "alpha2": 0.706,
+        "core1_mm": 18,
+        "core2_mm": 16,
+        "shift_mm": [
+          8,
+          97,
+          -4
+        ],
+        "tilt_deg": 6,
+        "yaw_deg": -5,
+        "pitch_deg": -4,
+        "box1_mm": 233,
+        "box2_mm": 217
+      },
+      "alpha_per_K": 0.01669,
+      "thermal": {
+        "ins_k": 0.3173,
+        "ins_t": 0.000334,
+        "pkg_k": 0.3229,
+        "pkg_sea_h": 34.73,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 57.96,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 80.26,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 74.31,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "D04": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.796,
+        "alpha2": 0.848,
+        "core1_mm": 24,
+        "core2_mm": 24,
+        "shift_mm": [
+          6,
+          82,
+          1
+        ],
+        "tilt_deg": 13,
+        "yaw_deg": -2,
+        "pitch_deg": -8,
+        "box1_mm": 236,
+        "box2_mm": 223
+      },
+      "alpha_per_K": 0.01935,
+      "thermal": {
+        "ins_k": 0.3133,
+        "ins_t": 0.000439,
+        "pkg_k": 0.2231,
+        "pkg_sea_h": 32.438,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 61.95,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 85.77,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 79.42,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "E01": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.719,
+        "alpha2": 0.866,
+        "core1_mm": 16,
+        "core2_mm": 10,
+        "shift_mm": [
+          0,
+          93,
+          1
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": -9,
+        "pitch_deg": -4,
+        "box1_mm": 226,
+        "box2_mm": 220
+      },
+      "alpha_per_K": 0.01924,
+      "thermal": {
+        "ins_k": 0.271,
+        "ins_t": 0.000466,
+        "pkg_k": 0.2304,
+        "pkg_sea_h": 25.687,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.61,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 78.38,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 72.58,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "E02": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.978,
+        "alpha2": 0.773,
+        "core1_mm": 19,
+        "core2_mm": 16,
+        "shift_mm": [
+          8,
+          107,
+          -5
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": 4,
+        "pitch_deg": 3,
+        "box1_mm": 219,
+        "box2_mm": 234
+      },
+      "alpha_per_K": 0.01779,
+      "thermal": {
+        "ins_k": 0.2324,
+        "ins_t": 0.00039,
+        "pkg_k": 0.3152,
+        "pkg_sea_h": 31.862,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 62.92,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 87.11,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 80.66,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "E03": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.908,
+        "alpha2": 0.764,
+        "core1_mm": 17,
+        "core2_mm": 15,
+        "shift_mm": [
+          2,
+          96,
+          -6
+        ],
+        "tilt_deg": 12,
+        "yaw_deg": 1,
+        "pitch_deg": 1,
+        "box1_mm": 224,
+        "box2_mm": 228
+      },
+      "alpha_per_K": 0.02584,
+      "thermal": {
+        "ins_k": 0.2676,
+        "ins_t": 0.000422,
+        "pkg_k": 0.2025,
+        "pkg_sea_h": 31.197,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 70.12,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 97.09,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 89.9,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "E04": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.84,
+        "alpha2": 0.924,
+        "core1_mm": 12,
+        "core2_mm": 21,
+        "shift_mm": [
+          2,
+          102,
+          5
+        ],
+        "tilt_deg": 14,
+        "yaw_deg": 3,
+        "pitch_deg": 7,
+        "box1_mm": 234,
+        "box2_mm": 219
+      },
+      "alpha_per_K": 0.02389,
+      "thermal": {
+        "ins_k": 0.1996,
+        "ins_t": 0.000387,
+        "pkg_k": 0.3317,
+        "pkg_sea_h": 19.831,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.01,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 77.55,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 71.81,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "E05": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.833,
+        "alpha2": 0.936,
+        "core1_mm": 17,
+        "core2_mm": 20,
+        "shift_mm": [
+          0,
+          102,
+          -7
+        ],
+        "tilt_deg": 9,
+        "yaw_deg": 3,
+        "pitch_deg": 3,
+        "box1_mm": 217,
+        "box2_mm": 235
+      },
+      "alpha_per_K": 0.0237,
+      "thermal": {
+        "ins_k": 0.2645,
+        "ins_t": 0.000407,
+        "pkg_k": 0.3101,
+        "pkg_sea_h": 23.512,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 54.05,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 74.83,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 69.29,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z01": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.78,
+        "alpha2": 0.92,
+        "core1_mm": 18,
+        "core2_mm": 14,
+        "shift_mm": [
+          12,
+          97,
+          -4
+        ],
+        "tilt_deg": -11,
+        "yaw_deg": 13,
+        "pitch_deg": 8,
+        "box1_mm": 226,
+        "box2_mm": 212
+      },
+      "alpha_per_K": 0.017,
+      "thermal": {
+        "ins_k": 0.28,
+        "ins_t": 0.0004,
+        "pkg_k": 0.31,
+        "pkg_sea_h": 29,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 52,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 68,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 61,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z02": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.99,
+        "alpha2": 0.68,
+        "core1_mm": 8,
+        "core2_mm": 20,
+        "shift_mm": [
+          -10,
+          112,
+          6
+        ],
+        "tilt_deg": 18,
+        "yaw_deg": -12,
+        "pitch_deg": -5,
+        "box1_mm": 214,
+        "box2_mm": 238
+      },
+      "alpha_per_K": 0.021,
+      "thermal": {
+        "ins_k": 0.36,
+        "ins_t": 0.00036,
+        "pkg_k": 0.19,
+        "pkg_sea_h": 16,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 46,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 72,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 65,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z03": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.86,
+        "alpha2": 0.88,
+        "core1_mm": 16,
+        "core2_mm": 15,
+        "shift_mm": [
+          5,
+          78,
+          9
+        ],
+        "tilt_deg": 4,
+        "yaw_deg": 17,
+        "pitch_deg": -10,
+        "box1_mm": 238,
+        "box2_mm": 224
+      },
+      "alpha_per_K": 0.016,
+      "thermal": {
+        "ins_k": 0.22,
+        "ins_t": 0.00045,
+        "pkg_k": 0.34,
+        "pkg_sea_h": 37,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 63,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 81,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 74,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z04": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.72,
+        "alpha2": 0.97,
+        "core1_mm": 19,
+        "core2_mm": 10,
+        "shift_mm": [
+          -6,
+          103,
+          -7
+        ],
+        "tilt_deg": -16,
+        "yaw_deg": 5,
+        "pitch_deg": 11,
+        "box1_mm": 218,
+        "box2_mm": 236
+      },
+      "alpha_per_K": 0.023,
+      "thermal": {
+        "ins_k": 0.33,
+        "ins_t": 0.00032,
+        "pkg_k": 0.21,
+        "pkg_sea_h": 13,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 39,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 57,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 52,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z05": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.93,
+        "alpha2": 0.76,
+        "core1_mm": 14,
+        "core2_mm": 18,
+        "shift_mm": [
+          10,
+          90,
+          4
+        ],
+        "tilt_deg": 9,
+        "yaw_deg": -16,
+        "pitch_deg": 3,
+        "box1_mm": 232,
+        "box2_mm": 216
+      },
+      "alpha_per_K": 0.019,
+      "thermal": {
+        "ins_k": 0.17,
+        "ins_t": 0.00048,
+        "pkg_k": 0.37,
+        "pkg_sea_h": 33,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 57,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 76,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 69,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "Z06": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.81,
+        "alpha2": 0.99,
+        "core1_mm": 17,
+        "core2_mm": 8,
+        "shift_mm": [
+          -3,
+          116,
+          1
+        ],
+        "tilt_deg": 13,
+        "yaw_deg": 9,
+        "pitch_deg": -12,
+        "box1_mm": 212,
+        "box2_mm": 240
+      },
+      "alpha_per_K": 0.02,
+      "thermal": {
+        "ins_k": 0.38,
+        "ins_t": 0.00035,
+        "pkg_k": 0.23,
+        "pkg_sea_h": 21,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 48,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 65,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 59,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ]
+    },
+    "AA01": {
+      "family": "g1",
+      "geometry": {
+        "alpha1": 0.75,
+        "alpha2": 0.94,
+        "core1_mm": 19,
+        "core2_mm": 11,
+        "shift_mm": [
+          14,
+          92,
+          7
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": -18,
+        "pitch_deg": 12,
+        "box1_mm": 228,
+        "box2_mm": 216
+      },
+      "alpha_per_K": 0.018,
+      "thermal": {
+        "ins_k": 0.27,
+        "ins_t": 0.00041,
+        "pkg_k": 0.29,
+        "pkg_sea_h": 26,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 55,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 70,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 63,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g1"
+    },
+    "AA02": {
+      "family": "g2",
+      "geometry": {
+        "alpha1": 0.97,
+        "alpha2": 0.7,
+        "core1_mm": 9,
+        "core2_mm": 19,
+        "shift_mm": [
+          -17,
+          84,
+          -9
+        ],
+        "tilt_deg": -14,
+        "yaw_deg": 21,
+        "pitch_deg": -11,
+        "box1_mm": 216,
+        "box2_mm": 240
+      },
+      "alpha_per_K": 0.022,
+      "thermal": {
+        "ins_k": 0.35,
+        "ins_t": 0.00034,
+        "pkg_k": 0.22,
+        "pkg_sea_h": 18,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 48,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 73,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 66,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g2"
+    },
+    "AA03": {
+      "family": "g1",
+      "geometry": {
+        "alpha1": 0.83,
+        "alpha2": 0.87,
+        "core1_mm": 17,
+        "core2_mm": 15,
+        "shift_mm": [
+          21,
+          108,
+          5
+        ],
+        "tilt_deg": 22,
+        "yaw_deg": 8,
+        "pitch_deg": -16,
+        "box1_mm": 236,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.017,
+      "thermal": {
+        "ins_k": 0.2,
+        "ins_t": 0.00046,
+        "pkg_k": 0.35,
+        "pkg_sea_h": 34,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 62,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 79,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 71,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g1"
+    },
+    "AA04": {
+      "family": "g2",
+      "geometry": {
+        "alpha1": 0.71,
+        "alpha2": 0.98,
+        "core1_mm": 20,
+        "core2_mm": 8,
+        "shift_mm": [
+          -10,
+          95,
+          11
+        ],
+        "tilt_deg": -21,
+        "yaw_deg": -16,
+        "pitch_deg": 18,
+        "box1_mm": 220,
+        "box2_mm": 238
+      },
+      "alpha_per_K": 0.024,
+      "thermal": {
+        "ins_k": 0.37,
+        "ins_t": 0.00031,
+        "pkg_k": 0.2,
+        "pkg_sea_h": 12,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 41,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 59,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 54,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g2"
+    },
+    "AA05": {
+      "family": "g1",
+      "geometry": {
+        "alpha1": 0.9,
+        "alpha2": 0.8,
+        "core1_mm": 15,
+        "core2_mm": 17,
+        "shift_mm": [
+          9,
+          70,
+          -12
+        ],
+        "tilt_deg": 15,
+        "yaw_deg": 23,
+        "pitch_deg": 6,
+        "box1_mm": 232,
+        "box2_mm": 214
+      },
+      "alpha_per_K": 0.019,
+      "thermal": {
+        "ins_k": 0.18,
+        "ins_t": 0.00049,
+        "pkg_k": 0.38,
+        "pkg_sea_h": 31,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 75,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 68,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g1"
+    },
+    "AA06": {
+      "family": "g2",
+      "geometry": {
+        "alpha1": 0.85,
+        "alpha2": 0.91,
+        "core1_mm": 16,
+        "core2_mm": 13,
+        "shift_mm": [
+          -12,
+          90,
+          5
+        ],
+        "tilt_deg": -12,
+        "yaw_deg": -9,
+        "pitch_deg": -5,
+        "box1_mm": 214,
+        "box2_mm": 228
+      },
+      "alpha_per_K": 0.02,
+      "thermal": {
+        "ins_k": 0.39,
+        "ins_t": 0.00033,
+        "pkg_k": 0.24,
+        "pkg_sea_h": 23,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 50,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 67,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        },
+        {
+          "voltage": 61,
+          "off": [
+            [
+              120,
+              210
+            ],
+            [
+              300,
+              390
+            ],
+            [
+              480,
+              540
+            ]
+          ],
+          "duration": 600
+        }
+      ],
+      "donor": "g2"
+    }
+  },
+  "seed": 1504,
+  "grid": "ultra",
+  "inner_step_s": 1.875
+}
