@@ -1,0 +1,94 @@
+{
+  "status": "diagnostic_complete_not_promoted",
+  "model": "optional shared rank-32 fully implicit physical thermal ROM",
+  "source_code": "sdfmpneo_bfzi/geom_free.py",
+  "evaluation": "examples/bfzi_geom_free_eval.py",
+  "scene": "BFZI-free geometries using frozen geomfrac_init_v1, portself_v5, mutual_v6, source_v6, et_v9_ztune, 32D canonical thermal model",
+  "dev": {
+    "neural_dynamic_z_pct": 11.461418858986038,
+    "rom_dynamic_z_pct": 12.468978698622891,
+    "neural_field_rmse_K": 0.16858292794276977,
+    "rom_field_rmse_K": 0.14887047576277665,
+    "neural_repeat_s": 0.19420065999341507,
+    "rom_repeat_s": 0.0868357333354652,
+    "hybrid_dynamic_z_pct": {
+      "10": 12.468978698627014,
+      "025": 11.570594913041027,
+      "05": 11.780374932470203,
+      "075": 12.110138691948343
+    },
+    "rom_analytic_variants_dynamic_z_pct": {
+      "cu_cap": 12.389028931327202,
+      "cu_ex": 13.49511227598219,
+      "cu_link": 13.898426217434082,
+      "conductance": 13.257547832140714
+    },
+    "physical_oracle_dynamic_z_pct": {
+      "src": 12.498158232025517,
+      "kcap": 13.127391810906458,
+      "all": 13.129615672651921
+    }
+  },
+  "aa_diagnostic": {
+    "histories": 18,
+    "geometries": 6,
+    "neural_dynamic_z_pct": 38.3563650278309,
+    "rom_dynamic_z_pct": 37.828642409949595,
+    "neural_field_rmse_K": 0.20992002542471921,
+    "rom_field_rmse_K": 0.16569297069170208,
+    "neural_repeat_s": 0.19235695000194633,
+    "rom_repeat_s": 0.0911685777860435,
+    "neural_cu_tx_rmse_K": 1.352598016268934,
+    "rom_cu_tx_rmse_K": 1.3759107079532822,
+    "neural_cu_rx_rmse_K": 1.521763033963422,
+    "rom_cu_rx_rmse_K": 1.4845200078659244,
+    "rom_geometry_improved": 2,
+    "rom_history_improved": 8,
+    "per_geometry": {
+      "AA01": {
+        "neural_dynamic_z_pct": 16.024455005884466,
+        "rom_dynamic_z_pct": 16.153798932633336,
+        "neural_field_rmse_K": 0.13830250841132832,
+        "rom_field_rmse_K": 0.13019520271662546
+      },
+      "AA02": {
+        "neural_dynamic_z_pct": 30.44779000670595,
+        "rom_dynamic_z_pct": 33.52846635340492,
+        "neural_field_rmse_K": 0.17139149831695585,
+        "rom_field_rmse_K": 0.14496210725689795
+      },
+      "AA03": {
+        "neural_dynamic_z_pct": 48.40256308510776,
+        "rom_dynamic_z_pct": 52.734034017789476,
+        "neural_field_rmse_K": 0.1989374781955353,
+        "rom_field_rmse_K": 0.16904137983057677
+      },
+      "AA04": {
+        "neural_dynamic_z_pct": 54.407881694186166,
+        "rom_dynamic_z_pct": 52.899605814152665,
+        "neural_field_rmse_K": 0.2585933522943688,
+        "rom_field_rmse_K": 0.2295230312249803
+      },
+      "AA05": {
+        "neural_dynamic_z_pct": 35.4451597537454,
+        "rom_dynamic_z_pct": 36.52515391897052,
+        "neural_field_rmse_K": 0.16814957802870856,
+        "rom_field_rmse_K": 0.11196958239187645
+      },
+      "AA06": {
+        "neural_dynamic_z_pct": 45.41034062135563,
+        "rom_dynamic_z_pct": 35.130795422746665,
+        "neural_field_rmse_K": 0.3241457373014185,
+        "rom_field_rmse_K": 0.2084665207292555
+      }
+    }
+  },
+  "decisions": [
+    "Retain formal V6 and V5 candidate; keep heat-mode rom optional.",
+    "Physical ROM significantly improves AA spatial temperature RMSE and repeat runtime.",
+    "AA impedance gain is concentrated in AA06, with only 2/6 geometries improved.",
+    "Hybrid thermal mixing and direct analytic thermal operator replacements fail to beat development V5.",
+    "Oracle true S5 K/cap and source do not improve development dynamic impedance, indicating coupled error compensation.",
+    "AA set is diagnostic; another independent geometry set needed for new acceptance."
+  ]
+}
