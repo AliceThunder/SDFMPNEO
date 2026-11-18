@@ -1,0 +1,118 @@
+{
+  "status": "complete_rejected",
+  "metric": "free_metric: BFZI-free rollout, delta-Z relative L2 averaged over histories",
+  "split": {
+    "all_geometries": 11,
+    "all_histories": 33,
+    "unseen_geometries": [
+      "T04",
+      "D01",
+      "D02",
+      "D03",
+      "D04"
+    ],
+    "replay_geometries": [
+      "N05",
+      "N10",
+      "N15",
+      "N20",
+      "N25",
+      "N27"
+    ]
+  },
+  "results_pct": {
+    "all": {
+      "v5": 16.50131,
+      "candidate": 16.49222,
+      "delta_pp": -0.00909
+    },
+    "unseen": {
+      "v5": 12.32451,
+      "candidate": 12.62209,
+      "delta_pp": 0.29758
+    },
+    "replay": {
+      "v5": 19.98197,
+      "candidate": 19.71732,
+      "delta_pp": -0.26465
+    }
+  },
+  "per_geometry": {
+    "T04": {
+      "v5_pct": 8.412877,
+      "candidate_pct": 8.779464,
+      "delta_pp": 0.366587
+    },
+    "D01": {
+      "v5_pct": 7.20164,
+      "candidate_pct": 6.861194,
+      "delta_pp": -0.340446
+    },
+    "D02": {
+      "v5_pct": 18.626475,
+      "candidate_pct": 17.168744,
+      "delta_pp": -1.457731
+    },
+    "D03": {
+      "v5_pct": 21.885061,
+      "candidate_pct": 23.88169,
+      "delta_pp": 1.996629
+    },
+    "D04": {
+      "v5_pct": 5.496507,
+      "candidate_pct": 6.419378,
+      "delta_pp": 0.922871
+    },
+    "N05": {
+      "v5_pct": 8.176194,
+      "candidate_pct": 7.870613,
+      "delta_pp": -0.305581
+    },
+    "N10": {
+      "v5_pct": 17.813172,
+      "candidate_pct": 21.376143,
+      "delta_pp": 3.56297
+    },
+    "N15": {
+      "v5_pct": 11.005907,
+      "candidate_pct": 11.16292,
+      "delta_pp": 0.157013
+    },
+    "N20": {
+      "v5_pct": 26.251728,
+      "candidate_pct": 26.348472,
+      "delta_pp": 0.096745
+    },
+    "N25": {
+      "v5_pct": 35.938987,
+      "candidate_pct": 30.713706,
+      "delta_pp": -5.225281
+    },
+    "N27": {
+      "v5_pct": 20.705823,
+      "candidate_pct": 20.832092,
+      "delta_pp": 0.126269
+    }
+  },
+  "training": {
+    "best_epoch": 55,
+    "epochs_trained": 100,
+    "best_score_pct": 16.49222,
+    "initial_score_pct": 16.50131,
+    "relative_improvement_pct": 0.05508804236625215,
+    "zrel_weight": 0,
+    "tangent_loss_weight": 0,
+    "heat_only": true
+  },
+  "parameter_diff": {
+    "changed": [
+      "heat_head.0.weight",
+      "heat_head.0.bias",
+      "heat_head.2.weight",
+      "heat_head.2.bias"
+    ],
+    "unchanged_non_heat_parameters": true,
+    "non_heat_changed": []
+  },
+  "decision": "Do not promote; retain V5. Next controlled run adds direct full dynamic-Z supervision with zrel_weight=0.5 while keeping all other settings and the split fixed."
+}
