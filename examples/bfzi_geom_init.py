@@ -109,7 +109,8 @@ def main():
             model=GeomInit.fit(x,y,k,src,ext,ell=ell,lam=lam)
             d=report(model,dev)
             score=(d['cold_Z_rel_L2_mean']+
-                   .02*d['heat_K_rel_F_mean']+
+                   .25*d['air_rel_L2_mean']+
+                   .02*d['source_rel_F_mean']+
                    .002*d['cap_rel_L2_mean'])
             if best is None or score<best[0]:
                 best=(score,ell,lam,d)
