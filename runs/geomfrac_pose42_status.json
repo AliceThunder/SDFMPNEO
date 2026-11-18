@@ -1,5 +1,5 @@
 {
-  "status": "pose42_rejected_for_dev_gain_bb_acceptance_running",
+  "status": "bb_free11_complete_v10_diagnostic_complete_thermal_kernel_v1_added",
   "formal_model": "V6 base frozen",
   "best_prior_candidate": "runs/geomfrac_et_v5_closed.pt",
   "heat_rom": {
@@ -51,15 +51,15 @@
     "new_holdout_histories": 18,
     "new_holdout_tag": "free11",
     "preflight_6_of_6": "PASSED on original BFZI V150 oriented S5 ultra mesh, 2652–2672 sea cells",
-    "holdout_status": "17/18 physical histories complete; BB06 history 3 still running",
-    "holdout_completed_histories_last_checked": 1,
+    "holdout_status": "18/18 BFZI V150 S5 physical histories complete; 0 failures; acceptance completed and BB opened for diagnosis only",
+    "holdout_completed_histories_last_checked": 18,
     "holdout_failures_last_checked": 0,
-    "completed_histories_last_checked": 17,
+    "completed_histories_last_checked": 18,
     "failures_last_checked": 0,
     "last_repo_committed_observation": {
-      "completed_histories": 17,
+      "completed_histories": 18,
       "failures": 0,
-      "detail": "Last XEnergy observation committed to repository; BB06 history 3 was still running. Current runtime status has not been re-read in this turn."
+      "detail": "All BB01-BB06 histories completed; V5/pose42 acceptance and V10 diagnostic outputs archived. BB is now an opened diagnostic set and is excluded from training/model selection."
     }
   },
   "train": {
@@ -83,17 +83,19 @@
     "decision": "No development improvement: best epoch remains the V5 initialization; final/late validation is 15.6289% versus V5 11.4614%. Do not promote pose42. BB independent physical acceptance remains useful for the frozen V5 baseline and sealed holdout; candidate comparison may be retained diagnostically."
   },
   "physics": {
-    "status": "running",
+    "status": "complete",
     "original_solver": "BFZI V150",
     "reference": "S5 ultra, inner thermal step 1.875 s",
     "log": "runs/free11_build.log",
     "stderr": "runs/free11_build.err",
     "manifest": "runs/geomfrac_s5_free11_manifest.json",
     "report": "runs/geomfrac_s5_free11_build_report.json",
-    "xenergy_shell_pid": 30552
+    "xenergy_shell_pid": 30552,
+    "completed_histories": 18,
+    "failures": 0
   },
   "evaluation": {
-    "status": "awaiting_runtime_refresh",
+    "status": "complete_diagnostic_opened",
     "xenergy_shell_pid": 2276,
     "guard": "requires valid candidate statuses and existing files for BB01-BB06 all 18 histories",
     "log": "runs/pose42_accept.log",
@@ -101,10 +103,10 @@
     "baseline_out": "runs/geomfrac_free11_v5.json",
     "candidate_out": "runs/geomfrac_free11_pose42.json",
     "summary_out": "runs/geomfrac_free11_acceptance.json",
-    "last_checked": "BB01-BB05 complete; BB06 histories 1-2 complete",
-    "note": "No BB acceptance outputs are committed yet. The current XEnergy process status requires a fresh runtime check before claiming completion."
+    "last_checked": "BB01-BB06 all 18 histories complete; V5 and pose42 identical; V10 diagnostic also evaluated",
+    "note": "18/18 BFZI V150 S5 ultra references completed with zero failures. BB results are archived and may be used for diagnosis only, not training or model selection."
   },
-  "decision": "Retain formal V6 and independently accepted V5 candidate. Hold BB split sealed until pose42 training/dev model selection completes. Never use BB for training or checkpoint selection.",
+  "decision": "Retain formal V6 and independently accepted V5. Pose42 and V10 are not promoted. BB is an opened diagnostic set only. Next evaluate the independently tuned thermal kernel bandwidth on the frozen original development set before freezing a new CC independent set.",
   "generator_regression_test": {
     "path": "tests/test_bfzi_s5_buildset.py",
     "test": "test_failed_history_does_not_stop_later_candidates",
@@ -114,5 +116,55 @@
       "first excitation history failure continues to second history",
       "successful later histories are persisted in manifest and report"
     ]
+  },
+  "free_z_tune_v10": {
+    "status": "complete_not_promoted",
+    "script": "examples/bfzi_geom_free_ztune.py",
+    "restore": "sdfmpneo_bfzi/geom_ztune.py supports nested residual-tangent checkpoints",
+    "base_model": "runs/geomfrac_et_v9_ztune.pt",
+    "train_geometries": 36,
+    "train_histories": 108,
+    "dev_geometries": 5,
+    "dev_histories": 15,
+    "internal_holdout_geometries": 6,
+    "internal_holdout_histories": 18,
+    "best_epoch": 20,
+    "baseline_dev_dynamic_z_pct": 11.461418858986038,
+    "best_dev_dynamic_z_pct": 11.179,
+    "best_hold_dynamic_z_pct": 18.1334,
+    "baseline_joint_selection_pct": 14.687021825046891,
+    "best_joint_selection_pct": 14.6562,
+    "dev_single_best_epoch": 30,
+    "dev_single_best_pct": 10.915,
+    "decision": "Do not promote: the joint score improves by only 0.0308 percentage points while the internal holdout degrades.",
+    "bb_diagnostic": {
+      "baseline_v5_dynamic_z_pct": 45.3022,
+      "v10_dynamic_z_pct": 45.1581,
+      "baseline_current_pct": 16.839,
+      "v10_current_pct": 16.8391,
+      "baseline_temperature_rmse_K": 0.2118,
+      "v10_temperature_rmse_K": 0.2118,
+      "baseline_repeat_s": 0.1995,
+      "v10_repeat_s": 0.2622,
+      "decision": "No useful generalization gain; do not promote."
+    }
+  },
+  "pose42_atlas_diagnostic": {
+    "atlas": "runs/geomfrac_init_pose42.npz",
+    "ports": "original V5 PortSelf, MutFix and SrcFix",
+    "dev_dynamic_z_pct": 12.59902588098384,
+    "v5_dev_dynamic_z_pct": 11.461418858986038,
+    "oracle_kcap_dev_dynamic_z_pct": 11.9624,
+    "oracle_source_dev_dynamic_z_pct": 12.6232,
+    "oracle_all_heat_dev_dynamic_z_pct": 11.9866,
+    "decision": "42G atlas candidate is not promoted; source replacement does not improve this dev split."
+  },
+  "thermal_kernel_bandwidth": {
+    "status": "implemented_pending_real_S5_rebuild",
+    "code": "sdfmpneo_bfzi/geom_init.py",
+    "trainer": "examples/bfzi_geom_init.py",
+    "test": "tests/test_bfzi_geom_init.py::test_thermal_kernel_bandwidth_is_independent_and_persistent",
+    "description": "Separate kell controls the convex SPD K interpolation weights; ell continues to control cold/capacity/source interpolation. Legacy checkpoints default kell to ell.",
+    "decision": "Run 42G anchor rebuild and full original-dev dynamic-Z evaluation before considering promotion."
   }
 }
