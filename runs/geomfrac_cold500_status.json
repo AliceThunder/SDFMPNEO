@@ -14,7 +14,7 @@
     "pid": 32672
   },
   "observed_progress": {
-    "successful": 292,
+    "successful": 304,
     "failed": 8,
     "failed_cases": [
       "C0496",
@@ -86,5 +86,12 @@
   "next": {
     "script": "examples/bfzi_cold_finish.py",
     "steps": "After current producer completes, replenish valid 400/50/50 geometry counts, train plain and residual cold networks, evaluate fresh 50G independent cold labels, then use bfzi_cold_closed_eval on unchanged V5 dynamic histories."
+  },
+  "postprocess": {
+    "provider": "EXZA",
+    "job_id": "job-11",
+    "status": "watching cold producer job-2; when complete run valid-sample top-up, train both cold models, evaluate fresh independent 50G cold test and frozen-V5 dynamic histories",
+    "script": "examples/bfzi_cold_finish.py",
+    "automatically_promote": false
   }
 }
