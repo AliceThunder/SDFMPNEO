@@ -86,3 +86,24 @@ python -m examples.bfzi_geom_free_eval @common --model runs/geomfrac_et_v5_pose_
 验收指标包括动态与冷态六端口复阻抗、匹配电流、海水/铜耗、五材料温度、完整三维温度场 RMSE、能量预算、新几何首次及重复推理耗时。V5 决策以 AA01–AA06 的全量结果和逐几何分布为依据；原 V6 与正式锚点 V9 均保留。
 
 状态文件：`runs/geomfrac_et_v5_pose_aug_status.json`。
+
+## 5. 2026-11-18：重新连线后的训练结果与闭环选模修复
+
+XEnergy 恢复在线后确认：
+
+- 原 V5 训练共完成 60 轮，最优 epoch=0，`best_score=0.16314533246528498`；
+- 原 V5 保存的 `state` 与初始化 V6 的 `state` 逐参数最大绝对差 **0.0**，未得到新的有效检查点；
+- 原 CLI 使用 `--closed-weight 0.2`、默认 warmup=20、ramp=60，选模应从第 80 轮开始；旧代码按 `patience=60` 提前退出，导致模型不可能进入有效选模阶段；
+- 旧 `dynamic_z` 依据 GeomFracET 自身 SOE 输出端口阻抗选择检查点；无 BFZI V6 在线预测中的海水阻抗来自独立的 `geom_ztune` 热切线，Ge​​omFracET 的直接阻抗输出在线上被绕过，因而旧目标与实际部署不一致。
+
+已修改 `examples/bfzi_geom_multi.py`：
+
+1. 早停计数在闭环源 warmup+ramp 完成后才生效；
+2. 新增 `--select free_dynamic_z`，直接在原 5 组开发几何上使用 `geom_free.rollout`，保留冷态自阻抗、互阻抗、热源、物理切线和 `shape_mix=0.5`，以真实无 BFZI 闭环动态 Z 选择最佳 epoch；
+3. 新运行只训练 `heat_head`，冻结不参与当前在线端口预测的 SOE 输出头及其他网络参数。
+
+已启动新的 `runs/geomfrac_et_v5_closed.pt` 训练，初始完整在线开发动态 Z 误差为 **0.122046**（12.2046%，与先前完整开发闭环基线一致）。训练仍使用 36 组、108 条历史，开发 5 组、15 条历史，AA 不参与训练或选模。计划 160 轮上限，batch_hist=36，patience=50，闭环源权重 0.2、warmup=10、ramp=20。
+
+旧 `free9` 生成过程最终得到 15 条 `candidate`，AA06 冷态锚失败（封装越出 BFZI 海水域）。上述旧教师都属于错误热参数计划，全部无效。正确 `free10` 计划对 AA06 的位置、旋转和封装进行了物理可行性调整，其余几何保持不变；现已从头生成参考，起始 AA01/60s 与 300s 两条均已成功。
+
+新状态见 `runs/geomfrac_et_v5_closed_status.json`。新训练与 free10 参考完成之前，继续保留正式 V6。
