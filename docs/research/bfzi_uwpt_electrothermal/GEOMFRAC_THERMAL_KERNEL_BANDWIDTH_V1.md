@@ -88,3 +88,14 @@ V1 的训练参数 `zrel_weight=0`、`tangent_loss_weight=0`，训练目标没�
 ## 36G heat_head V2：加入动态阻抗监督（运行中）
 
 V1 的 `zrel_weight=0`、`tangent_loss_weight=0`，使训练目标未直接约束完整动态阻抗；BFZI-free 动态阻抗只用于检查点选择。V2 在完全相同的 36G/108 历史训练集、11G/33 历史验证集、kell=0.6 atlas、V5 初始化权重和冻结冷态模型上，只增加 `--zrel-weight 0.5`，其余训练参数保持不变。`zrel` 项通过 `_zrel_full` 将预测海水阻抗变化与铜温引起的电阻变化共同纳入可微损失，训练仍仅开放 `heat_head`。基线为同一 BFZI-free `free_metric` 的 16.50131%。当前运行状态见 `runs/geomfrac_et_pose42_kell_v2_status.json`，候选待训练完成后按原 5 组未见几何与 6 组 N 回放分别评估。
+
+
+## 36G heat_head V2 训练结论与目标错位（2026-11-18）
+
+V2 训练完成 75 epoch，最佳 epoch=0，`zrel_weight=0.5`，选模误差与初始化同集基线均为 16.501306%。逐张量比较表明 V2 检查点与 V5 完全相同，说明所有训练更新均未通过部署闭环选模。相同 atlas、端口模型和 11 组/33 条历史的 `free_metric` 复核结果完全一致：总体 16.501306%，原 5 组未见几何 12.324512%，6 组 N 回放 19.981968%。V2 不升级。
+
+根因已定位：V2 的 `zrel_weight` 作用于 `GeomFracET` 的 `zhat` 输出，而 `geom_free.rollout` 部署时忽略该输出，海水动态阻抗实际由 `geomfrac_et_v9_ztune.pt` 的 ZFix 切线模型根据热状态计算，再叠加铜温电阻变化。训练目标因此没有约束部署中使用的海水阻抗映射。另一个差异是当前 `score(closed=True)` 使用每个样本的 BFZI 热 ROM 做 `_heat_balance`，部署则使用跨几何 atlas 的 `shape_step/thermal_step` 和 `shape_mix=0.5`。
+
+已更新训练接口：当传入部署 ZFix 模型时，`zrel` 现在可直接计算 `tangent(g,state)+copper(T)`；闭环源项与热平衡反馈也可调用同一 tangent。XEnergy `py_compile` 通过。单步实验中，闭环 tangent-zrel 在学习率 3e-4 下使原未见集误差增加 1.4912 个百分点；tangent 状态损失在学习率 1e-5 下增加 0.0892 个百分点。该结果确认仍需对齐 atlas 物理推进过程，当前不启动新的热头长训练。
+
+下一步实现部署一致的可微训练推进：使用每个几何的 atlas 预测 `cap/K/src/z0/air/ext`，使用部署 ZFix tangent 计算海水阻抗，按部署相同的 `shape_mix`、`shape_step`、`thermal_step` 和电流反馈推进状态，再对完整动态 Z 误差反向传播。训练仍只开放 `heat_head`，V5 保持正式基线。V2 对照数据见 `runs/geomfrac_et_pose42_kell_v2_free_eval.json`。
