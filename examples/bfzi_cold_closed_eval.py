@@ -9,6 +9,7 @@ import torch
 
 from examples.bfzi_geom_multi import prepare,free_metric
 from sdfmpneo_bfzi.geom_coldnet import ColdNet
+from sdfmpneo_bfzi.geom_coldres import ColdRes
 from sdfmpneo_bfzi.geom_init import GeomInit
 from sdfmpneo_bfzi.geom_mutual import MutFix
 from sdfmpneo_bfzi.geom_neural import GeomFracET
@@ -63,7 +64,9 @@ def main():
     src=SrcFix.load(cfg['source_model'])
     tan=load_z(cfg['z_fix_model'])
     base=PortSelf.load(cfg['port_self_model'])
-    cand=ColdNet.load(a.cold_model)
+    ck_cold=torch.load(a.cold_model,map_location='cpu',weights_only=True)
+    cand=(ColdRes.load(a.cold_model) if 'base_path' in ck_cold
+          else ColdNet.load(a.cold_model))
     eck=dict(src_scale=ck['src_scale'],y_scale=ck['y_scale'],
              a_scale=ck['a_scale'],canonical=True,port_sea=True)
     rows=_data(mf,'val')
