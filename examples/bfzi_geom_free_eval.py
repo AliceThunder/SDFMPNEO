@@ -77,7 +77,7 @@ def metric(pred,row):
         energy_budget_W=float(np.max(abs(pred['material_budget_W']))))
 
 
-def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False,analytic_cu='off',cu_link=None,heat_mode='neural',rom_mix=0.,oracle_heat='none'):
+def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=None,dyn=None,skin=None,port_self=None,mutual=None,source=None,shape_mix=0.,cu_balance=False,conductance_mix=False,analytic_cu='off',cu_link=None,heat_mode='neural',rom_mix=0.,oracle_heat='none',oracle_cold=False):
     rows=[]
     for spec in manifest[split]:
         name=Path(spec['anchor']).stem.split('_')[2]
@@ -100,11 +100,15 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
             from sdfmpneo_bfzi.geom_cu import apply as cu_apply
             init=cu_apply(case,init,exchange=(analytic_cu=='exchange'),
                           profile=cu_link.predict(case) if cu_link is not None else None)
-        if oracle_heat!='none':
+        if oracle_heat!='none' or oracle_cold:
             from sdfmpneo_bfzi.geom_heat import GeomHeat
             from examples.bfzi_geom_init import pack as cold_pack
             teacher=cold_pack(GeomHeat.load(spec['anchor']),case,name)
             init=dict(init)
+            if oracle_cold:
+                init['z0']=teacher['y'][:6].copy()
+                init['air']=teacher['y'][6:9].copy()
+                init['ext']=teacher['ext'].copy()
             if oracle_heat in ('kcap','all'):
                 init['k']=teacher['k']
                 init['cap']=teacher['cap']
@@ -203,6 +207,7 @@ def main():
     p.add_argument('--heat-mode',choices=('neural','rom','hybrid'),default='neural',help='online neural heat state, implicit 32D ROM, or hybrid')
     p.add_argument('--rom-mix',type=float,default=0.,help='implicit ROM fraction of hybrid higher thermal modes')
     p.add_argument('--oracle-heat',choices=('none','src','kcap','all'),default='none',help='offline diagnostic: replace estimated heat inputs with S5 anchor (requires BFZI teacher)')
+    p.add_argument('--oracle-cold',action='store_true',help='offline diagnostic: replace predicted cold z0, air inductance and external network with S5 anchor')
     p.add_argument('--cu-link-model',type=Path,default=None,help='cold-trained copper/package spatial contact kernel')
     p.add_argument('--model',type=Path,default=Path('runs/geomfrac_et_v4_8g_quality.pt'))
     p.add_argument('--z-fix-model',type=Path,default=Path('runs/geomfrac_et_v9_ztune.pt'))
@@ -266,11 +271,12 @@ def main():
                  args.shape_mix,cu_balance=args.cu_balance,
                  conductance_mix=args.conductance_mix,analytic_cu=args.analytic_cu,
                  cu_link=cu_link,heat_mode=args.heat_mode,rom_mix=args.rom_mix,
-                 oracle_heat=args.oracle_heat)
+                 oracle_heat=args.oracle_heat,oracle_cold=args.oracle_cold)
     res['analytic_copper_mode']=args.analytic_cu
     res['heat_mode']=args.heat_mode
     res['rom_mix']=float(args.rom_mix)
     res['oracle_heat']=args.oracle_heat
+    res['oracle_cold']=bool(args.oracle_cold)
     res['copper_link_model']=str(args.cu_link_model) if args.cu_link_model else None
     res['copper_exchange_balance']=bool(args.cu_balance)
     res['conductance_space_mixing']=bool(args.conductance_mix)
