@@ -181,7 +181,11 @@ def main():
             param.requires_grad_(name.startswith('heat_head.'))
     tangent=None
     if a.tangent_model:
-        from examples.bfzi_z_tangent import restore
+        tck=torch.load(a.tangent_model,map_location='cpu',weights_only=True)
+        if 'base' in tck and 'sy' in tck:
+            from sdfmpneo_bfzi.geom_ztune import restore
+        else:
+            from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
     if a.tangent_loss_weight<0 or (a.tangent_loss_weight and tangent is None):
         p.error('nonnegative tangent loss requires --tangent-model')
