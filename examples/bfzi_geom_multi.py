@@ -213,6 +213,7 @@ def main():
         patience=max(1,(a.lr_patience+a.val_every-1)//a.val_every))
     best=float('inf')
     best_epoch=0
+    initial_score=None
     saved=None
     best_train=None
     best_loss=None
@@ -227,6 +228,7 @@ def main():
                 init_z=eval_rollout(None,net,eck,val,tangent=tangent)
                 key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
                 best=float(np.mean([x[key] for x in init_z]))
+        initial_score=float(best)
         saved={k:v.detach().clone() for k,v in net.state_dict().items()}
         print('INIT',a.select,round(best,6),flush=True)
     if a.val_every<1 or a.batch_hist<0 or a.proj_tau<0:
@@ -347,6 +349,8 @@ def main():
                  train_histories=len(train),val_histories=len(val),
                  best_epoch=best_epoch,val_loss=best_loss if a.select!='loss' else best,
                  select=a.select,best_score=best,
+                 initial_selection_score=initial_score,
+                 selection_improvement_pct=(100.*(initial_score-best)/max(abs(initial_score),1e-12) if initial_score is not None else None),
                  free_plan=str(a.free_plan) if a.free_plan else None,
                  free_config=str(a.free_config) if free is not None else None,
                  val_dynamic_Z_mean_rel_L2=float(np.mean(
