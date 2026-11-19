@@ -103,9 +103,9 @@
     "remaining_new_references": 895,
     "completed": 400,
     "failed_count": 0,
-    "last_sample": "V7T0400",
+    "last_sample": "V7T0405",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:03:00+08:00",
+    "last_checked_at": "2026-11-19T19:05:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -131,7 +131,9 @@
         "box2_mm": 228
       },
       "validation": "native BFZI create() accepted oriented seawater OBB",
-      "override_file": "runs/geomfrac_cold_v7_replacements.json"
+      "override_file": "runs/geomfrac_cold_v7_replacements.json",
+      "status": "generated",
+      "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     }
   },
   "acceptance": {
@@ -140,7 +142,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Complete job-72 (offset 400, limit 400), then offset 800 and offset 1200. Continue recording and replacing any geometries rejected by the native BFZI seawater-tank geometry check. Merge after all 1295 references exist.",
+  "next": "Complete job-72 (offset 400, limit 400), then generate offsets 800 and 1200 sequentially. Continue replacing any BFZI tank-invalid geometries. Merge when 1295/1295 new references are present.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
