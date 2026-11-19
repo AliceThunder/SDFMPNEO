@@ -141,3 +141,11 @@ Implementation update: the BFZI-free evaluation entry now dispatches rank48 chec
 The first tangent-driven thermal fine-tune completed 70 epochs with the first 32 global heat outputs frozen and only the appended 16 skin-mode output rows trainable. Its free geometry closed-loop development selection remained at the initialization value of 16.2292% (best epoch 0; 0% improvement). The model-selection rule retained the original rank48 thermal checkpoint. This indicates that adapting only the appended skin outputs is too restrictive for the coupled impedance objective.
 
 The next run unfreezes the complete thermal head while keeping the SOE impedance branch frozen. It retains the same rank48 skin tangent, thermal physics loss, full dynamic-Z loss and free-loop development selection. Current XEnergy process: `job-41`; output candidate: `runs/geomfrac_et_pose42_kell_r48_tangent_v2.pt`. The frozen six-case holdout remains untouched.
+
+## 11. Heat-head fine-tuning with direct skin tangent
+
+The V4 tangent fine-tune (job-40) trained only the appended 16 skin-mode output rows, with tangent-loss weight 1.0 and BFZI-free dynamic-Z selection. It completed 70 epochs; the best checkpoint remained epoch 0 at 16.2292% development dynamic-Z error, while the epoch-50 selection was 16.3941%. The trained checkpoint therefore retains the pre-finetune heat-head weights. This indicates that updating only the final 16 output rows is too restrictive for the current shared heat representation.
+
+The next run (job-42) uses the better V3 geometry-conditioned tangent and trains the complete heat_head, while keeping the SOE dynamics frozen. It uses the same 36G/11G split, tangent loss 1.0, full dynamic-Z loss 0.5, thermal loss 0.03, closed-loop source warmup/ramp 10/20, batch size 12 and BFZI-free development selection. Learning rate is reduced to 1e-4. The training loss now reuses predicted tangent outputs and batches teacher-state tangent targets.
+
+After job-42, the selected checkpoint will be evaluated on the frozen six-case/12-history dynamic set against the official V5 and the pre-finetune rank48 model. V5 remains the official model until the independent comparison passes.
