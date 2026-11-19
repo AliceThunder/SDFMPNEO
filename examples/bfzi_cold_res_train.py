@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from sdfmpneo_bfzi.geom_coldres import ColdRes,_input
+from sdfmpneo_bfzi.geom_coldres_pose import ColdResPose,_input_pose
 from sdfmpneo_bfzi.geom_mutual import MutFix
 from sdfmpneo_bfzi.geom_portself import PortSelf
 
@@ -57,7 +58,7 @@ def score(rows,port,mut,exts):
 
 def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
         batch=64,patience=85,seed=41,current_weight=.5,
-        init_model=None,rx_only=False):
+        init_model=None,rx_only=False,pose_context=False):
     torch.manual_seed(seed)
     torch.set_num_threads(2)
     tr=list(new.get('train',[]))+list(old.get('train',[]))
@@ -81,7 +82,8 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
     if not exts:
         raise ValueError('cold current loss needs known external network families')
     ext_list=np.stack([exts[k] for k in sorted(exts)])
-    inp=np.stack([_input(r['geometry']) for r in tr])
+    input_fn=_input_pose if pose_context else _input
+    inp=np.stack([input_fn(r['geometry']) for r in tr])
     yy=np.stack([np.stack((np.asarray(r['z0'])[[0,1]],
                            np.asarray(r['z0'])[[4,5]])) for r in tr])
     oldval=np.stack([frozen.predict({'geometry':r['geometry']}) for r in tr])
@@ -91,7 +93,17 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                                      dtype=np.float32))
     ys=np.maximum(yy.std(0),np.array([.01,.1],
                                     dtype=np.float32))
-    net=ColdRes.load(init_model) if init_model else ColdRes(base_path,xm,xs,ys)
+    if pose_context:
+        if init_model:
+            old_net=ColdRes.load(init_model)
+            xm[:,:5]=old_net.xm.cpu().numpy()
+            xs[:,:5]=old_net.xs.cpu().numpy()
+            ys=old_net.ys.cpu().numpy()
+            net=ColdResPose.from_old(old_net,xm,xs)
+        else:
+            net=ColdResPose(base_path,xm,xs,ys)
+    else:
+        net=ColdRes.load(init_model) if init_model else ColdRes(base_path,xm,xs,ys)
     if net.base_path!=base_path:
         raise ValueError('warm-start model uses a different PortSelf base')
     if rx_only:
@@ -188,6 +200,7 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                 current_loss_weight=float(current_weight),
                 external_network_families=len(ext_list),
                 warm_start=init_model,rx_only=bool(rx_only),
+                pose_context=bool(pose_context),input_dim=int(inp.shape[-1]),
                 initial_candidate_old_dev=init_old if init_model else None,
                 initial_candidate_new_dev=init_new if init_model else None,
                 history=hist)
@@ -210,12 +223,13 @@ def main():
     p.add_argument('--current-weight',type=float,default=.5)
     p.add_argument('--init-model',type=Path,default=None)
     p.add_argument('--rx-only',action='store_true')
+    p.add_argument('--pose-context',action='store_true')
     a=p.parse_args()
     res=fit(_read(a.data),_read(a.old),_read(a.config),
             out=str(a.out),epochs=a.epochs,batch=a.batch,
             current_weight=a.current_weight,
             init_model=str(a.init_model) if a.init_model else None,
-            rx_only=a.rx_only)
+            rx_only=a.rx_only,pose_context=a.pose_context)
     a.report.write_text(json.dumps(res,indent=2)+'\n',encoding='utf-8')
     o=res['residual_old_dev']
     print('RES_RESULT','best',res['best_epoch'],'train',res['train_geometries'],
