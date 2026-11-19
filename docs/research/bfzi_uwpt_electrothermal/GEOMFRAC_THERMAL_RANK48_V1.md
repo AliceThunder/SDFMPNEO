@@ -75,3 +75,12 @@ XEnergy 上相关测试：
 ## 当前结论
 
 48 阶是目前最合适的共享热状态扩展：它大幅改善海水皮肤层温度场表示，且 64 阶没有额外收益。rank48 Atlas 和跨几何推理代码已经建立，神经热头训练正在进行。正式模型暂不升级。
+
+
+## 8. Training selection correction — 2026-11-19
+
+The first rank48 heat-head run used `free_dynamic_z` selection with the frozen rank32 `ZFix` tangent. That tangent consumes only the first 32 global coordinates, so the appended 16 skin coordinates had no direct path into the selected impedance metric. The run completed 70 epochs but retained its initial checkpoint: 16.4181% initial and best dynamic-Z selection error, 0% improvement.
+
+The corrected heat-head run uses `--select thermal`, which evaluates the reconstructed rank48 temperature field and directly measures whether the new skin coordinates are learned. At epoch 50, the maximum full-field temperature error on the 11-geometry development set improved from 2.3884 K to 1.9647 K (17.7% reduction); epoch 50 was the current best at the last progress update.
+
+A rank48 direct-skin impedance tangent trainer is now available as `examples/bfzi_geom_rank48_skintan.py`. It fits the port-factorized TX/mutual/RX correction against the appended 16 predicted rank48 states and evaluates it in the same closed geometry-free loop. `examples/bfzi_geom_multi.py` now accepts `--skin-tangent-model` and can use the same tangent for training loss and free-loop checkpoint selection. After the thermal run finishes, train this tangent on the 36G/11G split, then fine-tune the thermal head with its tangent loss and compare against the frozen six-case holdout.
