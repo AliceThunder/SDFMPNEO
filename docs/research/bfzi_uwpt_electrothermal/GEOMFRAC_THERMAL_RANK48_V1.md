@@ -115,3 +115,19 @@ The tangent therefore provides a measurable but still moderate impedance improve
 A rank48 heat-head fine-tune has now started using this tangent in both the differentiable tangent loss and the free geometry closed-loop selection. Only the appended 16 skin-mode output rows are trainable; the first 32 global thermal outputs and the SOE impedance branch remain frozen. It uses the same 36G/11G development split and does not access the sealed six-case holdout. The free-loop initialization score is 16.2292%, matching the selected tangent development result. Current XEnergy process: `job-40`.
 
 The tangent restore path and multi-geometry training integration pass the focused tests (8 passed). After fine-tuning, compare the best checkpoint with the frozen six-case holdout and the V5 baseline before deciding whether rank48 can replace V5.
+
+## 10. Geometry-conditioned V3 tangent comparison — 2026-11-19
+
+A geometry-conditioned V3 tangent was trained with the same 36-geometry/108-history training split and 11-geometry/33-history development split used by V4. V3 uses compact physical descriptors (coil geometry, relative translation, package dimensions and thermal parameters) together with the 32 global and 16 appended skin states. TX self, mutual and RX corrections remain separate.
+
+| Metric | V4 geometry-free | V3 geometry-conditioned |
+|---|---:|---:|
+| Best development dynamic-Z error | 16.2292% | **16.1513%** |
+| Current error | 7.8807% | 7.8813% |
+| Temperature RMSE | 0.8230 K | 0.8232 K |
+| Maximum temperature error | 2.1326 K | 2.1337 K |
+| Maximum energy-budget residual | 2.38e-11 W | 2.37e-11 W |
+
+V3 reached its best development dynamic-Z error at epoch 120, reducing the common 17.1687% baseline by 5.93%. It is the preferred tangent for the next heat-head fine-tuning candidate. The V4 tangent fine-tune (job-40) is already running and will be retained as a comparison; the V3 fine-tune will use the same train/dev split, tangent loss and BFZI-free development selection. The frozen six-case/12-history dynamic set remains reserved for final independent evaluation.
+
+Report: runs/geomfrac_rank48_skin_tan_v3.json; checkpoint: runs/geomfrac_rank48_skin_tan_v3.pt on XEnergy.
