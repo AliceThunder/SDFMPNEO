@@ -256,8 +256,8 @@
       "energy_budget_max_W": 2.3773238914705602e-11
     },
     "joint_finetune": {
-      "status": "completed_no_improvement",
-      "job": "job-41",
+      "status": "running",
+      "job": "job-47",
       "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.pt",
       "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.json",
       "select": "free_dynamic_z",
@@ -268,12 +268,7 @@
       "dev_geometries": 11,
       "epochs": 80,
       "patience": 30,
-      "learning_rate": 0.0001,
-      "best_epoch": 0,
-      "epochs_trained": 70,
-      "best_dev_dynamic_z_rel_L2": 0.16229221445751005,
-      "selection_improvement_pct": 0,
-      "result": "Checkpoint retained the pre-finetune rank48 thermal head; extra16-only adaptation did not improve BFZI-free development selection."
+      "learning_rate": 0.0001
     },
     "focused_tests": {
       "status": "passed",
@@ -322,9 +317,25 @@
         "best_dev_dynamic_z_pct": 16.229221445751005,
         "improvement_pct": 0,
         "decision": "retained initialization; skin-only output adaptation insufficient"
+      },
+      {
+        "job": "job-41",
+        "status": "failed",
+        "note": "Process exited before first epoch log; stderr was not captured, so rerun with stderr redirection."
+      },
+      {
+        "job": "job-46",
+        "status": "completed_smoke",
+        "trainable": "complete thermal heat_head; SOE impedance branch frozen",
+        "epochs": 10,
+        "best_epoch": 0,
+        "initial_dev_dynamic_z_pct": 16.229221445751005,
+        "best_dev_dynamic_z_pct": 16.229221445751005,
+        "improvement_pct": 0,
+        "decision": "smoke run passed; no selection change expected from 10 epochs"
       }
     ],
-    "next": "Finish job-41 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout.",
+    "next": "Finish job-47 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout.",
     "joint_finetune_v3": {
       "status": "running",
       "job": "job-45",
