@@ -1,0 +1,106 @@
+{
+  "status": "complete",
+  "geometry_count": 6,
+  "history_count": 12,
+  "selected_geometry": [
+    "C0027",
+    "C0043",
+    "C0260",
+    "C0416",
+    "C0441",
+    "C0725"
+  ],
+  "model": "frozen geomfrac_et_v5_closed.pt",
+  "atlas": "runs/geomfrac_init_pose42_kell_36g_v1.npz",
+  "shape_mix": 0.5,
+  "results": {
+    "v5": {
+      "mean_dynamic_Z_pct": 26.560264002082327,
+      "per_geometry": {
+        "C0027": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 33.242564801675236
+        },
+        "C0043": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 18.92679441198128
+        },
+        "C0260": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 55.79175734803624
+        },
+        "C0416": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 14.338964416359856
+        },
+        "C0441": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 27.412671763352105
+        },
+        "C0725": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 9.64883127108927
+        }
+      }
+    },
+    "coldnet": {
+      "mean_dynamic_Z_pct": 23.1568429847763,
+      "per_geometry": {
+        "C0027": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 15.56985161864921
+        },
+        "C0043": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 22.29174660108939
+        },
+        "C0260": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 57.05870362667158
+        },
+        "C0416": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 11.241704661657396
+        },
+        "C0441": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 17.187729981355744
+        },
+        "C0725": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 15.591321419234452
+        }
+      }
+    },
+    "coldres": {
+      "mean_dynamic_Z_pct": 19.41417245034551,
+      "per_geometry": {
+        "C0027": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 20.35729396994669
+        },
+        "C0043": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 12.885581490853834
+        },
+        "C0260": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 52.50465521923622
+        },
+        "C0416": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 8.429339581019764
+        },
+        "C0441": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 7.102473207207141
+        },
+        "C0725": {
+          "histories": 2,
+          "mean_dynamic_Z_pct": 15.205691233809437
+        }
+      }
+    }
+  },
+  "decision": "diagnostic only; no network weights or hyperparameters selected using these dynamic labels"
+}
