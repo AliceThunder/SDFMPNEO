@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Finish job-34 rank48 thermal training; fit rank48 direct-skin tangent on 36G/11G; use tangent loss and free_dynamic_z selection to fine-tune; compare base ZFix and direct rank48 tangent on frozen six-case holdout.",
+  "next": "Complete job-35 rank48 direct-skin tangent fitting; fine-tune rank48 heat head with this tangent and tangent loss; evaluate both base ZFix and direct rank48 tangent on the frozen six dynamic holdouts.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -214,20 +214,41 @@
     },
     "thermal_training": {
       "job": "job-34",
-      "status": "running",
+      "status": "completed",
       "model": "runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt",
       "report": "runs/geomfrac_et_pose42_kell_r48_thermal_v1.json",
       "select": "thermal",
-      "initial_dev_max_temperature_K": 2.388428,
+      "initial_dev_max_temperature_K": 2.3884282841610194,
       "epoch50_dev_max_temperature_K": 1.964681,
       "best_epoch_at_last_update": 50,
-      "improvement_pct": 17.7
+      "improvement_pct": 17.741662538984716,
+      "best_epoch": 50,
+      "epochs_trained": 90,
+      "best_dev_max_temperature_K": 1.9646813979995084,
+      "worst_history_max_temperature_K": 7.679931588722923,
+      "dev_histories": 33,
+      "dev_dynamic_Z_mean_rel_L2": 0.163030615901649,
+      "initial_rank48_dynamic_Z_mean_rel_L2": 0.15908608000380015,
+      "checkpoint": "runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt"
     },
     "skin_tangent": {
       "trainer": "examples/bfzi_geom_rank48_skintan.py",
       "adapter": "sdfmpneo_bfzi.geom_skintan.restore_rank48",
       "training_integration": "examples/bfzi_geom_multi.py --skin-tangent-model",
-      "feature_source": "direct predicted rank48 states 32:48"
+      "feature_source": "direct predicted rank48 states 32:48",
+      "status": "training_running",
+      "job": "job-35",
+      "pid": 22480,
+      "model": "runs/geomfrac_rank48_skin_tan_v1.pt",
+      "report": "runs/geomfrac_rank48_skin_tan_v1.json",
+      "train_geometries": 36,
+      "dev_geometries": 11,
+      "train_histories": 108,
+      "dev_histories": 33,
+      "epochs": 160,
+      "eval_every": 10,
+      "patience": 40,
+      "learning_rate": 0.0008
     }
   }
 }
