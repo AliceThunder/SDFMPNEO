@@ -89,6 +89,7 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
     profile=dict(import_sec=import_sec,originals_sec=orig_sec,
                  lead_check_sec=gap_sec,create_sec=create_sec,
                  create_report_sec=float(info.get('bfzi_prep_sec',0.)),
+                 create_detail=dict(info.get('prep_profile',{})),
                  adapter_sec=adapter_sec,adapter_detail=dict(em.profile),
                  solve_sec=solve_sec,save_sec=save_sec,
                  total_sec=time.perf_counter()-t_all,
