@@ -376,6 +376,8 @@ def main():
                  copper_z_loss_weight=a.cu_z_weight,
                  free_heat_op=a.free_heat_op,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
+                 skin_tangent_model=str(a.skin_tangent_model) if a.skin_tangent_model else None,
+                 skin_tangent_base=str(a.skin_tangent_base) if a.skin_tangent_model else None,
                  tangent_loss_weight=a.tangent_loss_weight,
                  history_weight=a.history_weight,
                  optimizer='AdamW',weight_decay=a.weight_decay,
