@@ -204,7 +204,8 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     port=geom_port(geom)
     g=torch.as_tensor(feat[None],dtype=torch.float32)
     if extra is not None:
-        eg=torch.as_tensor(encode(case)[None],dtype=g.dtype)
+        eg=(g if getattr(extra,'shared_geom',False) else
+            torch.as_tensor(encode(case)[None],dtype=g.dtype))
         def ext_fn(state,tm,vin):
             tim=torch.as_tensor([[tm]],dtype=g.dtype)
             vol=torch.as_tensor([[vin]],dtype=g.dtype)
