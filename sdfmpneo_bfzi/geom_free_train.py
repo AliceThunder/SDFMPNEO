@@ -1,7 +1,7 @@
 """Differentiable BFZI-free electothermal rollout matching geom_free.rollout.
 
 Atlas, port models and impedance tangent are frozen. Gradients reach the
-GeomFracET thermal head through the circuit and implicit 32-state heat update.
+GeomFracET thermal head through the circuit and implicit shared-rank heat update.
 """
 from __future__ import annotations
 
