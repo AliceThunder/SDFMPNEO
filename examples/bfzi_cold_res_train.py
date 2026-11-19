@@ -56,7 +56,8 @@ def score(rows,port,mut,exts):
 
 
 def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
-        batch=64,patience=85,seed=41,current_weight=.5):
+        batch=64,patience=85,seed=41,current_weight=.5,
+        init_model=None,rx_only=False):
     torch.manual_seed(seed)
     torch.set_num_threads(2)
     tr=list(new.get('train',[]))+list(old.get('train',[]))
@@ -90,7 +91,12 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                                      dtype=np.float32))
     ys=np.maximum(yy.std(0),np.array([.01,.1],
                                     dtype=np.float32))
-    net=ColdRes(base_path,xm,xs,ys)
+    net=ColdRes.load(init_model) if init_model else ColdRes(base_path,xm,xs,ys)
+    if net.base_path!=base_path:
+        raise ValueError('warm-start model uses a different PortSelf base')
+    if rx_only:
+        for param in net.head[0].parameters():
+            param.requires_grad_(False)
     t=torch.as_tensor(inp,dtype=torch.float32)
     y=torch.as_tensor(yy,dtype=torch.float32)
     base_z=[]
@@ -104,7 +110,8 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
     base_z=torch.as_tensor(np.asarray(base_z),dtype=torch.float32)
     current_ref=torch.as_tensor(np.asarray(current_ref),dtype=torch.complex64)
     ext_t=torch.as_tensor(ext_list,dtype=torch.complex64)
-    opt=torch.optim.AdamW(net.parameters(),lr=lr,weight_decay=5e-4)
+    opt=torch.optim.AdamW((p for p in net.parameters() if p.requires_grad),
+                          lr=lr,weight_decay=5e-4)
     ref=score(old_dev,frozen,mut,ext_list)
     def metric():
         net.eval()
@@ -113,8 +120,10 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
         key=o['cold_current_pct']+.5*n['cold_current_pct']+.4*o['cold_Z_pct']+.2*n['cold_Z_pct']
         return key,o,n
     ref_new=score(dev,frozen,mut,ext_list) if dev else None
-    best=ref['cold_current_pct']+.5*(ref_new['cold_current_pct'] if ref_new else 0.)
-    best+=.4*ref['cold_Z_pct']+.2*(ref_new['cold_Z_pct'] if ref_new else 0.)
+    init_old=score(old_dev,net,mut,ext_list) if init_model else ref
+    init_new=score(dev,net,mut,ext_list) if init_model and dev else ref_new
+    best=init_old['cold_current_pct']+.5*(init_new['cold_current_pct'] if init_new else 0.)
+    best+=.4*init_old['cold_Z_pct']+.2*(init_new['cold_Z_pct'] if init_new else 0.)
     best_ep=0
     weights=copy.deepcopy(net.state_dict())
     hist=[]
@@ -178,6 +187,9 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                                              net,mut,ext_list),
                 current_loss_weight=float(current_weight),
                 external_network_families=len(ext_list),
+                warm_start=init_model,rx_only=bool(rx_only),
+                initial_candidate_old_dev=init_old if init_model else None,
+                initial_candidate_new_dev=init_new if init_model else None,
                 history=hist)
 
 
@@ -196,10 +208,14 @@ def main():
     p.add_argument('--epochs',type=int,default=400)
     p.add_argument('--batch',type=int,default=64)
     p.add_argument('--current-weight',type=float,default=.5)
+    p.add_argument('--init-model',type=Path,default=None)
+    p.add_argument('--rx-only',action='store_true')
     a=p.parse_args()
     res=fit(_read(a.data),_read(a.old),_read(a.config),
             out=str(a.out),epochs=a.epochs,batch=a.batch,
-            current_weight=a.current_weight)
+            current_weight=a.current_weight,
+            init_model=str(a.init_model) if a.init_model else None,
+            rx_only=a.rx_only)
     a.report.write_text(json.dumps(res,indent=2)+'\n',encoding='utf-8')
     o=res['residual_old_dev']
     print('RES_RESULT','best',res['best_epoch'],'train',res['train_geometries'],
