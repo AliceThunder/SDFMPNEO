@@ -1,0 +1,48 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_C0416_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0416_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0416_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0725_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0725_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0725_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V7D0001_ultra_v7core_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V7D0001_ultra_v7core_drive1.npz",
+        "runs\\bfzi_s5_V7D0001_ultra_v7core_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V7D0002_ultra_v7core_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V7D0002_ultra_v7core_drive1.npz",
+        "runs\\bfzi_s5_V7D0002_ultra_v7core_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V7D0003_ultra_v7core_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V7D0003_ultra_v7core_drive1.npz",
+        "runs\\bfzi_s5_V7D0003_ultra_v7core_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V7D0004_ultra_v7core_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V7D0004_ultra_v7core_drive1.npz",
+        "runs\\bfzi_s5_V7D0004_ultra_v7core_drive2.npz"
+      ]
+    }
+  ]
+}
