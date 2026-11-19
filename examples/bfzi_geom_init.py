@@ -166,7 +166,8 @@ def main():
               requires_FV_operator_at_query=False,
               outputs=['cold Z0','air-inductance tuple',
                        'five material heat capacities',
-                       '32D thermal K','32x3 cold weak-source coefficients',
+                       f'{a.rank}D thermal K',
+                       f'{a.rank}x3 cold weak-source coefficients',
                        'external circuit'])
     a.out.parent.mkdir(parents=True,exist_ok=True)
     model.save(a.out)
