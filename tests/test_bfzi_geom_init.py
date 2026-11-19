@@ -130,3 +130,13 @@ def test_thermal_kernel_bandwidth_is_independent_and_persistent(tmp_path):
     restored=GeomInit.load(tmp_path/'local.npz')
     assert restored.kell==.6
     assert np.allclose(restored.predict(q)['k'],b['k'])
+
+
+def test_copper_balance_accepts_rank48_operator():
+    from sdfmpneo_bfzi.geom_init import balance_cu
+    init=dict(cap=np.array([1e5,500.,500.,20.,20.]),
+              k=np.eye(48)*.01)
+    got=balance_cu(init)
+    assert got['k'].shape==(48,48)
+    assert np.allclose(got['k'],got['k'].T)
+    assert np.linalg.eigvalsh(got['k'])[0]>0
