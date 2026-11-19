@@ -150,19 +150,27 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
     # Each operator is called directly from original BFZI; no alternate
     # geometry generator, approximation to the source, or FEM mesh.
     t0=time.perf_counter()
+    prep={}
     fs=bf.fs
+    t=time.perf_counter()
     families=[bf._strict_family(c,cfg) for c in coils]
     mu=float(fs.PhysicalConstants().mu)
     omega=float(original.OMEGA) if hasattr(original,"OMEGA") else (
         2.*np.pi*float(sample["frequency_hz"]))
     sigma=float(bf.SIGMA_SPM)
+    prep["family_sec"]=time.perf_counter()-t
+    t=time.perf_counter()
     points,vol,volume_meta,records=(
         fs._build_v33_rectangular_sea_volume_cells_integrated(coils,cfg))
+    prep["grid_sec"]=time.perf_counter()-t
+    prep["obb_sec"]=0.
     if sea_void=="oriented":
         from sdfmpneo_bfzi.sea_obb import build as obb_build
+        t=time.perf_counter()
         points,vol,volume_meta,records=obb_build(
             fs,records,volume_meta,coils,sample,cfg,
             max_nodes=grid_max_nodes)
+        prep["obb_sec"]=time.perf_counter()-t
         # Original rectangular subbox self quadrature is incompatible
         # with a rotated polyhedral cut; use original volume-sphere mode.
         cfg=dict(cfg,ENV_G_SELF_MODE="equal_volume_sphere")
@@ -175,10 +183,14 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
     if volume_meta.get("downsampled",False):
         raise ValueError("BFZI native sea grid exceeds node budget; "
                          "increase grid cell size to preserve exact FV volumes")
+    t=time.perf_counter()
     G0,gmeta=bf._build_G0_volume_matrix_near_integrated(
         points,vol,records or [],cfg=cfg,near_layers=1)
+    prep["green_sec"]=time.perf_counter()-t
+    t=time.perf_counter()
     C=[bf.base.source_to_volume_records_centerline_family_zlead(
         records or [],fam,cfg)[0] for fam in families]
+    prep["source_projection_sec"]=time.perf_counter()-t
     data=dict(points=points,volumes=vol,records=records,
               vw=(1j*omega*mu*sigma)*np.asarray(vol,float),
               C=C,G0=np.asarray(G0,complex),
@@ -216,6 +228,7 @@ def create(bf,original,sid="M4",*,alpha=None,core_mm=None,
                  sea_cells=len(points),
                  sea_void_model=sea_void,
                  sea_volume_relative_error=volume_meta["relative_volume_error"],
+                 prep_profile=dict(prep),
                  bfzi_prep_sec=time.perf_counter()-t0)
     return data,details
 
