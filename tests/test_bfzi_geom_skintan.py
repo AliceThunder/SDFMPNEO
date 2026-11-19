@@ -108,3 +108,32 @@ def test_v4_tangent_ignores_geometry_and_keeps_port_heads():
     assert y.shape==(3,6)
     assert torch.allclose(y,y2,atol=1e-7,rtol=0)
     assert torch.isfinite(y).all()
+
+
+def test_rank48_skin_tangent_uses_direct_skin_coordinates(tmp_path):
+    from examples.bfzi_z_tangent import IDX,Tangent
+    from sdfmpneo_bfzi.geom_ztune import ZFix
+    from sdfmpneo_bfzi.geom_skintan import restore_rank48
+
+    base=tmp_path/'base.pt'
+    zfix=tmp_path/'zfix.pt'
+    skin=tmp_path/'skin.pt'
+    sa=np.ones(32);ss=np.ones(16);sy=np.ones(14)
+    tan=Tangent(ng=45,nmode=len(IDX))
+    torch.save(dict(state=tan.state_dict(),ng=45,idx=IDX,
+        sa=torch.as_tensor(sa),sy=torch.as_tensor(sy)),base)
+    znet=ZFix(ng=45,sa=sa)
+    torch.save(dict(state=znet.state_dict(),ng=45,sa=torch.as_tensor(sa),
+        sy=torch.as_tensor(sy),base=str(base)),zfix)
+    snet=SkinTan(ng=45,sa=sa,ss=ss)
+    torch.save(dict(state=snet.state_dict(),ng=45,model_version='v1',
+        sa=torch.as_tensor(sa),ss=torch.as_tensor(ss),
+        sy=torch.as_tensor(sy)),skin)
+    predict=restore_rank48(skin,zfix)
+    g=torch.zeros((2,45))
+    a=torch.zeros((2,48))
+    out=predict(g,a,30.,8.)
+    assert predict.time_conditioned
+    assert out.shape==(2,6)
+    assert torch.isfinite(out).all()
+    assert torch.allclose(out,torch.zeros_like(out))
