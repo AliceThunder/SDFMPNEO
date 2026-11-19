@@ -103,7 +103,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
         if oracle_heat!='none' or oracle_cold:
             from sdfmpneo_bfzi.geom_heat import GeomHeat
             from examples.bfzi_geom_init import pack as cold_pack
-            teacher=cold_pack(GeomHeat.load(spec['anchor']),case,name)
+            teacher=cold_pack(GeomHeat.load(spec['anchor']),case,name,rank=net.rank)
             init=dict(init)
             if oracle_cold:
                 init['z0']=teacher['y'][:6].copy()
