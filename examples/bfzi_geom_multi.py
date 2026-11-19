@@ -242,7 +242,7 @@ def main():
               PortSelf.load(cfg['port_self_model']),
               MutFix.load(cfg['mutual_model']),
               SrcFix.load(cfg['source_model']),
-              load_z(cfg['z_fix_model']),float(cfg['shape_mix']))
+              (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),float(cfg['shape_mix']))
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=(0. if a.rank48_extra_only else a.weight_decay))
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
