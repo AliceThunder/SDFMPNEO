@@ -149,3 +149,9 @@ The V4 tangent fine-tune (job-40) trained only the appended 16 skin-mode output 
 A one-epoch smoke test (job-43) passed with the V3 tangent and confirmed an initial BFZI-free development score of 0.161513. The full run (job-45) uses the better V3 geometry-conditioned tangent and trains the complete heat_head, while keeping the SOE dynamics frozen. It uses the same 36G/11G split, tangent loss 1.0, full dynamic-Z loss 0.5, thermal loss 0.03, closed-loop source warmup/ramp 10/20, batch size 12 and BFZI-free development selection. Learning rate is reduced to 1e-4. The training loss now reuses predicted tangent outputs and batches teacher-state tangent targets.
 
 After job-42, the selected checkpoint will be evaluated on the frozen six-case/12-history dynamic set against the official V5 and the pre-finetune rank48 model. V5 remains the official model until the independent comparison passes.
+
+## 12. V3 full heat-head fine-tune restart — 2026-11-19
+
+The first full heat-head run with the V3 geometry-conditioned tangent (job-45) stopped with exit code 1. Its retained stdout showed epoch 50 training loss 1.415099, validation loss 3.726958 and BFZI-free development dynamic-Z error 17.5201%, worse than the 16.1513% initialization. The best selected epoch remained 0. No model checkpoint or report was created. The job output did not retain stderr/traceback, so the exact process exception is unknown.
+
+A restarted run (job-48) keeps the same 36G/11G geometry split, 108/33 histories, full heat_head training, SOE trunk freeze, thermal and full dynamic-Z losses, and BFZI-free development selection. It reduces learning rate from 1e-4 to 2e-5 and tangent-loss weight from 1.0 to 0.5. The command redirects stdout and stderr to `runs/geomfrac_et_pose42_kell_r48_tangent_v3.log` so any process error is retained. Initial development selection remains 16.1513%; V5 stays official until a frozen six-case/12-history independent comparison demonstrates improvement.
