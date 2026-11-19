@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "replaced": "V7T0121",
+      "replacement": {
+        "name": "V7T0996",
+        "stratum": "core",
+        "geometry": {
+          "alpha1": 0.824,
+          "alpha2": 0.9773,
+          "core1_mm": 12,
+          "core2_mm": 12,
+          "shift_mm": [
+            -2,
+            83,
+            -6
+          ],
+          "tilt_deg": 16,
+          "yaw_deg": 4,
+          "pitch_deg": 4,
+          "box1_mm": 220,
+          "box2_mm": 228
+        }
+      },
+      "reason": "Original oriented package exceeded BFZI seawater tank; replacement passed native BFZI create() geometry construction."
+    }
+  ]
+}
