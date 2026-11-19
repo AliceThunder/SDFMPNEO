@@ -1,0 +1,144 @@
+{
+  "version": 7,
+  "status": "cold_training_completed_dynamic_acceptance_in_progress",
+  "train_reference": {
+    "new": {
+      "train": 995,
+      "val": 150,
+      "test": 150
+    },
+    "merged": {
+      "train": {
+        "total": 1500,
+        "strata": {
+          "boundary": 300,
+          "core": 1050,
+          "extreme": 150
+        }
+      },
+      "val": {
+        "total": 228,
+        "strata": {
+          "core": 130,
+          "boundary": 76,
+          "extreme": 22
+        }
+      },
+      "test": {
+        "total": 226,
+        "strata": {
+          "boundary": 85,
+          "core": 120,
+          "extreme": 21
+        }
+      }
+    },
+    "total_unique": 1954
+  },
+  "domain": {
+    "threshold": 2.648601668229946,
+    "train_core": 1050,
+    "val_core": 130,
+    "validation": {
+      "core": 130,
+      "accepted": 123,
+      "rate": 0.9461538461538461,
+      "nn_p50": 2.220240378750755
+    },
+    "test": {
+      "core": 120,
+      "accepted": 113,
+      "rate": 0.9416666666666667,
+      "nn_p50": 2.169219258076256
+    }
+  },
+  "cold": {
+    "checkpoint": "runs/geomfrac_cold_v7.pt",
+    "best_epoch": 590,
+    "epochs_trained": 600,
+    "n_circuits": 2,
+    "val": {
+      "cold_Z_pct": 0.13432688846969668,
+      "air_L_pct": 0.1351671073694472,
+      "current_pct": 1.7104006356244803
+    },
+    "test": {
+      "cold_Z_pct": 0.14667831377177093,
+      "air_L_pct": 0.1476008440825371,
+      "current_pct": 1.8222535441362209
+    },
+    "by_test": {
+      "core": {
+        "geometries": 120,
+        "cold_Z_pct": 0.1106190776065031,
+        "air_L_pct": 0.11130562986252172,
+        "current_pct": 1.3568625381391692
+      },
+      "boundary": {
+        "geometries": 85,
+        "cold_Z_pct": 0.18909204943829114,
+        "air_L_pct": 0.19029112404436058,
+        "current_pct": 2.5396580723231756
+      },
+      "extreme": {
+        "geometries": 21,
+        "cold_Z_pct": 0.18105644749452876,
+        "air_L_pct": 0.18220807787524437,
+        "current_pct": 1.5778504881245496
+      }
+    }
+  },
+  "core_dynamic": {
+    "geometries": [
+      "C0416",
+      "C0725"
+    ],
+    "histories": 4,
+    "pending_new_geometries": 4,
+    "pending_histories": 8,
+    "v5": {
+      "dynamic_z_pct": 10.234795013061495,
+      "current_pct": 6.326716690570905,
+      "temp_rmse_K": 0.44614175767694564,
+      "temp_max_K": 1.3814401143195738,
+      "sea_power_pct": 48.207328958735424,
+      "copper_power_pct": 11.334657650867868
+    },
+    "coldnet": {
+      "dynamic_z_pct": 13.274120622109642,
+      "current_pct": 4.989210367579623,
+      "temp_rmse_K": 0.33382164816097076,
+      "temp_max_K": 0.9726232359582099,
+      "sea_power_pct": 25.323546125830465,
+      "copper_power_pct": 7.3008299716809635
+    },
+    "coldres": {
+      "dynamic_z_pct": 10.868967740314853,
+      "current_pct": 3.2425872529699618,
+      "temp_rmse_K": 0.38313857657289174,
+      "temp_max_K": 1.2513713079409001,
+      "sea_power_pct": 34.731832476142564,
+      "copper_power_pct": 4.527122917250663
+    },
+    "cold_v7": {
+      "dynamic_z_pct": 11.248633274235582,
+      "current_pct": 0.587914427009576,
+      "temp_rmse_K": 0.3299377864287274,
+      "temp_max_K": 1.0176173114194569,
+      "sea_power_pct": 29.53973906512112,
+      "copper_power_pct": 1.2260506247382583
+    },
+    "domain_rejected": [
+      "C0441",
+      "C0043",
+      "C0027",
+      "C0260"
+    ],
+    "additional_plan": "runs/geomfrac_cold_v7_dyn_plan.json",
+    "additional_job": "job-81"
+  },
+  "flags": {
+    "dynamic_full_acceptance_complete": false,
+    "parallel_residual_experiment_started": false
+  }
+}
