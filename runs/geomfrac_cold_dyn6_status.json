@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Finish job-40 V4 tangent heat-head fine-tune; then run the same rank48 heat-head fine-tune with the better V3 geometry-conditioned tangent, select on the 11G development set, and evaluate the selected checkpoint once on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline.",
+  "next": "Finish job-42 V3 full-heat-head tangent fine-tune; if the 11G development set improves, evaluate the selected checkpoint once on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline. Promote only after independent improvement.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -152,7 +152,7 @@
     "runs/geomfrac_cold_dyn6_basis.json"
   ],
   "rank48": {
-    "status": "rank48_full_thermal_head_tangent_finetune_running",
+    "status": "V3_full_heat_head_tangent_finetune_running",
     "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
     "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
     "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
@@ -256,7 +256,7 @@
       "energy_budget_max_W": 2.3773238914705602e-11
     },
     "joint_finetune": {
-      "status": "running",
+      "status": "completed_no_improvement",
       "job": "job-41",
       "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.pt",
       "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.json",
@@ -268,7 +268,12 @@
       "dev_geometries": 11,
       "epochs": 80,
       "patience": 30,
-      "learning_rate": 0.0001
+      "learning_rate": 0.0001,
+      "best_epoch": 0,
+      "epochs_trained": 70,
+      "best_dev_dynamic_z_rel_L2": 0.16229221445751005,
+      "selection_improvement_pct": 0,
+      "result": "Checkpoint retained the pre-finetune rank48 thermal head; extra16-only adaptation did not improve BFZI-free development selection."
     },
     "focused_tests": {
       "status": "passed",
@@ -319,6 +324,30 @@
         "decision": "retained initialization; skin-only output adaptation insufficient"
       }
     ],
-    "next": "Finish job-41 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout."
+    "next": "Finish job-41 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout.",
+    "joint_finetune_v3": {
+      "status": "running",
+      "job": "job-42",
+      "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.pt",
+      "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.json",
+      "tangent_model": "runs/geomfrac_rank48_skin_tan_v3.pt",
+      "tangent_variant": "v3 geometry-conditioned compact physical descriptors",
+      "select": "free_dynamic_z",
+      "trainable": "full heat_head",
+      "tangent_loss_weight": 1,
+      "zrel_weight": 0.5,
+      "train_geometries": 36,
+      "dev_geometries": 11,
+      "train_histories": 108,
+      "dev_histories": 33,
+      "epochs": 100,
+      "patience": 40,
+      "learning_rate": 0.0001,
+      "closed_warmup": 10,
+      "closed_ramp": 20,
+      "therm_weight": 0.03,
+      "batch_hist": 12,
+      "val_every": 10
+    }
   }
 }
