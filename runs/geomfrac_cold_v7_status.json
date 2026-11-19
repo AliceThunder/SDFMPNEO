@@ -101,7 +101,12 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 1295
+    "remaining_new_references": 1295,
+    "completed": 43,
+    "failed_count": 0,
+    "last_sample": "V7T0043",
+    "last_sample_seconds": 16.2,
+    "last_checked_at": "2026-11-19T17:30:00+08:00"
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -109,5 +114,19 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Complete job-69, then run offset 400, 800, and 1200 batches; merge 1500/228/226 dataset; train unified ColdNet; calibrate domain gate; run frozen rank48 dynamic acceptance."
+  "next": "Continue job-69 to 400 references. Then process offsets 400, 800, 1200, retry only failed references if any, merge, train V7, calibrate domain, and run frozen rank48 dynamic acceptance.",
+  "code_fixes": [
+    {
+      "file": "sdfmpneo_bfzi/geom_cold_domain.py",
+      "issue": "domain gate compared standardized query features with unstandardized training features",
+      "fix": "store standardized core training features; create output parent directory",
+      "commit": "8785b93c006892c39b28a7e2b61cb81347d75c97",
+      "verification": "py_compile passed; domain fit/save/load/check smoke passed"
+    }
+  ],
+  "smoke_tests": {
+    "python_compile": "passed",
+    "domain_gate": "passed; 889 core train / 105 core validation; training point accepted",
+    "unified_cold_trainer": "passed; 24 train / 6 validation / 6 test, 10-epoch smoke"
+  }
 }
