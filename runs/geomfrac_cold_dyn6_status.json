@@ -152,7 +152,7 @@
     "runs/geomfrac_cold_dyn6_basis.json"
   ],
   "rank48": {
-    "status": "V4_joint_finetune_running_V3_tangent_candidate_ready",
+    "status": "rank48_full_thermal_head_tangent_finetune_running",
     "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
     "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
     "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
@@ -257,20 +257,18 @@
     },
     "joint_finetune": {
       "status": "running",
-      "job": "job-40",
-      "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v1.pt",
-      "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v1.json",
+      "job": "job-41",
+      "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.pt",
+      "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v2.json",
       "select": "free_dynamic_z",
       "initial_dev_dynamic_z_rel_L2": 0.16229221445751005,
-      "trainable": "only appended 16 skin-mode heat-head outputs",
+      "trainable": "complete thermal heat_head; SOE impedance branch frozen",
       "tangent_loss_weight": 1,
       "train_geometries": 36,
       "dev_geometries": 11,
       "epochs": 80,
-      "patience": 40,
-      "learning_rate": 0.0002,
-      "tangent_variant": "v4 geometry-free port-factorized tangent",
-      "tangent_model": "runs/geomfrac_rank48_skin_tan_v1.pt"
+      "patience": 30,
+      "learning_rate": 0.0001
     },
     "focused_tests": {
       "status": "passed",
@@ -307,6 +305,20 @@
     "training_optimizations": [
       "Reuse predicted tangent for source, full-Z and tangent losses",
       "Batch teacher-state tangent targets once per history"
-    ]
+    ],
+    "joint_finetune_attempts": [
+      {
+        "job": "job-40",
+        "status": "completed",
+        "trainable": "only appended 16 skin-mode heat-head outputs",
+        "epochs": 70,
+        "best_epoch": 0,
+        "initial_dev_dynamic_z_pct": 16.229221445751005,
+        "best_dev_dynamic_z_pct": 16.229221445751005,
+        "improvement_pct": 0,
+        "decision": "retained initialization; skin-only output adaptation insufficient"
+      }
+    ],
+    "next": "Finish job-41 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout."
   }
 }
