@@ -44,6 +44,7 @@ class ColdResPose(nn.Module):
         obj=cls(old.base_path,xm,xs,old.ys,hidden)
         with torch.no_grad():
             for j in range(2):
+                obj.head[j][0].weight[:,5:].zero_()
                 obj.head[j][0].weight[:,:5].copy_(old.head[j][0].weight)
                 obj.head[j][0].bias.copy_(old.head[j][0].bias)
                 obj.head[j][2].load_state_dict(old.head[j][2].state_dict())
