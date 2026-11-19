@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from ast import literal_eval
 from itertools import product
 from types import SimpleNamespace
+import time
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
@@ -242,13 +243,17 @@ class BFZIV148Adapter:
         self.vol = np.asarray(data["volumes"],float)
         self.points = np.asarray(data["points"],float)
         self.sigma0 = float(data["sample"]["sigma_sw_s_per_m"])
+        self.profile={}
+        t0=time.perf_counter()
         self.proj = calc.core.StrictFVScalarPotentialProjector(
             data["records"] or [],self.points,variant="fv_internal_only")
         if fv_faces=="exact":
             from .obb_faces import apply
             self.proj=apply(self.proj,data["records"],data["vol_meta"])
+        self.profile["projector_sec"]=time.perf_counter()-t0
         if int(source_order)!=source_order or source_order<3:
             raise ValueError("source quadrature order must be at least 3")
+        t0=time.perf_counter()
         result = _mass(data,calc,order=int(source_order),mask=source_mask,
                        source_radius=source_radius)
         self.mass,self.subcells=(result if source_mask=="subcell"
@@ -262,15 +267,19 @@ class BFZIV148Adapter:
             # solve and in the exact source covariance subtraction.
             self.base["C"]=[self.source_mean[:,p,:].copy()
                             for p in range(len(data["families"]))]
+        self.profile["source_mass_sec"]=time.perf_counter()-t0
         if sea_only:
-            # M4 isothermal gate tests only the sea solver. Its expensive
-            # Neumann/GMD air calculation is needed for the time history.
             self.air = np.zeros((2,2),float)
             self.copper = None
             self.lead_copper = None
+            self.profile["air_sec"]=0.
+            self.profile["copper_setup_sec"]=0.
             return
+        t0=time.perf_counter()
         self.air_uH,_ = calc.compute_air_matrix_direct_zlead(data)
         self.air = np.asarray(self.air_uH,float)*1e-6
+        self.profile["air_sec"]=time.perf_counter()-t0
+        t0=time.perf_counter()
         wind=[]
         leads=[]
         assemblies=[]
@@ -293,6 +302,7 @@ class BFZIV148Adapter:
             scene,self.omega/(2*np.pi),tuple(wind),self.air)
         self.lead_copper=BFZISources(
             scene,self.omega/(2*np.pi),tuple(leads),self.air)
+        self.profile["copper_setup_sec"]=time.perf_counter()-t0
 
     def source_at(self, points):
         """Original BFZI two-port centerline plus z-lead at physical points."""
