@@ -103,9 +103,9 @@
     "remaining_new_references": 712,
     "completed": 400,
     "failed_count": 2,
-    "last_sample": "V7T0610",
+    "last_sample": "V7T0624",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:45:00+08:00",
+    "last_checked_at": "2026-11-19T19:48:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -138,7 +138,7 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 208,
+    "current_batch_completed": 222,
     "completed_total": 583,
     "successful_attempts": 583
   },
