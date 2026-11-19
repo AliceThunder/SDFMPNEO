@@ -1,0 +1,51 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_C0441_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0441_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0441_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0043_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0043_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0043_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0416_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0416_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0416_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0027_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0027_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0027_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0725_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0725_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0725_ultra_cold_dyn6_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_C0260_ultra_cold_dyn6_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_C0260_ultra_cold_dyn6_drive1.npz",
+        "runs\\bfzi_s5_C0260_ultra_cold_dyn6_drive2.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 300
+}
