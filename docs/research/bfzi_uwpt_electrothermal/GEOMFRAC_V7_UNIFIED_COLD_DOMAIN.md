@@ -199,13 +199,17 @@ examples/bfzi_cold_generate.py 支持 --offset 与 --limit，以批次方式续�
 
 ### 阶段 D：动态电磁热独立验收
 
-使用冻结 rank48 热模型、Atlas、SrcFix 和皮肤切线，在原六组独立几何、12 条动态历史上进行同配置对照。
+原六组动态几何中，按 V7 参数域规则只有 C0416、C0725 属于核心域；C0441、C0043、C0027、C0260 属于边界域。原六组保留为历史对照和边界压力测试。
 
-- V7 冷态路径使用统一 ColdNet，不再调用 MutFix。
-- 正式动态精度统计只计入适用域判定通过的核心几何。
-- 边界/极端几何单独记录离线压力测试结果，域外样本不进入正式推理。
-- 比较动态阻抗、电流、材料温度误差及能量预算。
-- 只有核心域静态精度、动态闭环精度和热学守恒同时通过，才升级 V7 正式模型。
+正式动态验收使用六组核心几何：
+
+- 保留已有核心动态参考 C0416、C0725。
+- 从 V7 独立冷态测试集的核心域样本中，依据适用域判定和几何覆盖度选择四组新几何。
+- 通过 examples/bfzi_cold_v7_dyn_plan.py 冻结六组计划。
+- 使用原 BFZI V150 S5 动态直接法生成新四组参考，复用已有 C0416/C0725 参考。
+- 使用 examples/bfzi_cold_v7_dyn_manifest.py 形成只包含六组核心几何的独立动态 manifest。
+
+统一使用冻结 rank48 热模型、Atlas、SrcFix 和皮肤切线进行同配置对照。V7 冷态路径使用统一 ColdNet，不再调用 MutFix。正式动态精度统计只计入适用域判定通过的核心几何；边界/极端几何单独记录离线压力测试结果。比较动态阻抗、电流、材料温度误差及能量预算。只有核心域静态精度、六组核心动态闭环精度和热学守恒同时通过，才升级 V7 正式模型。
 
 ## 6. 执行顺序与当前状态
 
@@ -228,6 +232,12 @@ examples/bfzi_cold_generate.py 支持 --offset 与 --limit，以批次方式续�
 
     python -m examples.bfzi_cold_v7_domain
 
-    python -m examples.bfzi_cold_dyn6_rank_eval --config runs\geomfrac_free_rank48_selection.json --thermal-model runs\geomfrac_et_pose42_kell_r48_thermal_v1.pt --skin-tan-model runs\geomfrac_rank48_skin_tan_v3.pt --cold-v7 runs\geomfrac_cold_v7.pt --domain runs\geomfrac_cold_v7_domain.json --out runs\geomfrac_cold_dyn6_v7_eval.json
+    python -m examples.bfzi_cold_v7_dyn_plan --domain runs/geomfrac_cold_v7_domain.json
+
+    python -m examples.bfzi_s5_buildset --bfzi-root D:\work\geomfrac-s5-BFZI --plan runs/geomfrac_cold_v7_dyn_plan.json --tag cold_dyn6 --grid ultra --duration 300
+
+    python -m examples.bfzi_cold_v7_dyn_manifest
+
+    python -m examples.bfzi_cold_dyn6_rank_eval --plan runs/geomfrac_cold_v7_dyn_plan.json --manifest runs/geomfrac_s5_cold_v7_core_manifest.json --config runs/geomfrac_free_rank48_selection.json --thermal-model runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt --skin-tan-model runs/geomfrac_rank48_skin_tan_v3.pt --cold-v7 runs/geomfrac_cold_v7.pt --domain runs/geomfrac_cold_v7_domain.json --out runs/geomfrac_cold_dyn6_v7_eval.json
 
 V7 完成前，既有正式热模型与 V5 冷态模型继续作为回退基线。
