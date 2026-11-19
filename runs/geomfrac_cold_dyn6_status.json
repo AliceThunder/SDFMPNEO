@@ -327,7 +327,7 @@
     "next": "Finish job-41 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout.",
     "joint_finetune_v3": {
       "status": "running",
-      "job": "job-42",
+      "job": "job-45",
       "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.pt",
       "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.json",
       "tangent_model": "runs/geomfrac_rank48_skin_tan_v3.pt",
@@ -347,7 +347,25 @@
       "closed_ramp": 20,
       "therm_weight": 0.03,
       "batch_hist": 12,
-      "val_every": 10
+      "val_every": 10,
+      "initial_dev_dynamic_z_rel_L2": 0.16151314858360327,
+      "smoke_test": {
+        "job": "job-43",
+        "status": "passed",
+        "epochs": 1,
+        "exit_code": 0,
+        "initial_dev_dynamic_z_rel_L2": 0.16151314858360327
+      },
+      "previous_attempts": [
+        {
+          "job": "job-41",
+          "status": "failed_before_epoch"
+        },
+        {
+          "job": "job-42",
+          "status": "failed_before_epoch"
+        }
+      ]
     }
   }
 }
