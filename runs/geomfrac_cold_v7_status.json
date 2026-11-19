@@ -103,9 +103,9 @@
     "remaining_new_references": 895,
     "completed": 400,
     "failed_count": 0,
-    "last_sample": "V7T0417",
+    "last_sample": "V7T0423",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:10:00+08:00",
+    "last_checked_at": "2026-11-19T19:15:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -135,7 +135,7 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 17
+    "current_batch_completed": 23
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -221,6 +221,13 @@
     "min_self_resistance_ohm": 0.23000523465875214,
     "min_seawater_self_resistance_ohm": 0.10378527238322269,
     "min_air_inductance_eigenvalue_H": 0.000011849157263216824,
-    "result": "passed"
+    "result": "passed",
+    "port_matrix_passivity": {
+      "rows": 400,
+      "violations": 0,
+      "min_total_resistance_eigenvalue_ohm": 0.18748432659492884,
+      "min_sea_resistance_eigenvalue_ohm": 0.06088489432075099,
+      "min_air_inductance_eigenvalue_H": 0.000011849157263216824
+    }
   }
 }
