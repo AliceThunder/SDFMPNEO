@@ -102,11 +102,11 @@
     ],
     "batch_limit": 400,
     "remaining_new_references": 1295,
-    "completed": 57,
+    "completed": 68,
     "failed_count": 0,
-    "last_sample": "V7T0043",
-    "last_sample_seconds": 16.2,
-    "last_checked_at": "2026-11-19T17:30:00+08:00",
+    "last_sample": "V7T0068",
+    "last_sample_seconds": 15.38,
+    "last_checked_at": "2026-11-19T17:42:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19"
   },
@@ -165,6 +165,7 @@
     "plan_generator": "examples/bfzi_cold_v7_dyn_plan.py",
     "manifest_filter": "examples/bfzi_cold_v7_dyn_manifest.py",
     "selection": "four accepted core geometries from the frozen V7 cold test split, selected by geometry maximin coverage",
-    "status": "planned"
+    "status": "plan_generator_smoke_passed",
+    "smoke_plan": "runs/geomfrac_cold_v7_dyn_plan_smoke.json"
   }
 }
