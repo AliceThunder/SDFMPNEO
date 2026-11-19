@@ -228,13 +228,14 @@ def main():
     p.add_argument('--epochs',type=int,default=400)
     p.add_argument('--batch',type=int,default=64)
     p.add_argument('--current-weight',type=float,default=.5)
+    p.add_argument('--lr',type=float,default=3e-4)
     p.add_argument('--init-model',type=Path,default=None)
     p.add_argument('--rx-only',action='store_true')
     p.add_argument('--pose-context',action='store_true')
     a=p.parse_args()
     res=fit(_read(a.data),_read(a.old),_read(a.config),
             out=str(a.out),epochs=a.epochs,batch=a.batch,
-            current_weight=a.current_weight,
+            current_weight=a.current_weight,lr=a.lr,
             init_model=str(a.init_model) if a.init_model else None,
             rx_only=a.rx_only,pose_context=a.pose_context)
     a.report.write_text(json.dumps(res,indent=2)+'\n',encoding='utf-8')
