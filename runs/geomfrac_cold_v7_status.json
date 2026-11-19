@@ -1,7 +1,7 @@
 {
   "version": 7,
-  "date": "2026-11-19",
-  "status": "cold_reference_generation_running",
+  "date": "2026-11-20",
+  "status": "cold_trained_dynamic_acceptance_running",
   "branch": "research/bfzi-uwpt-electrothermal-surrogate",
   "execution_plan": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V7_UNIFIED_COLD_DOMAIN.md",
   "plan": "runs/geomfrac_cold_v7_plan.json",
@@ -90,8 +90,8 @@
   "generation": {
     "output": "runs/geomfrac_cold_v7",
     "log": "runs/geomfrac_cold_v7_generate_01.log",
-    "job": "job-76",
-    "status": "running_with_windows_supervisor",
+    "job": "SDFMPNEO_V7Cold",
+    "status": "complete",
     "offset": 800,
     "limit": 400,
     "exit_code": 0,
@@ -100,12 +100,12 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 280,
+    "remaining_new_references": 0,
     "completed": 400,
-    "failed_count": 1,
+    "failed_count": 0,
     "last_sample": "V7T0970",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T22:18:49+08:00",
+    "last_checked_at": "2026-11-20T07:10:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -139,7 +139,7 @@
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
     "current_batch_completed": 3,
-    "completed_total": 1015,
+    "completed_total": 1295,
     "successful_attempts": 583,
     "replacement_file": "runs/geomfrac_cold_v7_replacements.json",
     "queue": {
@@ -147,25 +147,18 @@
       "previous_job": "job-75",
       "note": "batch4 not started; run offset1200 limit95 after job-76 exits"
     },
-    "unresolved_failures": [
-      "V7T0719",
-      "V7T0901",
-      "V7T0921",
-      "V7T0927",
-      "V7T0935",
-      "V7T0969"
-    ],
+    "unresolved_failures": [],
     "previous_replacements_resolved": [
       "V7T0121",
       "V7T0570",
       "V7T0573"
     ],
     "recovery_note": "jobs 74 and 75 both ended with exitCode 1 at 2026-11-19 21:34+08; batch3 log stops after V7T0970 without COLD_SUMMARY; batch4 never started; job-76 restarted batch3 and skips saved samples",
-    "actual_valid_npz": 1015,
+    "actual_valid_npz": 1295,
     "expected_npz": 1295,
     "supervisor": {
       "task": "SDFMPNEO_V7Cold",
-      "state": "running",
+      "state": "completed",
       "trigger": "ONLOGON",
       "restart_on_failure": {
         "attempts": 10,
@@ -175,7 +168,8 @@
       "launcher": "runs/geomfrac_cold_v7_watch.cmd",
       "log": "runs/geomfrac_cold_v7_watch.log",
       "stdout_log": "runs/geomfrac_cold_v7_watch_cmd.log",
-      "behavior": "Wait for currently running BFZI generator; resume batches offset 800 and 1200, skip finished NPZ, retry failures, generate native-BFZI-valid same-stratum replacements, atomically write patch and collect 995/150/150."
+      "behavior": "Wait for currently running BFZI generator; resume batches offset 800 and 1200, skip finished NPZ, retry failures, generate native-BFZI-valid same-stratum replacements, atomically write patch and collect 995/150/150.",
+      "result": "COMPLETE {'train': 995, 'val': 150, 'test': 150}"
     },
     "status_note": "Job-76 remains active; supervisor waits until it exits to avoid concurrent writes to progress.json or NPZs."
   },
@@ -185,7 +179,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Supervisor resumes missing V7 references, runs fourth batch, replaces unresolved geometries, and completes merged cold reference data with exact 995/150/150 new split counts; then proceed to 1500/228/226 merge and V7 ColdNet training.",
+  "next": "Complete four new BFZI V150 core dynamic reference cases (job-81), combine dynamic manifests, run V7 rank48 acceptance on six unseen core geometries (12 histories). V7 parallel residual ablation remains deferred until baseline is frozen.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -307,7 +301,30 @@
       "runs/geomfrac_s5_cold_dyn6_manifest.json",
       "runs/geomfrac_s5_v7core_manifest.json"
     ],
-    "next": "After cold model and domain gate are frozen, select four new core test geometries, generate eight BFZI dynamic histories, and combine them with existing C0416/C0725 references."
+    "next": "After cold model and domain gate are frozen, select four new core test geometries, generate eight BFZI dynamic histories, and combine them with existing C0416/C0725 references.",
+    "status": "in_progress",
+    "current_core_result": {
+      "geometries": [
+        "C0416",
+        "C0725"
+      ],
+      "histories": 4,
+      "dynamic_z_pct": 11.248633274235582,
+      "current_pct": 0.587914427009576,
+      "temp_rmse_K": 0.3299377864287274,
+      "copper_power_pct": 1.2260506247382583,
+      "v5_dynamic_z_pct": 10.234795013061495,
+      "v5_current_pct": 6.326716690570905
+    },
+    "added_core_plan": "runs/geomfrac_cold_v7_dyn_plan.json",
+    "added_reference_job": "job-81",
+    "added_reference_log": "runs/geomfrac_s5_v7core_build.log",
+    "added_reference_ids": [
+      "V7D0001",
+      "V7D0002",
+      "V7D0003",
+      "V7D0004"
+    ]
   },
   "performance_diagnosis": {
     "measured_successful_samples": 583,
@@ -351,5 +368,52 @@
       "status": "py_compile passed; applies to the next generation batch; active job-72 unchanged"
     },
     "status": "paused_on_user_request; no solver optimization planned"
+  },
+  "merge": {
+    "status": "complete",
+    "report": "runs/geomfrac_cold_v7/merge_report.json",
+    "counts": {
+      "train": 1500,
+      "val": 228,
+      "test": 226
+    },
+    "unique_geometries": 1954,
+    "train_strata": {
+      "core": 1050,
+      "boundary": 300,
+      "extreme": 150
+    }
+  },
+  "unified_cold_model": {
+    "status": "trained",
+    "checkpoint": "runs/geomfrac_cold_v7.pt",
+    "report": "runs/geomfrac_cold_v7.json",
+    "summary": "runs/geomfrac_cold_v7_summary.json",
+    "best_epoch": 590,
+    "epochs": 600,
+    "val": {
+      "cold_Z_pct": 0.13432688846969668,
+      "air_L_pct": 0.1351671073694472,
+      "current_pct": 1.7104006356244803
+    },
+    "test": {
+      "cold_Z_pct": 0.14667831377177093,
+      "air_L_pct": 0.1476008440825371,
+      "current_pct": 1.8222535441362209
+    },
+    "core_test": {
+      "cold_Z_pct": 0.1106190776065031,
+      "current_pct": 1.3568625381391692,
+      "geometries": 120
+    }
+  },
+  "applicability": {
+    "status": "calibrated",
+    "model": "runs/geomfrac_cold_v7_domain.json",
+    "threshold": 2.648601668229946,
+    "core_val_accepted": 123,
+    "core_val_total": 130,
+    "core_test_accepted": 113,
+    "core_test_total": 120
   }
 }
