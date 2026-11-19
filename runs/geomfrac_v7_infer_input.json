@@ -1,0 +1,65 @@
+{
+  "case": {
+    "family": "continuous",
+    "donor": "g2",
+    "geometry": {
+      "alpha1": 0.7188,
+      "alpha2": 0.877,
+      "core1_mm": 22,
+      "core2_mm": 11,
+      "shift_mm": [
+        13,
+        112,
+        -5
+      ],
+      "tilt_deg": -1,
+      "yaw_deg": 12,
+      "pitch_deg": -10,
+      "box1_mm": 222,
+      "box2_mm": 230
+    },
+    "alpha_per_K": 0.01991,
+    "thermal": {
+      "ins_k": 0.2412,
+      "ins_t": 0.000424,
+      "pkg_k": 0.1946,
+      "pkg_sea_h": 30.186,
+      "skin_m": 0.002
+    },
+    "drives": [
+      {
+        "voltage": 54.69,
+        "off": [],
+        "duration": 60
+      },
+      {
+        "voltage": 72.92,
+        "off": [
+          [
+            45,
+            105
+          ],
+          [
+            195,
+            255
+          ]
+        ],
+        "duration": 300
+      }
+    ]
+  },
+  "time_s": [
+    0.0,
+    15.0,
+    30.0,
+    45.0,
+    60.0
+  ],
+  "voltage_v": [
+    54.69,
+    54.69,
+    54.69,
+    54.69,
+    54.69
+  ]
+}
