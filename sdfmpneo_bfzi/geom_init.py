@@ -214,13 +214,14 @@ def balance_cu(init):
     Replace the interpolated Cu-to-package mean coupling B by the
     physically required -G/sqrt(Cpkg*Ccu), preserving the original
     non-copper Schur complement A-B*inv(D)*B.T. This maintains the
-    dissipative 32-mode operator instead of altering an isolated 5x5 block.
+    dissipative shared-rank operator instead of altering an isolated 5x5 block.
     """
     out=dict(init)
     cap=np.asarray(init["cap"],float)
     k=np.asarray(init["k"],float).copy()
-    if cap.shape!=(5,) or k.shape!=(32,32):
-        raise ValueError("expected five material capacities and 32-mode K")
+    if (cap.shape!=(5,) or k.ndim!=2 or k.shape[0]!=k.shape[1]
+            or k.shape[0] not in (32,48,64)):
+        raise ValueError("expected five material capacities and a 32/48/64-mode K")
     if np.min(cap)<=0 or not np.isfinite(k).all():
         raise ValueError("invalid capacity or thermal operator")
     cu=np.array([3,4])
