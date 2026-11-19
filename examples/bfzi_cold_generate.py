@@ -89,8 +89,9 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
     profile=dict(import_sec=import_sec,originals_sec=orig_sec,
                  lead_check_sec=gap_sec,create_sec=create_sec,
                  create_report_sec=float(info.get('bfzi_prep_sec',0.)),
-                 adapter_sec=adapter_sec,solve_sec=solve_sec,
-                 save_sec=save_sec,total_sec=time.perf_counter()-t_all,
+                 adapter_sec=adapter_sec,adapter_detail=dict(em.profile),
+                 solve_sec=solve_sec,save_sec=save_sec,
+                 total_sec=time.perf_counter()-t_all,
                  cells=len(em.vol),green_shape=list(data['G0'].shape),
                  gmres=ans.residual)
     print('COLD_DONE',path.name,'cells',len(em.vol),
