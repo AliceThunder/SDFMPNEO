@@ -36,6 +36,7 @@ def fit(train_rows,val_rows):
         val_nn_p50=float(np.quantile(dist,.5)),
         val_nn_p95=threshold)
 def check(g,model):
+    if "geometry" in g:g=g["geometry"]
     if not in_core(g):
         return dict(accepted=False,reason="outside_core_bounds",distance=None)
     x=(feat(g)-np.asarray(model["mean"]))/np.asarray(model["scale"])
