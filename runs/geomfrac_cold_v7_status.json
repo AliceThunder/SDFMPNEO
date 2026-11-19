@@ -1,7 +1,7 @@
 {
   "version": 7,
   "date": "2026-11-20",
-  "status": "cold_trained_dynamic_acceptance_running",
+  "status": "core_dynamic_accepted_parallel_ablation_running",
   "branch": "research/bfzi-uwpt-electrothermal-surrogate",
   "execution_plan": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V7_UNIFIED_COLD_DOMAIN.md",
   "plan": "runs/geomfrac_cold_v7_plan.json",
@@ -179,7 +179,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Complete job-81 four core BFZI dynamic references, then job-82 combines six-geometry manifest and evaluates frozen rank48 V7. Review full 12-history metrics before promoting a default model or starting the parallel residual ablation.",
+  "next": "Finish job-85 compact parallel-head ablation, inspect validation-selected strength and six-core test, then decide whether to retain baseline V7 or use V7 with a single parallel correction head.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -247,12 +247,22 @@
     "smoke_plan": "runs/geomfrac_cold_v7_dyn_plan_smoke.json"
   },
   "parallel_residual_branch": {
-    "status": "documented_experiment_after_v7_baseline",
-    "document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_PARALLEL_RESIDUAL_BRANCH_V1.md",
-    "key_design": "shared geometry/condition encoder plus compact zero-initialized dynamic impedance residual head",
-    "injection": "existing geom_free.py extra impedance-correction hook",
-    "rule": "do not change frozen V7 cold mainline; evaluate only after baseline dynamic model and grouped holdout are frozen",
-    "input_contract": "reuse the exact 45D g feature tensor passed to GeomFracET, plus normalized thermal state, time, and voltage; replace geom_free.py's current 18D encode(case) extra input with g after V7 baseline freeze."
+    "status": "candidate_training_running",
+    "experiment_job": "job-85",
+    "model": "sdfmpneo_bfzi/geom_parallel.py",
+    "train_script": "examples/bfzi_cold_v7_parallel.py",
+    "architecture": "45D shared geometry/condition features -> 32-hidden geometry-dependent 4x5 material-temperature tangent; symmetric R11/X11/R22/X22 dynamic correction only, zero at zero temperature",
+    "train_core_geometries": 23,
+    "val_core_geometries": 5,
+    "test_core_geometries": 6,
+    "validation_strengths": [
+      0,
+      0.5,
+      1
+    ],
+    "checkpoint": "runs/geomfrac_v7_parallel.pt",
+    "report": "runs/geomfrac_v7_parallel.json",
+    "rule": "Only adopt if validation-selected frozen additive head improves independent six-core closed-loop dynamic metrics without worsening current, temperature and power"
   },
   "first_batch_validation": {
     "rows": 400,
@@ -302,7 +312,7 @@
       "runs/geomfrac_s5_v7core_manifest.json"
     ],
     "next": "After cold model and domain gate are frozen, select four new core test geometries, generate eight BFZI dynamic histories, and combine them with existing C0416/C0725 references.",
-    "status": "in_progress",
+    "status": "complete",
     "current_core_result": {
       "geometries": [
         "C0416",
@@ -332,6 +342,44 @@
       "queue_script": "runs/geomfrac_cold_v7_dyn_queue.cmd",
       "action": "On completion, merge old/new BFZI dynamic manifests and evaluate frozen rank48 model on six core geometries (12 histories).",
       "expected_output": "runs/geomfrac_cold_v7_core_dyn_eval.json"
+    },
+    "total_core_geometries": 6,
+    "total_histories": 12,
+    "physical_reference_job": "job-81",
+    "physical_reference_result": "8/8 new histories succeeded",
+    "comparison": {
+      "v5": {
+        "dynamic_z_pct": 11.21549603554582,
+        "current_pct": 8.69818124715886,
+        "temp_rmse_K": 0.46670696782972526,
+        "temp_max_K": 1.2730448751663677
+      },
+      "v7": {
+        "dynamic_z_pct": 9.921662114173268,
+        "full_z_pct": 0.12309,
+        "current_pct": 1.5562711514843381,
+        "temp_rmse_K": 0.25741056675471596,
+        "temp_max_K": 0.8421096253041753,
+        "sea_power_pct": 24.771280569722087,
+        "copper_power_pct": 2.222399952431647
+      }
+    },
+    "component_contributions_pct": {
+      "R11": 5.8846,
+      "X11": 3.6135,
+      "R12": 0.5578,
+      "X12": 0.0411,
+      "R22": 5.642,
+      "X22": 1.9199
+    },
+    "report": "runs/geomfrac_cold_v7_core_dyn_eval.json",
+    "compact_report": "runs/geomfrac_cold_v7_summary.json",
+    "heat_state_oracle": {
+      "baseline_pct": 9.9217,
+      "true_mean_pct": 6.8385,
+      "true_skin_pct": 9.8992,
+      "true_all_pct": 12.2106,
+      "report": "runs/geomfrac_cold_v7_heat_oracle.json"
     }
   },
   "performance_diagnosis": {
