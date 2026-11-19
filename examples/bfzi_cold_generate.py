@@ -59,9 +59,7 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
                      grid_max_nodes=4000)
     create_sec=time.perf_counter()-t
     t=time.perf_counter()
-    # Cold references do not consume the local Joule heat matrix.
-    # Keep the same impedance solve while skipping the unused port-weak readout.
-    em=BFZIV148Adapter(data,bf,heat_mode='j2',
+    em=BFZIV148Adapter(data,bf,heat_mode='port-weak',
                       fv_faces='exact',source_mask='subcell',
                       source_order=source_order)
     adapter_sec=time.perf_counter()-t
