@@ -1,0 +1,58 @@
+{
+  "status": "generating_physical_dynamic_references",
+  "date": "2026-11-19",
+  "source": "BFZI V150 S5 physical direct",
+  "plan": "runs/geomfrac_cold_dyn6_plan.json",
+  "script": "examples/bfzi_s5_buildset.py",
+  "workflow": "examples/bfzi_cold_dyn6_finish.py",
+  "eval": "examples/bfzi_cold_dyn6_eval.py",
+  "device": "XEnergy-Zhucy",
+  "processes": {
+    "pilot": {
+      "id": "job-22",
+      "pid": 39012,
+      "status": "running",
+      "complete_histories": 1,
+      "case": "C0441"
+    },
+    "continuation": {
+      "id": "job-23",
+      "pid": 26020,
+      "status": "waiting_on_pilot_then_execute_all_and_evaluate"
+    }
+  },
+  "six_unseen_geometries": [
+    "C0441",
+    "C0043",
+    "C0416",
+    "C0027",
+    "C0725",
+    "C0260"
+  ],
+  "expected_histories": 12,
+  "time_s": [
+    60,
+    300
+  ],
+  "generation_manifest": "runs/geomfrac_s5_cold_dyn6_manifest.json",
+  "generation_report": "runs/geomfrac_s5_cold_dyn6_build_report.json",
+  "evaluation_output": "runs/geomfrac_cold_dyn6_eval.json",
+  "comparator_models": [
+    "runs/geomfrac_et_v5_closed.pt",
+    "runs/geomfrac_coldnet_v1.pt",
+    "runs/geomfrac_coldres_v1.pt"
+  ],
+  "acceptance": "Report per-geometry BFZI-free dynamic-Z error with frozen thermal V5, Atlas, source, and ZFix; no model promoted before full valid-independent dynamic evaluation.",
+  "cold_reference_result": {
+    "valid_new_cold": {
+      "train": 427,
+      "val": 56,
+      "test": 56
+    },
+    "independent_56G_coldZ_pct": {
+      "v5": 1.0425517298201843,
+      "coldnet": 0.9456961638921149,
+      "coldres": 0.578198835056703
+    }
+  }
+}
