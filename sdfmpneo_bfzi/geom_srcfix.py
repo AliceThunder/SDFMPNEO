@@ -39,9 +39,13 @@ class SrcFix:
     def apply(self,case,init):
         out=dict(init)
         z=self.predict(case)
-        if z.shape!=out['src'].shape:
-            raise ValueError('source ranks must agree')
-        out['src']=z
+        src=np.asarray(out['src'],float).copy()
+        if (z.ndim!=2 or z.shape[1]!=3 or z.shape[0]>src.shape[0]):
+            raise ValueError('source model rank must fit the shared canonical atlas')
+        # Canonical bases are nested: a rank-32 correction updates the
+        # original modes while newly added skin modes retain atlas sources.
+        src[:z.shape[0]]=z
+        out['src']=src
         return out
 
     def save(self,path):
