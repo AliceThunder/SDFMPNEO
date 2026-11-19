@@ -131,3 +131,6 @@ A geometry-conditioned V3 tangent was trained with the same 36-geometry/108-hist
 V3 reached its best development dynamic-Z error at epoch 120, reducing the common 17.1687% baseline by 5.93%. It is the preferred tangent for the next heat-head fine-tuning candidate. The V4 tangent fine-tune (job-40) is already running and will be retained as a comparison; the V3 fine-tune will use the same train/dev split, tangent loss and BFZI-free development selection. The frozen six-case/12-history dynamic set remains reserved for final independent evaluation.
 
 Report: runs/geomfrac_rank48_skin_tan_v3.json; checkpoint: runs/geomfrac_rank48_skin_tan_v3.pt on XEnergy.
+
+
+Implementation update: the BFZI-free evaluation entry now dispatches rank48 checkpoints to restore_rank48, while retaining the original rank32 time-conditioned adapter. The heat-head loss reuses the predicted tangent and batches teacher tangent targets to reduce repeated forward calls. Validation: 18 neural/multi/skintan tests passed; 11 free-evaluation/skintan tests passed.
