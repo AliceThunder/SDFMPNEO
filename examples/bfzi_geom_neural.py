@@ -279,12 +279,12 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             # that autonomous inference returns at the sampling instant.
             pr_z.append(zhat[0])
             if zrel_w and tangent is not None:
-                pr_tsea.append(tangent(gg,state)[0])
+                pr_tsea.append(zy[0])
             pr_a.append((state[0]-a[k])/asc)
             if tan_w:
                 if tangent is None:
                     raise ValueError('tangent loss needs pretrained sea tangent')
-                res_t=tangent(gg,state)-tangent(gg,a[k:k+1])
+                res_t=zy-tangent(gg,a[k:k+1])
                 pr_tan.append(res_t.square().sum())
             if rr is not None:
                 pred_temp=state[0]@decoder.T
