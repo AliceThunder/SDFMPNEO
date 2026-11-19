@@ -231,5 +231,35 @@
       "min_sea_resistance_eigenvalue_ohm": 0.06088489432075099,
       "min_air_inductance_eigenvalue_H": 0.000011849157263216824
     }
+  },
+  "dynamic_acceptance": {
+    "existing_holdouts": {
+      "total": 6,
+      "core": [
+        "C0416",
+        "C0725"
+      ],
+      "boundary": [
+        "C0441",
+        "C0043",
+        "C0027",
+        "C0260"
+      ]
+    },
+    "formal_target": {
+      "core_geometries": 6,
+      "histories": 12
+    },
+    "additional_core_geometries": 4,
+    "additional_histories": 8,
+    "selection_source": "105 core geometries in V7 independent cold test split, filtered by calibrated domain gate and selected by max-min geometry coverage",
+    "plan_script": "examples/bfzi_cold_v7_dyn_plan.py",
+    "generation": "examples/bfzi_s5_buildset.py --plan runs/geomfrac_cold_v7_dyn_plan.json --cases V7D0001 V7D0002 V7D0003 V7D0004 --tag v7core",
+    "manifest_script": "examples/bfzi_cold_v7_dyn_manifest.py",
+    "manifest_inputs": [
+      "runs/geomfrac_s5_cold_dyn6_manifest.json",
+      "runs/geomfrac_s5_v7core_manifest.json"
+    ],
+    "next": "After cold model and domain gate are frozen, select four new core test geometries, generate eight BFZI dynamic histories, and combine them with existing C0416/C0725 references."
   }
 }
