@@ -103,9 +103,9 @@
     "remaining_new_references": 712,
     "completed": 400,
     "failed_count": 2,
-    "last_sample": "V7T0581",
+    "last_sample": "V7T0610",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:40:00+08:00",
+    "last_checked_at": "2026-11-19T19:45:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -138,7 +138,7 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 180,
+    "current_batch_completed": 208,
     "completed_total": 583,
     "successful_attempts": 583
   },
@@ -282,20 +282,24 @@
       "BFZIV148Adapter recalculates direct Neumann/GMD air inductance for every geometry"
     ],
     "instrumentation": {
-      "generator_commit": "bfa4b8c92308a1900f703cac51f2a53f0e825b27",
+      "generator_commit": "94874a8be76732e18b8a24f3321c43fb06fb2eaa",
       "adapter_commit": "6ce6b75a56da41d626a45c9f51272f302ef1cf2f",
       "stages": [
-        "imports",
-        "BFZI load",
-        "lead check",
-        "create/G0",
-        "projector",
-        "source mass quadrature",
-        "air Neumann/GMD",
-        "GMRES",
-        "NPZ save"
+        "Python imports and BFZI load",
+        "lead clearance check",
+        "BFZI family and sea-grid construction",
+        "oriented-box clipping",
+        "dense Green matrix construction",
+        "source-to-volume projection",
+        "FV projector construction",
+        "high-order source-mass quadrature",
+        "air Neumann/GMD integral",
+        "copper setup",
+        "two-port GMRES solve",
+        "NPZ serialization"
       ],
-      "active_job": "job-72 uses the pre-instrumentation process; profiles start with the next batch"
+      "active_job": "job-72 uses the pre-instrumentation process; profiles start with the next batch",
+      "geometry_commit": "1b5d01f9222907906728e4ebfbbd584102f86194"
     }
   }
 }
