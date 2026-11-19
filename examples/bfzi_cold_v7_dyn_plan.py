@@ -46,6 +46,7 @@ def main():
     names=fixed+[f"V7D{i:04d}" for i in range(1,5)]
     out=dict(description="V7 core-only independent dynamic acceptance plan",
         version=7,train=[],val=[],test=names,cases=cases,
+        reused_existing=fixed,
         selected_new=[dict(name=f"V7D{i:04d}",source_test=chosen[i-1][0])
                       for i in range(1,5)],
         domain_model=str(a.domain),
