@@ -14,7 +14,7 @@ from sdfmpneo_bfzi.geom_portself import PortSelf
 from sdfmpneo_bfzi.geom_mutual import MutFix
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
 from sdfmpneo_bfzi.geom_ztune import restore as load_z
-from sdfmpneo_bfzi.geom_skintan import SkinTanV4
+from sdfmpneo_bfzi.geom_skintan import SkinTanV3,SkinTanV4
 
 
 def get_init(case,atlas,ps,mu,src):
@@ -107,6 +107,7 @@ def main():
     p.add_argument("--eval-every",type=int,default=10)
     p.add_argument("--patience",type=int,default=60)
     p.add_argument("--lr",type=float,default=.0008)
+    p.add_argument("--variant",choices=("v3","v4"),default="v3")
     a=p.parse_args()
     torch.manual_seed(73)
     torch.set_num_threads(2)
@@ -136,7 +137,8 @@ def main():
     sy=torch.as_tensor(np.asarray(ck["y_scale"])[:6],dtype=torch.float32)
     all_skin=torch.cat([r["skin"] for r in tr]).numpy()
     ss=np.maximum(np.std(all_skin,axis=0),.05)
-    model=SkinTanV4(ng=int(ck["ng"]),sa=np.asarray(ck["a_scale"])[:32],ss=ss)
+    cls=SkinTanV3 if a.variant=="v3" else SkinTanV4
+    model=cls(ng=int(ck["ng"]),sa=np.asarray(ck["a_scale"])[:32],ss=ss)
     opt=torch.optim.AdamW(model.parameters(),lr=a.lr,weight_decay=.002)
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(opt,mode="min",factor=.6,patience=12)
     baseline=closed(va,model,base,sy,atlas,net,ck,a.shape_mix)
@@ -168,9 +170,10 @@ def main():
         train_histories=len(tr),dev_histories=len(va),shape_mix=a.shape_mix,
         best_epoch=best_ep,baseline_dev=baseline,best_dev=final,history=hist,
         thermal_model=str(a.model),base_model=str(a.z_fix_model),
-        feature_source="predicted rank48 heat states: first32 global, last16 TX/RX sea-skin")
+        feature_source="predicted rank48 heat states: first32 global, last16 TX/RX sea-skin",
+        tangent_variant=a.variant)
     a.out.parent.mkdir(parents=True,exist_ok=True)
-    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version="v4",
+    torch.save(dict(state=model.state_dict(),ng=int(ck["ng"]),model_version=a.variant,
         sa=torch.as_tensor(np.asarray(ck["a_scale"])[:32],dtype=torch.float32),
         ss=torch.as_tensor(ss,dtype=torch.float32),sy=sy,best_epoch=best_ep,
         shape_mix=a.shape_mix,rank=48),a.out)
