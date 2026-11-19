@@ -89,8 +89,9 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
     oldval=np.stack([frozen.predict({'geometry':r['geometry']}) for r in tr])
     yy=(yy-oldval).astype(np.float32)
     xm=inp.mean(0)
-    xs=np.maximum(inp.std(0),np.array([.02,1,2,.01,.1],
-                                     dtype=np.float32))
+    floor=np.array([.02,1,2,.01,.1,.02,1,2,1,1,1,1,1,1,.01,.1],
+                    dtype=np.float32)
+    xs=np.maximum(inp.std(0),floor if pose_context else floor[:5])
     ys=np.maximum(yy.std(0),np.array([.01,.1],
                                     dtype=np.float32))
     if pose_context:
