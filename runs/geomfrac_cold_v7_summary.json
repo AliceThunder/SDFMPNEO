@@ -1,6 +1,6 @@
 {
   "version": 7,
-  "status": "cold_and_core_dynamic_acceptance_completed",
+  "status": "v7_core_mainline_accepted",
   "train_reference": {
     "new": {
       "train": 995,
@@ -235,6 +235,33 @@
   },
   "flags": {
     "dynamic_full_acceptance_complete": true,
-    "parallel_residual_experiment_started": false
+    "parallel_residual_experiment_started": true,
+    "parallel_residual_promoted": false
+  },
+  "parallel_ablation": {
+    "status": "not_promoted",
+    "architecture": "shared 45D geometry/condition features, five thermal means, 2132 trainable parameters",
+    "train_geometries": 23,
+    "validation_geometries": 5,
+    "test_geometries": 6,
+    "selected_strength": 0.5,
+    "best_epoch": 50,
+    "validation_dynamic_z_pct_baseline": 25.683047201161518,
+    "validation_dynamic_z_pct_parallel": 24.908962437481073,
+    "test_dynamic_z_pct_baseline": 9.921662114173268,
+    "test_dynamic_z_pct_parallel": 10.553303184106094,
+    "report": "runs/geomfrac_v7_parallel.json"
+  },
+  "inference": {
+    "entry": "examples/bfzi_v7_infer.py",
+    "sample": "runs/geomfrac_v7_infer_input.json",
+    "test_geometry": "V7D0002",
+    "60_s_history_seconds_including_load": 0.07871,
+    "300_s_history_seconds_including_load": 0.25701,
+    "cold_BFZI_solves": 0,
+    "heat_basis_builds": 0,
+    "heat_FV_solves": 0,
+    "domain_gate": "runs/geomfrac_cold_v7_domain.json",
+    "status": "smoke_passed"
   }
 }
