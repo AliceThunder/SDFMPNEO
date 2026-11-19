@@ -8,7 +8,7 @@ import torch
 from examples.bfzi_geom_multi import prepare
 from examples.bfzi_geom_free_eval import metric
 from sdfmpneo_bfzi.geom_coldnet import ColdNet
-from sdfmpneo_bfzi.geom_coldres import ColdRes
+from sdfmpneo_bfzi.geom_coldres_pose import load_cold
 from sdfmpneo_bfzi.geom_free import rollout
 from sdfmpneo_bfzi.geom_init import GeomInit
 from sdfmpneo_bfzi.geom_mutual import MutFix
@@ -50,7 +50,7 @@ def main():
     mu=MutFix.load(cfg['mutual_model'])
     sf=SrcFix.load(cfg['source_model'])
     ports=dict(v5=PortSelf.load(cfg['port_self_model']),
-        coldnet=ColdNet.load(a.coldnet),coldres=ColdRes.load(a.coldres))
+        coldnet=ColdNet.load(a.coldnet),coldres=load_cold(a.coldres))
     out=dict(status='complete',rank=rank,cases={},summary={})
     keys=('dynamic_z_rel_L2','current_rel_L2','material_mean_rmse_K',
           'material_mean_max_K','sea_mean_max_K','pkg_mean_max_K',
