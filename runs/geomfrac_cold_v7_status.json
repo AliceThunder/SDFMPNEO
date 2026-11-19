@@ -100,12 +100,12 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 834,
+    "remaining_new_references": 809,
     "completed": 400,
     "failed_count": 0,
-    "last_sample": "V7T0461",
+    "last_sample": "V7T0486",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:30:00+08:00",
+    "last_checked_at": "2026-11-19T19:35:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -135,8 +135,8 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 61,
-    "completed_total": 461
+    "current_batch_completed": 86,
+    "completed_total": 486
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
