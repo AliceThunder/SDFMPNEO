@@ -274,8 +274,8 @@
     },
     "focused_tests": {
       "status": "passed",
-      "tests": 8,
-      "command": "python -m pytest tests/test_bfzi_geom_skintan.py tests/test_bfzi_geom_multi.py -q"
+      "tests": 18,
+      "command": "python -m pytest tests/test_bfzi_geom_neural.py tests/test_bfzi_geom_multi.py tests/test_bfzi_geom_skintan.py -q"
     },
     "skin_tangent_v3": {
       "status": "completed",
@@ -296,6 +296,17 @@
       "temperature_rmse_K": 0.8232045685784866,
       "temperature_max_K": 2.1336898390028356,
       "energy_budget_max_W": 2.3717257975346015e-11
-    }
+    },
+    "evaluation_support": {
+      "status": "implemented",
+      "script": "examples/bfzi_geom_free_eval.py",
+      "rank48_adapter": "sdfmpneo_bfzi.geom_skintan.restore_rank48",
+      "rank32_adapter": "sdfmpneo_bfzi.geom_skintan.restore",
+      "focused_tests": 11
+    },
+    "training_optimizations": [
+      "Reuse predicted tangent for source, full-Z and tangent losses",
+      "Batch teacher-state tangent targets once per history"
+    ]
   }
 }
