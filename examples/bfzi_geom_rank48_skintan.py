@@ -75,10 +75,18 @@ def closed(rows,model,base,sy,atlas,net,ck,shape_mix):
 
 
 def loss(model,rows,sy):
+    g=torch.cat([r["g"] for r in rows])
+    a=torch.cat([r["a"] for r in rows])
+    skin=torch.cat([r["skin"] for r in rows])
+    target=torch.cat([r["target"] for r in rows])
+    pred=model(g,a[:,:32],skin)*sy
     vals=[]
+    start=0
     for r in rows:
-        pred=model(r["g"],r["a"][:,:32],r["skin"])*sy
-        vals.append((pred-r["target"]).square().sum()/r["den"]**2)
+        n=len(r["target"])
+        vals.append((pred[start:start+n]-target[start:start+n]).square().sum()
+                    /r["den"]**2)
+        start+=n
     return torch.stack(vals).mean()
 
 
