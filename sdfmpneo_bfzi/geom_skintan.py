@@ -210,12 +210,13 @@ def restore_rank48(path,base_path):
     base=load_base(base_path)
     sy=torch.as_tensor(np.asarray(ck["sy"])[:6],dtype=torch.float32)
 
-    def predict(g,a,tm,voltage):
+    def predict(g,a):
         if a.ndim!=2 or a.shape[1]!=48:
             raise ValueError("rank48 skin tangent requires 48 canonical heat states")
         global_state=a[:,:32]
         skin_state=a[:,32:48]
         return base(g,global_state)+net(g,global_state,skin_state)*sy
 
-    predict.time_conditioned=True
+    # The appended modes are already time-evolving thermal states.
+    predict.time_conditioned=False
     return predict
