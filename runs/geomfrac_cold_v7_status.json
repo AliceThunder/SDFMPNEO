@@ -282,7 +282,7 @@
       "BFZIV148Adapter recalculates direct Neumann/GMD air inductance for every geometry"
     ],
     "instrumentation": {
-      "generator_commit": "94874a8be76732e18b8a24f3321c43fb06fb2eaa",
+      "generator_commit": "e90dc2a1a79e4d4d1fe8917cadbacd157ee65664",
       "adapter_commit": "6ce6b75a56da41d626a45c9f51272f302ef1cf2f",
       "stages": [
         "Python imports and BFZI load",
@@ -300,6 +300,12 @@
       ],
       "active_job": "job-72 uses the pre-instrumentation process; profiles start with the next batch",
       "geometry_commit": "1b5d01f9222907906728e4ebfbbd584102f86194"
+    },
+    "cold_only_optimization": {
+      "change": "use heat_mode=j2 in cold reference generation",
+      "reason": "the cold generator never calls the thermal heat routine; port-weak only constructs the unused weak Joule matrix after impedance has already been computed",
+      "impedance_unchanged": "z, sea_z, air and copper impedance are computed before the optional weak_q readout",
+      "status": "py_compile passed; applies to the next generation batch; active job-72 unchanged"
     }
   }
 }
