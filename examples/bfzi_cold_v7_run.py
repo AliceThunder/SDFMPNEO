@@ -157,6 +157,11 @@ def done(plan):
 
 
 def main():
+    if "--status" in sys.argv:
+        plan, missing, total = state()
+        print(json.dumps({"complete":total-len(missing),"expected":total,
+                          "missing":len(missing),"first_missing":missing[:15]}))
+        return
     note("V7 supervisor started")
     waiting()
     rounds = 0
