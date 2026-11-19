@@ -102,14 +102,22 @@
     ],
     "batch_limit": 400,
     "remaining_new_references": 1227,
-    "completed": 68,
-    "failed_count": 0,
-    "last_sample": "V7T0068",
+    "completed": 256,
+    "failed_count": 1,
+    "last_sample": "V7T0257",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T17:42:00+08:00",
+    "last_checked_at": "2026-11-19T18:18:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
-    "planned_new_references": 1295
+    "planned_new_references": 1295,
+    "failures": {
+      "V7T0121": {
+        "reason": "BFZI oriented package extends outside seawater tank",
+        "stratum": "core",
+        "split": "train",
+        "disposition": "exclude physically invalid geometry; replace with unused feasible candidate before merge"
+      }
+    }
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -168,5 +176,12 @@
     "selection": "four accepted core geometries from the frozen V7 cold test split, selected by geometry maximin coverage",
     "status": "pipeline_smoke_passed_final_plan_pending_v7_domain_calibration",
     "smoke_plan": "runs/geomfrac_cold_v7_dyn_plan_smoke.json"
+  },
+  "parallel_residual_branch": {
+    "status": "documented_experiment_after_v7_baseline",
+    "document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_PARALLEL_RESIDUAL_BRANCH_V1.md",
+    "key_design": "shared geometry/condition encoder plus compact zero-initialized dynamic impedance residual head",
+    "injection": "existing geom_free.py extra impedance-correction hook",
+    "rule": "do not change frozen V7 cold mainline; evaluate only after baseline dynamic model and grouped holdout are frozen"
   }
 }
