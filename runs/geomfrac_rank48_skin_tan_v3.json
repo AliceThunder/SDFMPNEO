@@ -1,0 +1,166 @@
+{
+  "status": "rank48 direct-skin tangent development selection",
+  "rank": 48,
+  "train_geometries": 36,
+  "dev_geometries": 11,
+  "train_histories": 108,
+  "dev_histories": 33,
+  "shape_mix": 0.5,
+  "best_epoch": 120,
+  "baseline_dev": {
+    "dynamic_z_pct": 17.168688666275226,
+    "current_pct": 7.875518712334452,
+    "temp_rmse_K": 0.8223726394352503,
+    "temp_max_K": 2.128296018395049,
+    "budget_W": 2.3362712026068615e-11
+  },
+  "best_dev": {
+    "dynamic_z_pct": 16.151314858360326,
+    "current_pct": 7.8813182795727394,
+    "temp_rmse_K": 0.8232045685784866,
+    "temp_max_K": 2.1336898390028356,
+    "budget_W": 2.3717257975346015e-11
+  },
+  "history": [
+    {
+      "epoch": 0,
+      "dynamic_z_pct": 17.168688666275226,
+      "current_pct": 7.875518712334452,
+      "temp_rmse_K": 0.8223726394352503,
+      "temp_max_K": 2.128296018395049,
+      "budget_W": 2.3362712026068615e-11
+    },
+    {
+      "epoch": 10,
+      "dynamic_z_pct": 17.100034452959406,
+      "current_pct": 7.875085391614167,
+      "temp_rmse_K": 0.8221931937393029,
+      "temp_max_K": 2.127723146477012,
+      "budget_W": 2.3642616722866562e-11
+    },
+    {
+      "epoch": 20,
+      "dynamic_z_pct": 16.99247737459246,
+      "current_pct": 7.873738045569619,
+      "temp_rmse_K": 0.8216876699917777,
+      "temp_max_K": 2.1260667925665877,
+      "budget_W": 2.3306731086709025e-11
+    },
+    {
+      "epoch": 30,
+      "dynamic_z_pct": 17.128203988563495,
+      "current_pct": 7.872537908233459,
+      "temp_rmse_K": 0.8212152325483908,
+      "temp_max_K": 2.1244856111386423,
+      "budget_W": 2.3138788268630257e-11
+    },
+    {
+      "epoch": 40,
+      "dynamic_z_pct": 17.21551863602729,
+      "current_pct": 7.873346420951433,
+      "temp_rmse_K": 0.8210691941806652,
+      "temp_max_K": 2.1242439573633503,
+      "budget_W": 2.3232089834229572e-11
+    },
+    {
+      "epoch": 50,
+      "dynamic_z_pct": 16.807701979371547,
+      "current_pct": 7.874554005266993,
+      "temp_rmse_K": 0.8214066366286386,
+      "temp_max_K": 2.1258291024114357,
+      "budget_W": 2.3232089834229572e-11
+    },
+    {
+      "epoch": 60,
+      "dynamic_z_pct": 16.379336297409264,
+      "current_pct": 7.876512776951837,
+      "temp_rmse_K": 0.8219043790146249,
+      "temp_max_K": 2.1282002631524195,
+      "budget_W": 2.3418692965428203e-11
+    },
+    {
+      "epoch": 70,
+      "dynamic_z_pct": 16.38844232905256,
+      "current_pct": 7.877861737044135,
+      "temp_rmse_K": 0.8221432976652364,
+      "temp_max_K": 2.129694541414446,
+      "budget_W": 2.3642616722866562e-11
+    },
+    {
+      "epoch": 80,
+      "dynamic_z_pct": 16.225120638917623,
+      "current_pct": 7.879170784143061,
+      "temp_rmse_K": 0.8225483593932056,
+      "temp_max_K": 2.1315660039827082,
+      "budget_W": 2.3605296096626834e-11
+    },
+    {
+      "epoch": 90,
+      "dynamic_z_pct": 16.286325811949062,
+      "current_pct": 7.880299150339304,
+      "temp_rmse_K": 0.8228670522171607,
+      "temp_max_K": 2.1329682009061792,
+      "budget_W": 2.3232089834229572e-11
+    },
+    {
+      "epoch": 100,
+      "dynamic_z_pct": 16.32115087370463,
+      "current_pct": 7.881260352757051,
+      "temp_rmse_K": 0.8231285268747226,
+      "temp_max_K": 2.133927431972085,
+      "budget_W": 2.3661277035986424e-11
+    },
+    {
+      "epoch": 110,
+      "dynamic_z_pct": 16.301343019254258,
+      "current_pct": 7.881325506833034,
+      "temp_rmse_K": 0.8231385777221455,
+      "temp_max_K": 2.1337340025903484,
+      "budget_W": 2.3773238914705602e-11
+    },
+    {
+      "epoch": 120,
+      "dynamic_z_pct": 16.151314858360326,
+      "current_pct": 7.8813182795727394,
+      "temp_rmse_K": 0.8232045685784866,
+      "temp_max_K": 2.1336898390028356,
+      "budget_W": 2.3717257975346015e-11
+    },
+    {
+      "epoch": 130,
+      "dynamic_z_pct": 16.15483471104728,
+      "current_pct": 7.881355389106448,
+      "temp_rmse_K": 0.8232229275705131,
+      "temp_max_K": 2.133625379244873,
+      "budget_W": 2.369859766222615e-11
+    },
+    {
+      "epoch": 140,
+      "dynamic_z_pct": 16.243409682920568,
+      "current_pct": 7.88141120801094,
+      "temp_rmse_K": 0.8232165300169498,
+      "temp_max_K": 2.133571474786102,
+      "budget_W": 2.2821562945592585e-11
+    },
+    {
+      "epoch": 150,
+      "dynamic_z_pct": 16.290065413797056,
+      "current_pct": 7.8813396706580345,
+      "temp_rmse_K": 0.823206632848675,
+      "temp_max_K": 2.133488544959784,
+      "budget_W": 2.304548670303094e-11
+    },
+    {
+      "epoch": 160,
+      "dynamic_z_pct": 16.262950871368595,
+      "current_pct": 7.8812472139111005,
+      "temp_rmse_K": 0.8232725516139364,
+      "temp_max_K": 2.1335828122193448,
+      "budget_W": 2.3120127955510394e-11
+    }
+  ],
+  "thermal_model": "runs\\geomfrac_et_pose42_kell_r48_thermal_v1.pt",
+  "base_model": "runs\\geomfrac_et_v9_ztune.pt",
+  "feature_source": "predicted rank48 heat states: first32 global, last16 TX/RX sea-skin",
+  "tangent_variant": "v3"
+}
