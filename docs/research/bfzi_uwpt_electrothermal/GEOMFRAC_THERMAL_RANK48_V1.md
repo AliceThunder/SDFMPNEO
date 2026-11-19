@@ -74,7 +74,7 @@ XEnergy 上相关测试：
 
 ## 当前结论
 
-48 阶是目前最合适的共享热状态扩展：它大幅改善海水皮肤层温度场表示，且 64 阶没有额外收益。rank48 Atlas 和跨几何推理代码已经建立，神经热头训练正在进行。正式模型暂不升级。
+48 阶是目前最合适的共享热状态扩展：它大幅改善海水皮肤层温度场表示，且 64 阶没有额外收益。rank48 Atlas、神经热头和直接皮肤状态阻抗切线均已完成开发训练；当前进行阻抗切线驱动的热头联合微调。冻结六组独立验收通过前，正式模型继续保留 V5。
 
 
 ## 8. Training selection correction — 2026-11-19
@@ -97,3 +97,21 @@ The corrected thermal-selection run completed successfully:
 - Mean autonomous dynamic-Z relative error on the same 33 teacher histories: 16.3031%, compared with 15.9086% for the untrained rank48 initialization. Thermal-field improvement alone did not improve this impedance metric.
 
 The next task is fitting the direct rank48 skin tangent against the 36G/11G split. The trainer uses the first 32 global states and appended 16 TX/RX skin coordinates from the predicted rank48 thermal rollout. Current process: XEnergy `job-35`.
+
+
+## 10. Direct rank48 skin tangent result and joint fine-tuning — 2026-11-19
+
+The rank48 direct-skin tangent fit completed on the 36G/11G split (108 train and 33 development histories). It uses the predicted first 32 global heat coordinates plus the appended 16 TX/RX seawater-skin coordinates. The geometry-free V4 port-factorized tangent reached its best development result at epoch 180:
+
+- Frozen ZFix baseline: 17.1687% mean dynamic-Z relative error.
+- Rank48 direct-skin tangent: 16.2292%.
+- Relative improvement: 5.47% (0.9395 percentage points).
+- Mean current relative error: 7.8807% versus 7.8755% baseline.
+- Mean material temperature RMSE: 0.8230 K; mean maximum temperature error: 2.1326 K.
+- Maximum material energy-budget residual: 2.38e-11 W.
+
+The tangent therefore provides a measurable but still moderate impedance improvement. The model is stored at `runs/geomfrac_rank48_skin_tan_v1.pt`; its development report is `runs/geomfrac_rank48_skin_tan_v1.json`.
+
+A rank48 heat-head fine-tune has now started using this tangent in both the differentiable tangent loss and the free geometry closed-loop selection. Only the appended 16 skin-mode output rows are trainable; the first 32 global thermal outputs and the SOE impedance branch remain frozen. It uses the same 36G/11G development split and does not access the sealed six-case holdout. The free-loop initialization score is 16.2292%, matching the selected tangent development result. Current XEnergy process: `job-40`.
+
+The tangent restore path and multi-geometry training integration pass the focused tests (8 passed). After fine-tuning, compare the best checkpoint with the frozen six-case holdout and the V5 baseline before deciding whether rank48 can replace V5.
