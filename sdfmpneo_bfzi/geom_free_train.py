@@ -76,7 +76,7 @@ def _source(a, d, voltage, tm):
 def _shape(prev,guess,dt,voltage,tm,d):
     q,_=_source(guess,d,voltage,tm)
     k=d['k']
-    mat=torch.eye(27,dtype=torch.float64)/dt+k[5:,5:]
+    mat=torch.eye(k.shape[0]-5,dtype=k.dtype,device=k.device)/dt+k[5:,5:]
     rhs=prev[5:]/dt+q[5:]-k[5:,:5]@guess[:5]
     return torch.linalg.solve(mat,rhs)
 
@@ -131,7 +131,7 @@ def setup(case,init,tan,ambient=293.15):
     geom,feat=geometry(case,init)
     port=geom_port(geom)
     cap=torch.as_tensor(init['cap'],dtype=torch.float64)
-    sc=torch.sqrt(cap[labels(32)])
+    sc=torch.sqrt(cap[labels(init['k'].shape[0])])
     air=init['air']
     air=np.array([[air[0],air[1]],[air[1],air[2]]],float)
     airz=torch.as_tensor(1j*port.omega*air,dtype=torch.complex128)
@@ -161,7 +161,7 @@ def rollout(d,net,ck,times,voltage,shape_mix=0.):
     if not 0<=shape_mix<=1:
         raise ValueError('invalid shape mix')
     hist=net.init_state(1)
-    old=torch.zeros(32,dtype=torch.float64)
+    old=torch.zeros(d['k'].shape[0],dtype=torch.float64)
     zprev=d['z0']
     src_scale=torch.as_tensor(ck['src_scale'],dtype=torch.float32)
     a_scale=torch.as_tensor(ck['a_scale'],dtype=torch.float32)
