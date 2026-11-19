@@ -1,19 +1,18 @@
 """Pose-conditioned cold self-port residuals on top of frozen PortSelf V5."""
 from __future__ import annotations
 
-from pathlib import Path
 import numpy as np
 import torch
 from torch import nn
 
 from .geom_coldnet import OMEGA, feat
 from .geom_coldres import ColdRes
+from .geom_portself import PortSelf
 
 
 def _input_pose(g):
     a=feat(g)
     local=([0,2,4,12,13],[1,3,5,14,15])
-    all_idx=set(range(len(a)))
     return np.stack([
         np.r_[a[idx],a[[k for k in range(len(a)) if k not in idx]]]
         for idx in local
@@ -26,8 +25,7 @@ class ColdResPose(nn.Module):
     def __init__(self,base_path,xm,xs,ys,hidden=64):
         super().__init__()
         self.base_path=str(base_path)
-        self.base=ColdRes( self.base_path, np.zeros((2,5)), np.ones((2,5)),
-                           np.ones((2,2)), hidden).base
+        self.base=PortSelf.load(self.base_path)
         self.register_buffer('xm',torch.as_tensor(xm,dtype=torch.float32))
         self.register_buffer('xs',torch.as_tensor(xs,dtype=torch.float32))
         self.register_buffer('ys',torch.as_tensor(ys,dtype=torch.float32))
