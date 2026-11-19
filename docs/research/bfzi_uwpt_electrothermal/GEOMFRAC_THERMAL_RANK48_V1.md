@@ -134,3 +134,10 @@ Report: runs/geomfrac_rank48_skin_tan_v3.json; checkpoint: runs/geomfrac_rank48_
 
 
 Implementation update: the BFZI-free evaluation entry now dispatches rank48 checkpoints to restore_rank48, while retaining the original rank32 time-conditioned adapter. The heat-head loss reuses the predicted tangent and batches teacher tangent targets to reduce repeated forward calls. Validation: 18 neural/multi/skintan tests passed; 11 free-evaluation/skintan tests passed.
+
+
+## 11. Skin-output-only feedback fine-tuning — 2026-11-19
+
+The first tangent-driven thermal fine-tune completed 70 epochs with the first 32 global heat outputs frozen and only the appended 16 skin-mode output rows trainable. Its free geometry closed-loop development selection remained at the initialization value of 16.2292% (best epoch 0; 0% improvement). The model-selection rule retained the original rank48 thermal checkpoint. This indicates that adapting only the appended skin outputs is too restrictive for the coupled impedance objective.
+
+The next run unfreezes the complete thermal head while keeping the SOE impedance branch frozen. It retains the same rank48 skin tangent, thermal physics loss, full dynamic-Z loss and free-loop development selection. Current XEnergy process: `job-41`; output candidate: `runs/geomfrac_et_pose42_kell_r48_tangent_v2.pt`. The frozen six-case holdout remains untouched.
