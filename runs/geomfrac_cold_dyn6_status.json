@@ -144,11 +144,63 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Prototype end-to-end rank-48 shared thermal atlas and GeomFracET; validate on these frozen six dynamic holdouts, especially C0260 and C0725.",
+  "next": "Complete rank48 heat-head training, compare frozen six-case dynamic holdout with base ZFix and direct rank48 skin tangent, and promote only if development and independent acceptance improve.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
     "runs/geomfrac_cold_dyn6_detail.json",
     "runs/geomfrac_cold_dyn6_basis.json"
-  ]
+  ],
+  "rank48": {
+    "status": "atlas_complete_neural_heat_head_training_running",
+    "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
+    "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
+    "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
+    "report": "runs/geomfrac_et_pose42_kell_r48_v1.json",
+    "training": {
+      "job": "job-32",
+      "pid": 38044,
+      "rank": 48,
+      "train_geometries": 36,
+      "train_histories": 108,
+      "dev_geometries": 11,
+      "dev_histories": 33,
+      "max_epochs": 120,
+      "batch_hist": 12,
+      "patience": 40,
+      "learning_rate": 0.0003,
+      "select": "free_dynamic_z",
+      "trainable": "heat_head only"
+    },
+    "atlas_metrics": {
+      "dev_heat_K_rel_F": 0.038050123224617045,
+      "dev_min_eig_mean": 0.00002300716935530822,
+      "ell": 6,
+      "lambda": 0.003,
+      "kell": 0.6,
+      "thermal_scale_exp": [
+        0.5,
+        0.25,
+        1
+      ]
+    },
+    "basis_sweep": {
+      "mean_global_rmse_K": {
+        "32": 0.33840608872971506,
+        "48": 0.12385135790694556,
+        "64": 0.12383302020034465
+      },
+      "max_global_K": {
+        "32": 9.312920408688797,
+        "48": 4.581655344292528,
+        "64": 4.582226297736952
+      },
+      "mean_skin_rmse_K": {
+        "32": 0.6421256371221101,
+        "48": 0.21976375270676204,
+        "64": 0.21942289910339854
+      },
+      "decision": "48 modes selected; train and evaluate direct rank48 skin impedance tangent after thermal-head training"
+    }
+  }
 }
