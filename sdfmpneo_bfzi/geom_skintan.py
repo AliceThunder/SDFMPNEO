@@ -193,3 +193,29 @@ def restore(path,base_path,skin_path):
 
     predict.time_conditioned=True
     return predict
+
+
+def restore_rank48(path,base_path):
+    """Use the 16 directly predicted canonical skin states in a rank48 rollout."""
+    ck=torch.load(Path(path),map_location="cpu",weights_only=True)
+    cls={"v2":SkinTanV2,"v3":SkinTanV3,"v4":SkinTanV4}.get(
+        ck.get("model_version"),SkinTan)
+    net=cls(ng=int(ck["ng"]),sa=np.asarray(ck["sa"]),
+            ss=np.asarray(ck["ss"]))
+    net.load_state_dict(ck["state"])
+    net.eval()
+    for p in net.parameters():
+        p.requires_grad_(False)
+    from .geom_ztune import restore as load_base
+    base=load_base(base_path)
+    sy=torch.as_tensor(np.asarray(ck["sy"])[:6],dtype=torch.float32)
+
+    def predict(g,a,tm,voltage):
+        if a.ndim!=2 or a.shape[1]!=48:
+            raise ValueError("rank48 skin tangent requires 48 canonical heat states")
+        global_state=a[:,:32]
+        skin_state=a[:,32:48]
+        return base(g,global_state)+net(g,global_state,skin_state)*sy
+
+    predict.time_conditioned=True
+    return predict
