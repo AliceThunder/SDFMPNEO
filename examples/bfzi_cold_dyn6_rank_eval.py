@@ -28,6 +28,8 @@ def main():
         help='optional tangent using direct rank48 skin coordinates')
     p.add_argument('--coldnet',type=Path,default=Path('runs/geomfrac_coldnet_v1.pt'))
     p.add_argument('--coldres',type=Path,default=Path('runs/geomfrac_coldres_v1.pt'))
+    p.add_argument('--cold-v7',type=Path,default=None,
+        help='unified V7 cold model; replaces self and mutual port heads')
     p.add_argument('--out',type=Path,required=True)
     a=p.parse_args()
     torch.set_num_threads(2)
@@ -51,6 +53,8 @@ def main():
     sf=SrcFix.load(cfg['source_model'])
     ports=dict(v5=PortSelf.load(cfg['port_self_model']),
         coldnet=ColdNet.load(a.coldnet),coldres=load_cold(a.coldres))
+    if a.cold_v7:
+        ports['cold_v7']=ColdNet.load(a.cold_v7)
     out=dict(status='complete',rank=rank,cases={},summary={})
     keys=('dynamic_z_rel_L2','current_rel_L2','material_mean_rmse_K',
           'material_mean_max_K','sea_mean_max_K','pkg_mean_max_K',
@@ -64,7 +68,8 @@ def main():
         out['cases'][name]={}
         for pname,port in ports.items():
             init=atlas.predict(case)
-            for model in (port,mu,sf):
+            chain=(port,sf) if pname=='cold_v7' else (port,mu,sf)
+            for model in chain:
                 init=model.apply(case,init)
             vals=[]
             for row in rows:
