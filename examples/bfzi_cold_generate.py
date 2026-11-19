@@ -32,12 +32,18 @@ def _pack(z):
 
 
 def one(bfzi_root,geom,path,grid='ultra',source_order=5):
+    t_all=time.perf_counter()
+    t=time.perf_counter()
     from examples.bfzi_param import originals,create
     from examples.bfzi_physics_recheck import GRIDS
     from sdfmpneo_bfzi.bfzi_v148_adapter import BFZIV148Adapter
-
-    bf,v150=originals(bfzi_root)
     from examples.bfzi_cold_lead_guard import gap
+    import_sec=time.perf_counter()-t
+
+    t=time.perf_counter()
+    bf,v150=originals(bfzi_root)
+    orig_sec=time.perf_counter()-t
+    t=time.perf_counter()
     spacing=gap(bf,geom)
     if not all(p['clear'] for p in spacing):
         raise ValueError('native BFZI terminal leads overlap: '
@@ -45,14 +51,22 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
     if grid not in GRIDS:
         raise ValueError(f'unknown BFZI grid {grid}')
     xz,y=GRIDS[grid]
+    gap_sec=time.perf_counter()-t
+
+    t=time.perf_counter()
     data,info=create(bf,v150,'M4',**geom,sea_void='oriented',
                      physical_box_only=True,grid_xz=xz,grid_y=y,
                      grid_max_nodes=4000)
+    create_sec=time.perf_counter()-t
+    t=time.perf_counter()
     em=BFZIV148Adapter(data,bf,heat_mode='port-weak',
                       fv_faces='exact',source_mask='subcell',
                       source_order=source_order)
+    adapter_sec=time.perf_counter()-t
     amb=293.15
+    t=time.perf_counter()
     ans=em.solve(np.full(len(em.vol),amb),np.full(2,amb))
+    solve_sec=time.perf_counter()-t
     air=np.asarray(em.air,float)
     z0=_pack(ans.total_z)
     sea=_pack(ans.sea_z)
@@ -64,14 +78,24 @@ def one(bfzi_root,geom,path,grid='ultra',source_order=5):
     path=Path(path)
     path.parent.mkdir(parents=True,exist_ok=True)
     # NPZ is committed only after the entire cold solve succeeds.
+    t=time.perf_counter()
     tmp=path.with_suffix('.partial.npz')
     np.savez_compressed(tmp,z0=z0,sea=sea,air=air,
                         copper=np.stack((cu.real,cu.imag),axis=-1),
                         omega=float(em.omega),sigma=float(em.sigma0),
                         cells=len(em.vol),ambient=amb)
     tmp.replace(path)
+    save_sec=time.perf_counter()-t
+    profile=dict(import_sec=import_sec,originals_sec=orig_sec,
+                 lead_check_sec=gap_sec,create_sec=create_sec,
+                 create_report_sec=float(info.get('bfzi_prep_sec',0.)),
+                 adapter_sec=adapter_sec,solve_sec=solve_sec,
+                 save_sec=save_sec,total_sec=time.perf_counter()-t_all,
+                 cells=len(em.vol),green_shape=list(data['G0'].shape),
+                 gmres=ans.residual)
     print('COLD_DONE',path.name,'cells',len(em.vol),
           'seconds',round(info['bfzi_prep_sec'],2),flush=True)
+    print('COLD_PROFILE',json.dumps(profile,separators=(',',':')),flush=True)
 
 
 def collect(plan,store,report_path,out):
@@ -138,12 +162,20 @@ def generate(plan,bfzi_root,out,limit=None,timeout=600,grid='ultra',
                              stderr=subprocess.STDOUT,text=True,timeout=timeout)
             if p.returncode!=0 or not file.exists():
                 raise RuntimeError((p.stdout or 'worker did not save data')[-1500:])
+            profile=None
+            for line in (p.stdout or '').splitlines():
+                if line.startswith('COLD_PROFILE '):
+                    try:
+                        profile=json.loads(line[len('COLD_PROFILE '):])
+                    except (ValueError,TypeError):
+                        pass
             report['attempts'][key]=dict(status='ok',
-                seconds=round(time.monotonic()-start,2))
+                seconds=round(time.monotonic()-start,2),profile=profile)
             report['failures'].pop(key,None)
             done+=1
             print('COLD',index,len(todo),key,'OK',
-                  report['attempts'][key]['seconds'],flush=True)
+                  report['attempts'][key]['seconds'],
+                  'profile',profile,flush=True)
         except (subprocess.TimeoutExpired,OSError,RuntimeError) as e:
             msg=str(e)[-1200:]
             report['failures'][key]=dict(reason=msg,
