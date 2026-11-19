@@ -187,8 +187,9 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
-    if atlas.rank!=32 or net.rank!=32 or not ck.get('canonical',False):
-        raise ValueError("current autonomous shared-coordinate head uses 32 modes")
+    if (atlas.rank not in (32,48,64) or net.rank!=atlas.rank
+            or not ck.get('canonical',False)):
+        raise ValueError("atlas and neural head must share a supported canonical rank")
     if not 0.<=shape_mix<=1.:
         raise ValueError("thermal shape mixing coefficient must be in [0,1]")
     if heat_mode not in ("neural","rom","hybrid"):
@@ -211,13 +212,14 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     else:
         ext_fn=None
     cap=init['cap']
-    scale=np.sqrt(cap[labels(32)])
+    rank=atlas.rank
+    scale=np.sqrt(cap[labels(rank)])
     cs=np.asarray(ck['src_scale'],float)
     ys=np.asarray(ck['y_scale'],float)
     ac=np.asarray(ck['a_scale'],float)
     hist=net.init_state(1)
-    old=np.zeros(32)
-    full=np.zeros(32)
+    old=np.zeros(rank)
+    full=np.zeros(rank)
     zprev=zmat(init['z0'])
     out=dict(z6=[],current_A=[],temp_group_K=[],heat_state=[],
              material_budget_W=[],Psea_W=[],Pcu_W=[])
@@ -266,7 +268,7 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
             ('material_budget_W',budget),('Psea_W',ps),('Pcu_W',pc)):
             out[key].append(np.asarray(val).copy())
     res={name:np.asarray(val) for name,val in out.items()}
-    res.update(heat_rank=32,geometry_only=True,heat_mode=heat_mode,rom_mix=rom_mix,full_FV_states=0,
+    res.update(heat_rank=rank,geometry_only=True,heat_mode=heat_mode,rom_mix=rom_mix,full_FV_states=0,
                cold_BFZI_solves=0,heat_basis_builds=0,
                heat_FV_solves=0,ambient=ambient)
     return res
