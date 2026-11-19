@@ -7,13 +7,13 @@
 
 推理输入包括两线圈几何、相对位姿、封装与材料热参数、驱动电压时间序列。主推理链为：
 
-1. 已训练的统一 \`ColdNet\`：一次输出完整双端口冷态复阻抗和空气电感。
-2. 跨几何共享 \`GeomInit\` 与 \`SrcFix\`：预测48维共享热状态所需算子及海水 Joule 热源分布。
-3. 冻结 \`GeomFracET\` rank48：随时间更新热状态、分数阶记忆及热—电反馈。
-4. 冻结 \`SkinTanV3\` 与物理端口电路：根据温度预测动态复阻抗、电流和材料损耗。
-5. \`geom_cold_domain\`：只接受标定过的核心域几何；域外返回 \`out_of_domain\`。
+1. 已训练的统一 `ColdNet`：一次输出完整双端口冷态复阻抗和空气电感。
+2. 跨几何共享 `GeomInit` 与 `SrcFix`：预测48维共享热状态所需算子及海水 Joule 热源分布。
+3. 冻结 `GeomFracET` rank48：随时间更新热状态、分数阶记忆及热—电反馈。
+4. 冻结 `SkinTanV3` 与物理端口电路：根据温度预测动态复阻抗、电流和材料损耗。
+5. `geom_cold_domain`：只接受标定过的核心域几何；域外返回 `out_of_domain`。
 
-V7 推理链不串联 \`PortSelf\`、\`ColdRes\` 和 \`MutFix\`。并联 \`ParZ\` V1 只用于独立实验，正式入口保持关闭。
+V7 推理链不串联 `PortSelf`、`ColdRes` 和 `MutFix`。并联 `ParZ` V1 只用于独立实验，正式入口保持关闭。
 
 ## 2. 参考数据和冷态独立测试
 
@@ -33,7 +33,7 @@ V7 推理链不串联 \`PortSelf\`、\`ColdRes\` 和 \`MutFix\`。并联 \`ParZ\
 
 ## 3. 六组核心动态闭环独立验收
 
-冻结以下几何：\`C0416\`、\`C0725\`、\`V7D0001\`、\`V7D0002\`、\`V7D0003\`、\`V7D0004\`。共12条动态历史，包括60秒和300秒两种激励。新增四组八条BFZI V150教师历史全部生成成功（失败0）。
+冻结以下几何：`C0416`、`C0725`、`V7D0001`、`V7D0002`、`V7D0003`、`V7D0004`。共12条动态历史，包括60秒和300秒两种激励。新增四组八条BFZI V150教师历史全部生成成功（失败0）。
 
 冻结同一rank48热模型，对比V5冷态基线、历史冷态网络与统一V7：
 
@@ -69,7 +69,7 @@ V7动态阻抗增量误差主要分布于自阻抗：R11误差占总增量L2约5
 
 ## 5. 并联动态阻抗支路 V1 消融
 
-已实现轻量 \`ParZ\`，与主模型共用45维几何/工况特征，依据五个材料平均温升输出TX/RX动态自阻抗的四个实数修正分量。约2132个可训练参数，零温升时输出为零，可选地参与完整电磁热反馈。
+已实现轻量 `ParZ`，与主模型共用45维几何/工况特征，依据五个材料平均温升输出TX/RX动态自阻抗的四个实数修正分量。约2132个可训练参数，零温升时输出为零，可选地参与完整电磁热反馈。
 
 训练使用23组核心几何69条历史，验证使用5组核心几何15条历史；强度只在验证集选择，六组核心动态测试保持独立。
 
@@ -88,21 +88,21 @@ V7动态阻抗增量误差主要分布于自阻抗：R11误差占总增量L2约5
 
 运行前已具备XEnergy本地权重：
 
-- \`runs/geomfrac_cold_v7.pt\`
-- \`runs/geomfrac_cold_v7_domain.json\`
-- \`runs/geomfrac_init_pose42_kell_36g_r48_v1.npz\`
-- \`runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt\`
-- \`runs/geomfrac_rank48_skin_tan_v3.pt\`
-- \`runs/geomfrac_src_v6.npz\`
+- `runs/geomfrac_cold_v7.pt`
+- `runs/geomfrac_cold_v7_domain.json`
+- `runs/geomfrac_init_pose42_kell_36g_r48_v1.npz`
+- `runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt`
+- `runs/geomfrac_rank48_skin_tan_v3.pt`
+- `runs/geomfrac_src_v6.npz`
 - 其他冻结配置引用的权重
 
 示例：
 
-\`\`\`powershell
+```powershell
 python -m examples.bfzi_v7_infer --input runs/geomfrac_v7_infer_input.json --out runs/geomfrac_v7_infer.npz
-\`\`\`
+```
 
-输入JSON字段为 \`case\`、\`time_s\`、\`voltage_v\`。输出NPZ含 \`z6\`、\`current_re\`、\`current_im\`、\`temp_group_K\`、\`Psea_W\`、\`Pcu_W\` 及材料能量预算。
+输入JSON字段为 `case`、`time_s`、`voltage_v`。输出NPZ含 `z6`、`current_re`、`current_im`、`temp_group_K`、`Psea_W`、`Pcu_W` 及材料能量预算。
 
 实测新几何60秒（5点）0.0787秒、300秒（21点）0.2570秒，包含模型加载。记录的BFZI冷态求解、逐几何热基构建、热FV求解次数均为0。域外输入直接返回拒绝状态。
 
@@ -111,8 +111,8 @@ python -m examples.bfzi_v7_infer --input runs/geomfrac_v7_infer_input.json --out
 **V7主网络完成并通过已定义的核心域冷态和六组动态独立测试，当前保持冻结。** 统一ColdNet提供了显著的冷态精度提升；完整BFZI-free在线推理已接通。并联残差V1的独立测试无稳定增益，暂缓并入系统。
 
 关键证据：
-- \`runs/geomfrac_cold_v7_summary.json\`
-- \`runs/geomfrac_cold_v7_core_dyn_eval.json\`
-- \`runs/geomfrac_cold_v7_heat_oracle.json\`
-- \`runs/geomfrac_v7_parallel.json\`
-- \`runs/geomfrac_cold_v7_in_domain_eval.json\`
+- `runs/geomfrac_cold_v7_summary.json`
+- `runs/geomfrac_cold_v7_core_dyn_eval.json`
+- `runs/geomfrac_cold_v7_heat_oracle.json`
+- `runs/geomfrac_v7_parallel.json`
+- `runs/geomfrac_cold_v7_in_domain_eval.json`
