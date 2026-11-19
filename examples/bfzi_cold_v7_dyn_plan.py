@@ -18,7 +18,6 @@ def main():
     p.add_argument("--old-plan",type=Path,default=Path("runs/geomfrac_cold_dyn6_plan.json"))
     p.add_argument("--domain",type=Path,default=Path("runs/geomfrac_cold_v7_domain.json"))
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_cold_v7_dyn_plan.json"))
-    p.add_argument("--seed",type=int,default=72028)
     a=p.parse_args()
     cold=read(a.cold_plan);old=read(a.old_plan);dom=load(a.domain)
     fixed=["C0416","C0725"]
@@ -39,9 +38,9 @@ def main():
             np.linalg.norm(vec(item[1])-x) for x in base))
         chosen.append(best);base.append(vec(best[1]));pool.remove(best)
     cases={k:copy.deepcopy(old["cases"][k]) for k in fixed}
-    for i,(src,g) in enumerate(chosen,1):
+    for i,(_,g) in enumerate(chosen,1):
         name=f"V7D{i:04d}"
-        template=copy.deepcopy(old["cases"]["C0416" if i%2 else "C0725"])
+        template=copy.deepcopy(old["cases"]["C0416" if i%2 else "C0260"])
         template["geometry"]=g
         cases[name]=template
     names=fixed+[f"V7D{i:04d}" for i in range(1,5)]
