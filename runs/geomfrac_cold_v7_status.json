@@ -102,14 +102,17 @@
     "batch_limit": 400,
     "remaining_new_references": 809,
     "completed": 400,
-    "failed_count": 0,
+    "failed_count": 2,
     "last_sample": "V7T0486",
     "last_sample_seconds": 15.38,
     "last_checked_at": "2026-11-19T19:35:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
-    "failures": {},
+    "failures": {
+      "V7T0570": "oriented package extends outside BFZI seawater tank",
+      "V7T0573": "oriented package extends outside BFZI seawater tank"
+    },
     "replacement": {
       "replaced": "V7T0121",
       "replacement": "V7T0996",
@@ -136,7 +139,8 @@
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
     "current_batch_completed": 86,
-    "completed_total": 486
+    "completed_total": 486,
+    "successful_attempts": 583
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -144,7 +148,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Complete job-72 (offset 400, limit 400), then generate offsets 800 and 1200 sequentially. Continue replacing any BFZI tank-invalid geometries. Merge when 1295/1295 new references are present.",
+  "next": "Allow job-72 to finish. Replace V7T0570 and V7T0573 with native-BFZI-validated geometries. Use the next batch with per-stage timing instrumentation to quantify create/G0, source-mass quadrature, air integral and GMRES costs. Optimize the dominant stage without changing the frozen reference definition.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -261,5 +265,37 @@
       "runs/geomfrac_s5_v7core_manifest.json"
     ],
     "next": "After cold model and domain gate are frozen, select four new core test geometries, generate eight BFZI dynamic histories, and combine them with existing C0416/C0725 references."
+  },
+  "performance_diagnosis": {
+    "measured_successful_samples": 583,
+    "measured_mean_sec": 15.2634,
+    "measured_median_sec": 15,
+    "measured_p90_sec": 16.97,
+    "measured_min_sec": 12.81,
+    "measured_max_sec": 22.45,
+    "internal_stage_breakdown": "not available in existing run because child stdout is captured and discarded on successful samples",
+    "code_path_findings": [
+      "one Python subprocess is launched for every geometry; BFZI imports and model setup repeat",
+      "bfzi_param.create rebuilds seawater FV geometry, OBB clipping, dense G0 Green matrix and source-to-volume C for every geometry",
+      "BFZIV148Adapter uses source_mask=subcell and source_order=5; _mass marks every wet FV cell active, evaluates 125 quadrature points per full cell and both coil source fields",
+      "BFZIV148Adapter calls calc.core.solve_operator from run_v130_local_source_support_zortho; this uses dense G0 matrix-vector products inside GMRES for both ports, not the available FFT solver",
+      "BFZIV148Adapter recalculates direct Neumann/GMD air inductance for every geometry"
+    ],
+    "instrumentation": {
+      "generator_commit": "bfa4b8c92308a1900f703cac51f2a53f0e825b27",
+      "adapter_commit": "6ce6b75a56da41d626a45c9f51272f302ef1cf2f",
+      "stages": [
+        "imports",
+        "BFZI load",
+        "lead check",
+        "create/G0",
+        "projector",
+        "source mass quadrature",
+        "air Neumann/GMD",
+        "GMRES",
+        "NPZ save"
+      ],
+      "active_job": "job-72 uses the pre-instrumentation process; profiles start with the next batch"
+    }
   }
 }
