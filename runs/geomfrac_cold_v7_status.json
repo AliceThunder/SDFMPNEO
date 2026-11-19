@@ -324,7 +324,8 @@
       "V7D0002",
       "V7D0003",
       "V7D0004"
-    ]
+    ],
+    "added_reference_status": "V7D0001 complete (2/2 histories); remaining three new geometries in progress"
   },
   "performance_diagnosis": {
     "measured_successful_samples": 583,
@@ -405,6 +406,17 @@
       "cold_Z_pct": 0.1106190776065031,
       "current_pct": 1.3568625381391692,
       "geometries": 120
+    },
+    "comparison": {
+      "old_coldnet_226": {
+        "cold_Z_pct": 1.1067881221005191,
+        "current_pct": 14.442107466204842
+      },
+      "same_test_v7": {
+        "cold_Z_pct": 0.14667831377177093,
+        "current_pct": 1.8222535441362209
+      },
+      "old_baseline_report": "runs/geomfrac_cold_v7_old_baseline.json"
     }
   },
   "applicability": {
@@ -414,6 +426,23 @@
     "core_val_accepted": 123,
     "core_val_total": 130,
     "core_test_accepted": 113,
-    "core_test_total": 120
+    "core_test_total": 120,
+    "accepted_core_test_metrics": {
+      "accepted": 113,
+      "total_core": 120,
+      "v7": {
+        "cold_Z_pct": 0.11173687243844134,
+        "air_L_pct": 0.11243256058241208,
+        "current_pct": 1.3774082659324272
+      },
+      "old_coldnet": {
+        "cold_Z_pct": 0.9005247767949454,
+        "air_L_pct": 0.9065453552218318,
+        "current_pct": 11.119318130500334
+      },
+      "report": "runs/geomfrac_cold_v7_in_domain_eval.json"
+    },
+    "infer_entry": "examples/bfzi_cold_v7_infer.py",
+    "smoke": "Core test 113/120 accepted, boundary test 0/85 accepted, geometry-only and case-wrapper forms work"
   }
 }
