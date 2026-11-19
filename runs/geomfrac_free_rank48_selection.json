@@ -1,0 +1,9 @@
+{
+  "description": "Rank48 development selection using shared geometry atlas and direct skin-state impedance tangent",
+  "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
+  "port_self_model": "runs/geomfrac_portself_v5.npz",
+  "mutual_model": "runs/geomfrac_mutual_v6.npz",
+  "source_model": "runs/geomfrac_src_v6.npz",
+  "z_fix_model": "runs/geomfrac_et_v9_ztune.pt",
+  "shape_mix": 0.5
+}
