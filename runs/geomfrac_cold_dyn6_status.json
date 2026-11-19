@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Complete job-35 rank48 direct-skin tangent fitting; fine-tune rank48 heat head with this tangent and tangent loss; evaluate both base ZFix and direct rank48 tangent on the frozen six dynamic holdouts.",
+  "next": "Finish job-40 rank48 heat-head tangent fine-tune; evaluate the selected checkpoint on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline; only promote rank48 if the independent comparison improves.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -152,7 +152,7 @@
     "runs/geomfrac_cold_dyn6_basis.json"
   ],
   "rank48": {
-    "status": "atlas_complete_rank48_thermal_head_training_running",
+    "status": "rank48_skin_tangent_complete_joint_finetune_running",
     "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
     "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
     "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
@@ -235,20 +235,45 @@
       "trainer": "examples/bfzi_geom_rank48_skintan.py",
       "adapter": "sdfmpneo_bfzi.geom_skintan.restore_rank48",
       "training_integration": "examples/bfzi_geom_multi.py --skin-tangent-model",
-      "feature_source": "direct predicted rank48 states 32:48",
-      "status": "training_running",
-      "job": "job-35",
-      "pid": 22480,
+      "feature_source": "predicted rank48 states: first32 global, last16 TX/RX seawater skin",
+      "status": "completed",
+      "job": "job-37",
       "model": "runs/geomfrac_rank48_skin_tan_v1.pt",
       "report": "runs/geomfrac_rank48_skin_tan_v1.json",
+      "variant": "v4 geometry-free port-factorized tangent",
       "train_geometries": 36,
       "dev_geometries": 11,
       "train_histories": 108,
       "dev_histories": 33,
-      "epochs": 160,
-      "eval_every": 10,
+      "epochs": 180,
+      "best_epoch": 180,
+      "baseline_dev_dynamic_z_pct": 17.168688666275226,
+      "best_dev_dynamic_z_pct": 16.229221445751005,
+      "improvement_pct": 5.47,
+      "current_pct": 7.8807234181043615,
+      "temperature_rmse_K": 0.8229731488730399,
+      "temperature_max_K": 2.1326316753210772,
+      "energy_budget_max_W": 2.3773238914705602e-11
+    },
+    "joint_finetune": {
+      "status": "running",
+      "job": "job-40",
+      "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v1.pt",
+      "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v1.json",
+      "select": "free_dynamic_z",
+      "initial_dev_dynamic_z_rel_L2": 0.16229221445751005,
+      "trainable": "only appended 16 skin-mode heat-head outputs",
+      "tangent_loss_weight": 1,
+      "train_geometries": 36,
+      "dev_geometries": 11,
+      "epochs": 80,
       "patience": 40,
-      "learning_rate": 0.0008
+      "learning_rate": 0.0002
+    },
+    "focused_tests": {
+      "status": "passed",
+      "tests": 8,
+      "command": "python -m pytest tests/test_bfzi_geom_skintan.py tests/test_bfzi_geom_multi.py -q"
     }
   }
 }
