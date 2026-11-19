@@ -142,6 +142,10 @@ def generate(plan,bfzi_root,out,limit=None,timeout=600,grid='ultra',
     report=json.loads(report_path.read_text(encoding='utf-8')) if report_path.exists() else {
         'status':'running','attempts':{},'failures':{}}
     keys=plan['train']+plan['val']+plan['test']
+    active=set(keys)
+    report['attempts']=report.get('attempts',{})
+    report['failures']={k:v for k,v in report.get('failures',{}).items()
+                        if k in active and not (store/f'{k}.npz').exists()}
     todo=keys[offset:] if limit is None else keys[offset:offset+limit]
     done=failed=skipped=0
     for index,key in enumerate(todo,1):
