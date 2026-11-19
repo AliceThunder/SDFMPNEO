@@ -19,9 +19,10 @@ class ZFix(nn.Module):
         nn.init.zeros_(self.net[-1].bias)
 
     def forward(self,g,a):
-        if g.shape!=(len(a),self.ng) or a.ndim!=2 or a.shape[1]!=32:
-            raise ValueError("ZFix requires geometry and 32 neural heat modes")
-        h=a[:,IDX]/self.scale
+        if (g.shape!=(len(a),self.ng) or a.ndim!=2 or a.shape[1]<32):
+            raise ValueError("ZFix requires geometry and at least 32 neural heat modes")
+        # The frozen tangent was trained on the original 32 coordinates.
+        h=a[:,:32][:,IDX]/self.scale
         x=torch.cat((g,h,.15*h*h),dim=1)
         z=torch.zeros_like(h)
         cold=torch.cat((g,z,z),dim=1)
