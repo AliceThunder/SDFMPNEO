@@ -30,6 +30,8 @@ def main():
     p.add_argument('--coldres',type=Path,default=Path('runs/geomfrac_coldres_v1.pt'))
     p.add_argument('--cold-v7',type=Path,default=None,
         help='unified V7 cold model; replaces self and mutual port heads')
+    p.add_argument('--domain',type=Path,default=None,
+        help='V7 core-domain gate JSON; out-of-domain geometries are not inferred')
     p.add_argument('--out',type=Path,required=True)
     a=p.parse_args()
     torch.set_num_threads(2)
@@ -55,6 +57,10 @@ def main():
         coldnet=ColdNet.load(a.coldnet),coldres=load_cold(a.coldres))
     if a.cold_v7:
         ports['cold_v7']=ColdNet.load(a.cold_v7)
+    domain=None
+    if a.domain:
+        from sdfmpneo_bfzi.geom_cold_domain import load as load_domain,check
+        domain=load_domain(a.domain)
     out=dict(status='complete',rank=rank,cases={},summary={})
     keys=('dynamic_z_rel_L2','current_rel_L2','material_mean_rmse_K',
           'material_mean_max_K','sea_mean_max_K','pkg_mean_max_K',
@@ -67,6 +73,13 @@ def main():
         case=plan['cases'][name]
         out['cases'][name]={}
         for pname,port in ports.items():
+            gate=None
+            if pname=='cold_v7' and domain is not None:
+                gate=check(case,domain)
+                if not gate['accepted']:
+                    out['cases'][name][pname]=dict(status='out_of_domain',domain=gate)
+                    print('RANK_DOMAIN_REJECT',name,gate,flush=True)
+                    continue
             init=atlas.predict(case)
             chain=(port,sf) if pname=='cold_v7' else (port,mu,sf)
             for model in chain:
@@ -83,6 +96,8 @@ def main():
             out['cases'][name][pname+'_mean']={
                 k:float(np.mean([v[k] for v in vals if k in v]))
                 for k in keys if all(k in v for v in vals)}
+            if pname=='cold_v7' and gate is not None:
+                out['cases'][name][pname+'_domain']=gate
             print('RANK_EVAL',name,pname,out['cases'][name][pname+'_mean'],flush=True)
     for pname in ports:
         vals=[hist[pname+'_mean'] for case in out['cases'].values()
