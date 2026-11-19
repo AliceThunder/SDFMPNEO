@@ -1,0 +1,58 @@
+{
+  "val": {
+    "overall": {
+      "geometries": 228,
+      "cold_Z_pct": 1.0104493159226138,
+      "air_L_pct": 1.017186924364281,
+      "current_pct": 12.900028241129794
+    },
+    "strata": {
+      "core": {
+        "geometries": 130,
+        "cold_Z_pct": 0.9173248980448822,
+        "air_L_pct": 0.9234744974999117,
+        "current_pct": 11.243921386461267
+      },
+      "boundary": {
+        "geometries": 76,
+        "cold_Z_pct": 1.1889590675226545,
+        "air_L_pct": 1.197079546783778,
+        "current_pct": 16.21612978517343
+      },
+      "extreme": {
+        "geometries": 22,
+        "cold_Z_pct": 0.9440599160363399,
+        "air_L_pct": 0.9494949329318405,
+        "current_pct": 11.230490684747622
+      }
+    }
+  },
+  "test": {
+    "overall": {
+      "geometries": 226,
+      "cold_Z_pct": 1.1067881221005191,
+      "air_L_pct": 1.114275979760441,
+      "current_pct": 14.442107466204842
+    },
+    "strata": {
+      "core": {
+        "geometries": 120,
+        "cold_Z_pct": 0.9171219049981327,
+        "air_L_pct": 0.9232041749405981,
+        "current_pct": 11.211126461786156
+      },
+      "boundary": {
+        "geometries": 85,
+        "cold_Z_pct": 1.4266649430672005,
+        "air_L_pct": 1.43654614128804,
+        "current_pct": 19.920496114265
+      },
+      "extreme": {
+        "geometries": 21,
+        "cold_Z_pct": 0.8958555635347318,
+        "air_L_pct": 0.9016880201668773,
+        "current_pct": 10.730425820734798
+      }
+    }
+  }
+}
