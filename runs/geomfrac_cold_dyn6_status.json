@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Complete rank48 heat-head training, compare frozen six-case dynamic holdout with base ZFix and direct rank48 skin tangent, and promote only if development and independent acceptance improve.",
+  "next": "Finish job-34 rank48 thermal training; fit rank48 direct-skin tangent on 36G/11G; use tangent loss and free_dynamic_z selection to fine-tune; compare base ZFix and direct rank48 tangent on frozen six-case holdout.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -152,7 +152,7 @@
     "runs/geomfrac_cold_dyn6_basis.json"
   ],
   "rank48": {
-    "status": "atlas_complete_neural_heat_head_training_running",
+    "status": "atlas_complete_rank48_thermal_head_training_running",
     "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
     "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
     "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
@@ -201,6 +201,33 @@
         "64": 0.21942289910339854
       },
       "decision": "48 modes selected; train and evaluate direct rank48 skin impedance tangent after thermal-head training"
+    },
+    "training_first_attempt": {
+      "job": "job-32",
+      "status": "completed",
+      "epochs": 70,
+      "best_epoch": 0,
+      "initial_free_dynamic_z_rel_L2": 0.16418103722131372,
+      "best_free_dynamic_z_rel_L2": 0.16418103722131372,
+      "improvement_pct": 0,
+      "selection_note": "rank32 ZFix tangent reads only the first 32 states; selection did not directly measure appended skin coordinates"
+    },
+    "thermal_training": {
+      "job": "job-34",
+      "status": "running",
+      "model": "runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt",
+      "report": "runs/geomfrac_et_pose42_kell_r48_thermal_v1.json",
+      "select": "thermal",
+      "initial_dev_max_temperature_K": 2.388428,
+      "epoch50_dev_max_temperature_K": 1.964681,
+      "best_epoch_at_last_update": 50,
+      "improvement_pct": 17.7
+    },
+    "skin_tangent": {
+      "trainer": "examples/bfzi_geom_rank48_skintan.py",
+      "adapter": "sdfmpneo_bfzi.geom_skintan.restore_rank48",
+      "training_integration": "examples/bfzi_geom_multi.py --skin-tangent-model",
+      "feature_source": "direct predicted rank48 states 32:48"
     }
   }
 }
