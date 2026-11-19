@@ -107,7 +107,7 @@ def collect(plan,store,report_path,out):
 
 
 def generate(plan,bfzi_root,out,limit=None,timeout=600,grid='ultra',
-             source_order=5,retry=False):
+             source_order=5,retry=False,offset=0):
     out=Path(out)
     store=out/'samples'
     store.mkdir(parents=True,exist_ok=True)
@@ -115,7 +115,7 @@ def generate(plan,bfzi_root,out,limit=None,timeout=600,grid='ultra',
     report=json.loads(report_path.read_text(encoding='utf-8')) if report_path.exists() else {
         'status':'running','attempts':{},'failures':{}}
     keys=plan['train']+plan['val']+plan['test']
-    todo=keys if limit is None else keys[:limit]
+    todo=keys[offset:] if limit is None else keys[offset:offset+limit]
     done=failed=skipped=0
     for index,key in enumerate(todo,1):
         file=store/f'{key}.npz'
@@ -172,6 +172,7 @@ def main():
     p.add_argument('--out',type=Path,
                    default=Path('runs/geomfrac_cold500'))
     p.add_argument('--limit',type=int,default=None)
+    p.add_argument('--offset',type=int,default=0)
     p.add_argument('--timeout',type=int,default=600)
     p.add_argument('--grid',choices=('ultra','superfine'),default='ultra')
     p.add_argument('--source-order',type=int,default=5)
@@ -186,7 +187,7 @@ def main():
     else:
         plan=json.loads(a.plan.read_text(encoding='utf-8-sig'))
         generate(plan,a.bfzi_root,a.out,a.limit,a.timeout,
-                 a.grid,a.source_order,a.retry_failed)
+                 a.grid,a.source_order,a.retry_failed,a.offset)
 
 
 if __name__=='__main__':
