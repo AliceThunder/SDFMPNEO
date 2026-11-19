@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Finish job-42 V3 full-heat-head tangent fine-tune; if the 11G development set improves, evaluate the selected checkpoint once on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline. Promote only after independent improvement.",
+  "next": "Monitor job-48 V3 full heat-head tangent fine-tune with reduced learning rate and tangent weight; inspect its captured log. If development selection improves over 16.1513%, evaluate the selected checkpoint once on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline. Promote only after independent improvement.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -338,14 +338,14 @@
     "next": "Finish job-47 full heat-head tangent fine-tune; evaluate thermal baseline, direct skin tangent, and joint candidate once on frozen six-case/12-history holdout.",
     "joint_finetune_v3": {
       "status": "running",
-      "job": "job-45",
+      "job": "job-48",
       "model": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.pt",
       "report": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.json",
       "tangent_model": "runs/geomfrac_rank48_skin_tan_v3.pt",
       "tangent_variant": "v3 geometry-conditioned compact physical descriptors",
       "select": "free_dynamic_z",
       "trainable": "full heat_head",
-      "tangent_loss_weight": 1,
+      "tangent_loss_weight": 0.5,
       "zrel_weight": 0.5,
       "train_geometries": 36,
       "dev_geometries": 11,
@@ -353,7 +353,7 @@
       "dev_histories": 33,
       "epochs": 100,
       "patience": 40,
-      "learning_rate": 0.0001,
+      "learning_rate": 0.00002,
       "closed_warmup": 10,
       "closed_ramp": 20,
       "therm_weight": 0.03,
@@ -375,8 +375,22 @@
         {
           "job": "job-42",
           "status": "failed_before_epoch"
+        },
+        {
+          "job": "job-45",
+          "status": "failed",
+          "exit_code": 1,
+          "epochs_observed": 50,
+          "initial_dev_dynamic_z_rel_L2": 0.16151314858360327,
+          "epoch50_dev_dynamic_z_rel_L2": 0.175201,
+          "selected_best_epoch": 0,
+          "checkpoint_created": false,
+          "report_created": false,
+          "reason": "No stderr/traceback was retained by the job output; captured stdout ended after epoch 50."
         }
-      ]
+      ],
+      "log": "runs/geomfrac_et_pose42_kell_r48_tangent_v3.log",
+      "previous_job": "job-45"
     }
   }
 }
