@@ -199,6 +199,8 @@ def main():
     if a.heat_only:
         for name,param in net.named_parameters():
             param.requires_grad_(name.startswith('heat_head.'))
+    if a.rank48_extra_only:
+        rank48_extra(net)
     tangent=None
     if a.tangent_model:
         tck=torch.load(a.tangent_model,map_location='cpu',weights_only=True)
