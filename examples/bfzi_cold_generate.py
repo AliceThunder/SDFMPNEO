@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from examples.bfzi_cold_v7_replacements import apply as apply_replacements
 
 
 def _save(path,obj):
@@ -185,7 +186,7 @@ def main():
         if not a.case_json or not a.output: p.error('--one requires case and output')
         one(a.bfzi_root,json.loads(a.case_json),a.output,a.grid,a.source_order)
     else:
-        plan=json.loads(a.plan.read_text(encoding='utf-8-sig'))
+        plan=apply_replacements(json.loads(a.plan.read_text(encoding='utf-8-sig')))
         generate(plan,a.bfzi_root,a.out,a.limit,a.timeout,
                  a.grid,a.source_order,a.retry_failed,a.offset)
 
