@@ -1,6 +1,6 @@
 {
   "version": 7,
-  "status": "cold_training_completed_dynamic_acceptance_in_progress",
+  "status": "cold_and_core_dynamic_acceptance_completed",
   "train_reference": {
     "new": {
       "train": 995,
@@ -89,44 +89,130 @@
     }
   },
   "core_dynamic": {
-    "geometries": [
-      "C0416",
-      "C0725"
-    ],
-    "histories": 4,
-    "pending_new_geometries": 4,
-    "pending_histories": 8,
-    "v5": {
-      "dynamic_z_pct": 10.234795013061495,
-      "current_pct": 6.326716690570905,
-      "temp_rmse_K": 0.44614175767694564,
-      "temp_max_K": 1.3814401143195738,
-      "sea_power_pct": 48.207328958735424,
-      "copper_power_pct": 11.334657650867868
+    "status": "complete",
+    "geometries": 6,
+    "histories": 12,
+    "model_comparison": {
+      "v5": {
+        "dynamic_z_rel_L2": 0.1121549603554582,
+        "full_z_rel_L2": 0.007417085169782009,
+        "cold_z_rel_L2": 0.007414409328134207,
+        "current_rel_L2": 0.0869818124715886,
+        "material_mean_rmse_K": 0.46670696782972526,
+        "material_mean_max_K": 1.2730448751663677,
+        "sea_power_rel_L2": 0.2645215194959962,
+        "copper_power_rel_L2": 0.11153372806012228,
+        "energy_budget_W": 3.6769819926684776e-12
+      },
+      "coldnet": {
+        "dynamic_z_rel_L2": 0.14854153923955843,
+        "full_z_rel_L2": 0.006907706262814644,
+        "cold_z_rel_L2": 0.006907244027894791,
+        "current_rel_L2": 0.08663696304411644,
+        "material_mean_rmse_K": 0.36990613188252436,
+        "material_mean_max_K": 0.9883009370285549,
+        "sea_power_rel_L2": 0.1946865937757646,
+        "copper_power_rel_L2": 0.09911032236141364,
+        "energy_budget_W": 3.751559277888862e-12
+      },
+      "coldres": {
+        "dynamic_z_rel_L2": 0.10205011875386678,
+        "full_z_rel_L2": 0.0026251251105843493,
+        "cold_z_rel_L2": 0.0026256574528003684,
+        "current_rel_L2": 0.03647012385407578,
+        "material_mean_rmse_K": 0.31806791207639823,
+        "material_mean_max_K": 1.0341792805703374,
+        "sea_power_rel_L2": 0.2828392576406736,
+        "copper_power_rel_L2": 0.04104662371688666,
+        "energy_budget_W": 4.601843217208152e-12
+      },
+      "cold_v7": {
+        "dynamic_z_rel_L2": 0.09921662114173267,
+        "full_z_rel_L2": 0.0012308882832166971,
+        "cold_z_rel_L2": 0.0012313039909432348,
+        "current_rel_L2": 0.015562711514843381,
+        "material_mean_rmse_K": 0.25741056675471596,
+        "material_mean_max_K": 0.8421096253041753,
+        "sea_power_rel_L2": 0.24771280569722087,
+        "copper_power_rel_L2": 0.022223999524316473,
+        "energy_budget_W": 3.707426505713615e-12
+      }
     },
-    "coldnet": {
-      "dynamic_z_pct": 13.274120622109642,
-      "current_pct": 4.989210367579623,
-      "temp_rmse_K": 0.33382164816097076,
-      "temp_max_K": 0.9726232359582099,
-      "sea_power_pct": 25.323546125830465,
-      "copper_power_pct": 7.3008299716809635
+    "v7_components_L2_over_total_delta": {
+      "R11": 0.05884637285230391,
+      "X11": 0.03613506814490452,
+      "R12": 0.005577999996375919,
+      "X12": 0.0004106123876204983,
+      "R22": 0.05641989841355006,
+      "X22": 0.01919945137464296
     },
-    "coldres": {
-      "dynamic_z_pct": 10.868967740314853,
-      "current_pct": 3.2425872529699618,
-      "temp_rmse_K": 0.38313857657289174,
-      "temp_max_K": 1.2513713079409001,
-      "sea_power_pct": 34.731832476142564,
-      "copper_power_pct": 4.527122917250663
-    },
-    "cold_v7": {
-      "dynamic_z_pct": 11.248633274235582,
-      "current_pct": 0.587914427009576,
-      "temp_rmse_K": 0.3299377864287274,
-      "temp_max_K": 1.0176173114194569,
-      "sea_power_pct": 29.53973906512112,
-      "copper_power_pct": 1.2260506247382583
+    "v7_per_geometry": {
+      "C0416": {
+        "dynamic_z_rel_L2": 0.07698786943311502,
+        "full_z_rel_L2": 0.0004879368816817474,
+        "cold_z_rel_L2": 0.0004902564206081944,
+        "current_rel_L2": 0.006477375401610685,
+        "material_mean_rmse_K": 0.30890855046136684,
+        "material_mean_max_K": 1.1843382118968009,
+        "sea_power_rel_L2": 0.2877552040541952,
+        "copper_power_rel_L2": 0.011223848517486652,
+        "energy_budget_W": 6.319117537478597e-12
+      },
+      "C0725": {
+        "dynamic_z_rel_L2": 0.1479847960515966,
+        "full_z_rel_L2": 0.0005197517442130751,
+        "cold_z_rel_L2": 0.0005166178290251447,
+        "current_rel_L2": 0.005280913138580834,
+        "material_mean_rmse_K": 0.350967022396088,
+        "material_mean_max_K": 0.8508964109421129,
+        "sea_power_rel_L2": 0.3030395772482272,
+        "copper_power_rel_L2": 0.013297163977278516,
+        "energy_budget_W": 3.0836911281565644e-12
+      },
+      "V7D0001": {
+        "dynamic_z_rel_L2": 0.14796207002560524,
+        "full_z_rel_L2": 0.00211738673586139,
+        "cold_z_rel_L2": 0.0021233732365178062,
+        "current_rel_L2": 0.036393970205349416,
+        "material_mean_rmse_K": 0.49604889759965826,
+        "material_mean_max_K": 1.7813319728046508,
+        "sea_power_rel_L2": 0.13950534602386672,
+        "copper_power_rel_L2": 0.030673286543229764,
+        "energy_budget_W": 4.491005992727515e-12
+      },
+      "V7D0002": {
+        "dynamic_z_rel_L2": 0.04402077887421381,
+        "full_z_rel_L2": 0.001473834274562285,
+        "cold_z_rel_L2": 0.0014737315583403766,
+        "current_rel_L2": 0.012525819019266322,
+        "material_mean_rmse_K": 0.073785184416773,
+        "material_mean_max_K": 0.27506605613558577,
+        "sea_power_rel_L2": 0.2884367323316649,
+        "copper_power_rel_L2": 0.015147964781395771,
+        "energy_budget_W": 3.8769239948508e-12
+      },
+      "V7D0003": {
+        "dynamic_z_rel_L2": 0.12291116116693876,
+        "full_z_rel_L2": 0.0011983074821707374,
+        "cold_z_rel_L2": 0.0011966375786225706,
+        "current_rel_L2": 0.007178133210073618,
+        "material_mean_rmse_K": 0.12983332578513013,
+        "material_mean_max_K": 0.42923916877424517,
+        "sea_power_rel_L2": 0.20885283488560313,
+        "copper_power_rel_L2": 0.028458129232272575,
+        "energy_budget_W": 1.6438977365630534e-12
+      },
+      "V7D0004": {
+        "dynamic_z_rel_L2": 0.055433051298926575,
+        "full_z_rel_L2": 0.001588112580810948,
+        "cold_z_rel_L2": 0.0015872073225453166,
+        "current_rel_L2": 0.025520058114179414,
+        "material_mean_rmse_K": 0.18492041986927985,
+        "material_mean_max_K": 0.5317859312716564,
+        "sea_power_rel_L2": 0.2586871396397682,
+        "copper_power_rel_L2": 0.03454360409423557,
+        "energy_budget_W": 2.829922644505165e-12
+      }
     },
     "domain_rejected": [
       "C0441",
@@ -134,11 +220,21 @@
       "C0027",
       "C0260"
     ],
-    "additional_plan": "runs/geomfrac_cold_v7_dyn_plan.json",
-    "additional_job": "job-81"
+    "teacher_heat_diagnostic": {
+      "pred": 0.09921662114173264,
+      "true_mean": 0.06838455538562717,
+      "true_skin": 0.09899241086872779,
+      "true_shape": 0.1400378850133003,
+      "true_all": 0.12210608519703754
+    },
+    "plan": "runs/geomfrac_cold_v7_dyn_plan.json",
+    "manifest": "runs/geomfrac_s5_cold_v7_core_manifest.json",
+    "teacher_reference_report": "runs/geomfrac_s5_v7core_build_report.json",
+    "detailed_result": "runs/geomfrac_cold_v7_core_dyn_eval.json",
+    "heat_oracle_report": "runs/geomfrac_cold_v7_heat_oracle.json"
   },
   "flags": {
-    "dynamic_full_acceptance_complete": false,
+    "dynamic_full_acceptance_complete": true,
     "parallel_residual_experiment_started": false
   }
 }
