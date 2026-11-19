@@ -223,11 +223,15 @@ def main():
     extra=GeomInit.load(args.cold_atlas) if args.cold_atlas else None
     tan=load_z(args.z_fix_model)
     if args.skin_tangent_model:
-        if not args.skin_model:
-            p.error('--skin-tangent-model requires --skin-model')
-        from sdfmpneo_bfzi.geom_skintan import restore as load_skin_tan
-        tan=load_skin_tan(args.skin_tangent_model,args.z_fix_model,
-                          args.skin_model)
+        if int(ck['rank']) == 48:
+            from sdfmpneo_bfzi.geom_skintan import restore_rank48
+            tan=restore_rank48(args.skin_tangent_model,args.z_fix_model)
+        else:
+            if not args.skin_model:
+                p.error('--skin-model is required for rank32 skin tangent')
+            from sdfmpneo_bfzi.geom_skintan import restore as load_skin_tan
+            tan=load_skin_tan(args.skin_tangent_model,args.z_fix_model,
+                              args.skin_model)
     field=None
     if args.field_atlas:
         from sdfmpneo_bfzi.geom_field import FieldAtlas
