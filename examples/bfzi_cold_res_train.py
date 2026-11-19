@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from sdfmpneo_bfzi.geom_coldres import ColdRes,_input
-from sdfmpneo_bfzi.geom_coldres_pose import ColdResPose,_input_pose
+from sdfmpneo_bfzi.geom_coldres_pose import ColdResPose,_input_pose,load_cold
 from sdfmpneo_bfzi.geom_mutual import MutFix
 from sdfmpneo_bfzi.geom_portself import PortSelf
 
@@ -96,11 +96,17 @@ def fit(new,old,cfg,*,out,epochs=400,lr=3e-4,
                                     dtype=np.float32))
     if pose_context:
         if init_model:
-            old_net=ColdRes.load(init_model)
-            xm[:,:5]=old_net.xm.cpu().numpy()
-            xs[:,:5]=old_net.xs.cpu().numpy()
-            ys=old_net.ys.cpu().numpy()
-            net=ColdResPose.from_old(old_net,xm,xs)
+            old_net=load_cold(init_model)
+            if isinstance(old_net,ColdResPose):
+                net=old_net
+                xm=net.xm.cpu().numpy().copy()
+                xs=net.xs.cpu().numpy().copy()
+                ys=net.ys.cpu().numpy().copy()
+            else:
+                xm[:,:5]=old_net.xm.cpu().numpy()
+                xs[:,:5]=old_net.xs.cpu().numpy()
+                ys=old_net.ys.cpu().numpy()
+                net=ColdResPose.from_old(old_net,xm,xs)
         else:
             net=ColdResPose(base_path,xm,xs,ys)
     else:
