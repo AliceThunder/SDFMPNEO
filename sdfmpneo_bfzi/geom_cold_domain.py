@@ -48,5 +48,7 @@ def save(model,train_rows,path):
     x=np.stack([feat(r["geometry"]) for r in train_rows if in_core(r["geometry"])])
     x=(x-np.asarray(model["mean"]))/np.asarray(model["scale"])
     model=dict(model);model["train_features"]=x.tolist()
-    Path(path).write_text(json.dumps(model,indent=2)+"\n",encoding="utf-8")
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps(model,indent=2)+"\\n",encoding="utf-8")
+
 def load(path):return json.loads(Path(path).read_text(encoding="utf-8-sig"))
