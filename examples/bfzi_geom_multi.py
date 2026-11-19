@@ -1,4 +1,4 @@
-"""Train one GeomFracET across independent BFZI geometries in shared 32D heat space.
+"""Train one GeomFracET across independent BFZI geometries in shared canonical 32/48-mode heat space.
 
 Manifest JSON:
 {"train":[{"anchor":"runs/T01_anchor.npz","teacher":["runs/T01_a.npz"]}],
