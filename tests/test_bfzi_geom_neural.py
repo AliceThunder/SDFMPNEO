@@ -176,7 +176,7 @@ def test_closed_loss_uses_post_balance_state(monkeypatch):
     sx,sy,sa=np.ones(3),np.ones(14),np.ones(rom.rank)
     baseline=mod.score(net,[row],None,sx,sy,sa,closed=True,src_mix=1.)
     monkeypatch.setattr(mod,"_heat_balance",
-                        lambda row,rom,old,pred,y,sy,dt,voltage:
+                        lambda row,rom,old,pred,y,sy,dt,voltage,**kwargs:
                         pred+0.1)
     changed=mod.score(net,[row],None,sx,sy,sa,closed=True,src_mix=1.)
     assert changed>baseline+0.001
