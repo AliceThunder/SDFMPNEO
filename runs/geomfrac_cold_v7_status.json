@@ -1,7 +1,7 @@
 {
   "version": 7,
   "date": "2026-11-20",
-  "status": "core_dynamic_accepted_parallel_ablation_running",
+  "status": "v7_core_accepted_parallel_v1_not_promoted",
   "branch": "research/bfzi-uwpt-electrothermal-surrogate",
   "execution_plan": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V7_UNIFIED_COLD_DOMAIN.md",
   "plan": "runs/geomfrac_cold_v7_plan.json",
@@ -179,7 +179,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Finish job-85 compact parallel-head ablation, inspect validation-selected strength and six-core test, then decide whether to retain baseline V7 or use V7 with a single parallel correction head.",
+  "next": "V7 core-domain inference is frozen and usable. Preserve the main network without ParZ. Future research priority: better material-mean thermal/impedance tangent alignment and seawater loss power (24.77% reference error), using independent geometry validation before revisiting parallel residual.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -247,22 +247,28 @@
     "smoke_plan": "runs/geomfrac_cold_v7_dyn_plan_smoke.json"
   },
   "parallel_residual_branch": {
-    "status": "candidate_training_running",
-    "experiment_job": "job-85",
+    "status": "experimental_only_not_promoted",
     "model": "sdfmpneo_bfzi/geom_parallel.py",
     "train_script": "examples/bfzi_cold_v7_parallel.py",
-    "architecture": "45D shared geometry/condition features -> 32-hidden geometry-dependent 4x5 material-temperature tangent; symmetric R11/X11/R22/X22 dynamic correction only, zero at zero temperature",
+    "experiment_job": "job-85 (completed; exitCode 0)",
     "train_core_geometries": 23,
     "val_core_geometries": 5,
+    "train_histories": 69,
+    "val_histories": 15,
     "test_core_geometries": 6,
-    "validation_strengths": [
-      0,
-      0.5,
-      1
-    ],
+    "test_histories": 12,
+    "parameters": 2132,
+    "best_epoch": 50,
+    "validation_selected_strength": 0.5,
+    "val_dynamic_z_pct_baseline": 25.68304720116152,
+    "val_dynamic_z_pct_parallel": 24.908962437481073,
+    "independent_test_dynamic_z_pct_baseline": 9.921662114173268,
+    "independent_test_dynamic_z_pct_parallel": 10.553303184106094,
+    "independent_test_current_pct_parallel": 1.558896110359053,
+    "independent_test_temp_rmse_K_parallel": 0.2576457726289881,
     "checkpoint": "runs/geomfrac_v7_parallel.pt",
     "report": "runs/geomfrac_v7_parallel.json",
-    "rule": "Only adopt if validation-selected frozen additive head improves independent six-core closed-loop dynamic metrics without worsening current, temperature and power"
+    "decision": "The small parallel branch helped development geometries but worsened frozen six-core independent dynamic Z; keep it optional and disabled in V7 inference."
   },
   "first_batch_validation": {
     "rows": 400,
@@ -327,7 +333,7 @@
       "v5_current_pct": 6.326716690570905
     },
     "added_core_plan": "runs/geomfrac_cold_v7_dyn_plan.json",
-    "added_reference_job": "job-81",
+    "added_reference_job": "job-81 (completed; exitCode 0)",
     "added_reference_log": "runs/geomfrac_s5_v7core_build.log",
     "added_reference_ids": [
       "V7D0001",
@@ -335,7 +341,7 @@
       "V7D0003",
       "V7D0004"
     ],
-    "added_reference_status": "V7D0001 2/2 histories complete, V7D0002 drive1 complete, job-81 running",
+    "added_reference_status": "All four new core geometries and eight histories completed successfully",
     "acceptance_queue": {
       "job": "job-82",
       "status": "waiting_for_job-81",
@@ -380,7 +386,9 @@
       "true_skin_pct": 9.8992,
       "true_all_pct": 12.2106,
       "report": "runs/geomfrac_cold_v7_heat_oracle.json"
-    }
+    },
+    "acceptance_job": "job-83 (completed; exitCode 0)",
+    "acceptance_diagnostic_job": "job-84 (completed; exitCode 0)"
   },
   "performance_diagnosis": {
     "measured_successful_samples": 583,
@@ -499,5 +507,25 @@
     },
     "infer_entry": "examples/bfzi_cold_v7_infer.py",
     "smoke": "Core test 113/120 accepted, boundary test 0/85 accepted, geometry-only and case-wrapper forms work"
+  },
+  "final_acceptance": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V7_ACCEPTANCE.md",
+  "inference": {
+    "status": "complete",
+    "entry": "examples/bfzi_v7_infer.py",
+    "example_input": "runs/geomfrac_v7_infer_input.json",
+    "accepted_output": "runs/geomfrac_v7_infer.npz",
+    "core_gate": "runs/geomfrac_cold_v7_domain.json",
+    "smoke": {
+      "in_domain": true,
+      "out_of_domain_rejected": true,
+      "cold_BFZI_solves": 0,
+      "heat_basis_builds": 0,
+      "heat_FV_solves": 0
+    },
+    "measured_seconds_including_model_load": {
+      "history_60s_5pts": 0.07871,
+      "history_300s_21pts": 0.25701
+    },
+    "model_config": "runs/geomfrac_free_rank48_selection.json"
   }
 }
