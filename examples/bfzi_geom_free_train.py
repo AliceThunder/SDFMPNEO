@@ -34,9 +34,9 @@ def _net(ck):
     return net
 
 
-def _data(mf):
-    tr=[r for spec in mf['train'] for r in prepare(spec,32)]
-    va=[r for spec in mf['val'] for r in prepare(spec,32)]
+def _data(mf,rank):
+    tr=[r for spec in mf['train'] for r in prepare(spec,rank)]
+    va=[r for spec in mf['val'] for r in prepare(spec,rank)]
     return tr,va
 
 
@@ -75,7 +75,7 @@ def main():
     cfg=json.loads(a.config.read_text(encoding='utf-8-sig'))
     ck=torch.load(a.init_model,map_location='cpu',weights_only=True)
     net=_net(ck)
-    tr,va=_data(mf)
+    tr,va=_data(mf,net.rank)
     seen=set(_name(r) for r in tr)
     dev=[r for r in va if _name(r) not in seen
          and _name(r).startswith(('D','T'))]
