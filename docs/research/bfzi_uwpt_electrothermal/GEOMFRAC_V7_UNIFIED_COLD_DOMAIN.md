@@ -166,6 +166,14 @@ examples/bfzi_cold_generate.py 支持 --offset 与 --limit，以批次方式续�
 
 后续批次按 offset 400、800、1200 执行，最后一批覆盖剩余样本。已成功的 NPZ 文件不会重复计算。
 
+### 4.4 物理域失败样本替换
+
+冷态求解中，BFZI 原生 OBB 海水槽检查可能拒绝少数通过引线净距筛选的候选。生成器逐样本隔离并继续后续候选；失败几何不进入训练集。替换样本必须保持原 split 和原分层类别，并通过原生 BFZI `create()` 的 oriented seawater OBB 构建。
+
+为避免重写约 450 KB 的冻结采样计划，替换记录放在小型文件 `runs/geomfrac_cold_v7_replacements.json`。生成器与合并器统一通过 `examples/bfzi_cold_v7_replacements.py` 应用覆盖，保持训练/验证/测试数量和分层目标不变。
+
+首个替换记录：训练核心域 V7T0121 因封装 OBB 超出海水槽被剔除，由通过原生几何构建的 V7T0996 替换。生成器重跑 offset 0 时自动跳过其余 399 个已成功 NPZ，仅补算替换样本。
+
 ## 5. 训练与验收
 
 ### 阶段 A：冷态参考数据闭合
