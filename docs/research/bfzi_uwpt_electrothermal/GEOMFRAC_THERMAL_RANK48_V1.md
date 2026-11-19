@@ -84,3 +84,16 @@ The first rank48 heat-head run used `free_dynamic_z` selection with the frozen r
 The corrected heat-head run uses `--select thermal`, which evaluates the reconstructed rank48 temperature field and directly measures whether the new skin coordinates are learned. At epoch 50, the maximum full-field temperature error on the 11-geometry development set improved from 2.3884 K to 1.9647 K (17.7% reduction); epoch 50 was the current best at the last progress update.
 
 A rank48 direct-skin impedance tangent trainer is now available as `examples/bfzi_geom_rank48_skintan.py`. It fits the port-factorized TX/mutual/RX correction against the appended 16 predicted rank48 states and evaluates it in the same closed geometry-free loop. `examples/bfzi_geom_multi.py` now accepts `--skin-tangent-model` and can use the same tangent for training loss and free-loop checkpoint selection. After the thermal run finishes, train this tangent on the 36G/11G split, then fine-tune the thermal head with its tangent loss and compare against the frozen six-case holdout.
+
+
+## 9. Rank48 thermal-head result — 2026-11-19
+
+The corrected thermal-selection run completed successfully:
+
+- Selected checkpoint: `runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt`
+- Best epoch: 50; early stop after 90 epochs.
+- Development selection metric: maximum full-field temperature error averaged over 33 histories improved from 2.3884 K to 1.9647 K (17.74% reduction).
+- Worst individual development-history maximum temperature error: 7.6799 K.
+- Mean autonomous dynamic-Z relative error on the same 33 teacher histories: 16.3031%, compared with 15.9086% for the untrained rank48 initialization. Thermal-field improvement alone did not improve this impedance metric.
+
+The next task is fitting the direct rank48 skin tangent against the 36G/11G split. The trainer uses the first 32 global states and appended 16 TX/RX skin coordinates from the predicted rank48 thermal rollout. Current process: XEnergy `job-35`.
