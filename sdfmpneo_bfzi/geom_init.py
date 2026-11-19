@@ -1,4 +1,4 @@
-"""Geometry-only cold port and shared 32-mode thermal operator emulator.
+"""Geometry-only cold port and shared 32/48/64-mode thermal operator emulator.
 
 No BFZI solve, geometry-specific FV grid or POD basis is needed at query time.
 The frozen training atlas contains geometry-disjoint cold anchors.
