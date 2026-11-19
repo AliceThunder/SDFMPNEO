@@ -1,7 +1,7 @@
 """Geometry-shared thermal coordinates with five material means and 27 shapes.
 
 Fixed spatial functions replace geometry-dependent POD eigenvector ordering.
-The same 32 indices describe the same modes for every BFZI geometry.
+The canonical 32/48/64 bases are nested and share the same first 32 modes.
 """
 from __future__ import annotations
 
