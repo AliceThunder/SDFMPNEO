@@ -1,5 +1,5 @@
 {
-  "status": "generating_physical_dynamic_references",
+  "status": "six_geometry_independent_dynamic_acceptance_complete",
   "date": "2026-11-19",
   "source": "BFZI V150 S5 physical direct",
   "plan": "runs/geomfrac_cold_dyn6_plan.json",
@@ -11,14 +11,26 @@
     "pilot": {
       "id": "job-22",
       "pid": 39012,
-      "status": "running",
-      "complete_histories": 1,
-      "case": "C0441"
+      "status": "completed",
+      "exit_code": 0
     },
     "continuation": {
       "id": "job-23",
       "pid": 26020,
-      "status": "waiting_on_pilot_then_execute_all_and_evaluate"
+      "status": "completed",
+      "exit_code": 0
+    },
+    "per_history": {
+      "id": "job-24",
+      "pid": 34444,
+      "status": "completed",
+      "exit_code": 0
+    },
+    "basis_sweep": {
+      "id": "job-25",
+      "pid": 36644,
+      "status": "completed",
+      "exit_code": 0
     }
   },
   "six_unseen_geometries": [
@@ -54,5 +66,89 @@
       "coldnet": 0.9456961638921149,
       "coldres": 0.578198835056703
     }
-  }
+  },
+  "completed": {
+    "geometries": 6,
+    "histories": 12,
+    "durations_s": [
+      60,
+      300
+    ],
+    "failures": 0
+  },
+  "dynamic_Z_pct": {
+    "v5": 26.560264002082327,
+    "coldnet": 23.1568429847763,
+    "coldres": 19.41417245034551
+  },
+  "improvement_vs_v5_pct": {
+    "coldnet": 12.813957786862353,
+    "coldres": 26.90519774644018
+  },
+  "geometries_better_than_v5": {
+    "coldnet": 3,
+    "coldres": 5
+  },
+  "per_geometry": {
+    "C0027": {
+      "v5": 33.242564801675236,
+      "coldnet": 15.56985161864921,
+      "coldres": 20.35729396994669
+    },
+    "C0043": {
+      "v5": 18.92679441198128,
+      "coldnet": 22.29174660108939,
+      "coldres": 12.885581490853834
+    },
+    "C0260": {
+      "v5": 55.79175734803624,
+      "coldnet": 57.05870362667158,
+      "coldres": 52.50465521923622
+    },
+    "C0416": {
+      "v5": 14.338964416359856,
+      "coldnet": 11.241704661657396,
+      "coldres": 8.429339581019764
+    },
+    "C0441": {
+      "v5": 27.412671763352105,
+      "coldnet": 17.187729981355744,
+      "coldres": 7.102473207207141
+    },
+    "C0725": {
+      "v5": 9.64883127108927,
+      "coldnet": 15.591321419234454,
+      "coldres": 15.205691233809437
+    }
+  },
+  "physical_closure": {
+    "max_thermal_residual_W": 0.00000420505193687859,
+    "max_global_budget_W": 0.0000016090622239062213,
+    "max_port_power_residual_W": 5.4569682106375694e-12
+  },
+  "basis_sweep_32_48_64": {
+    "mean_global_rmse_K": {
+      "32": 0.33840608872971506,
+      "48": 0.12385135790694556,
+      "64": 0.12383302020034465
+    },
+    "max_global_K": {
+      "32": 9.312920408688797,
+      "48": 4.581655344292528,
+      "64": 4.582226297736952
+    },
+    "mean_skin_rmse_K": {
+      "32": 0.6421256371221101,
+      "48": 0.21976375270676204,
+      "64": 0.21942289910339854
+    },
+    "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
+  },
+  "next": "Prototype end-to-end rank-48 shared thermal atlas and GeomFracET; validate on these frozen six dynamic holdouts, especially C0260 and C0725.",
+  "reports": [
+    "runs/geomfrac_cold_dyn6_acceptance.json",
+    "runs/geomfrac_cold_dyn6_eval.json",
+    "runs/geomfrac_cold_dyn6_detail.json",
+    "runs/geomfrac_cold_dyn6_basis.json"
+  ]
 }
