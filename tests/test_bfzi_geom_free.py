@@ -91,3 +91,41 @@ def test_shared_implicit_heat_rom_budget_and_determinism():
     assert np.max(abs(a['material_budget_W']))<1e-8
     assert np.allclose(a['z6'],b['z6'],rtol=0,atol=1e-12)
     assert np.isfinite(a['temp_group_K']).all()
+
+
+def test_rank48_free_rollout_uses_all_shared_heat_coordinates():
+    from sdfmpneo_bfzi.geom_init import GeomInit,encode
+    from sdfmpneo_bfzi.geom_neural import GeomFracET
+    from sdfmpneo_bfzi.geom_free import rollout
+
+    case=dict(donor='g1',alpha_per_K=.020,
+        geometry=dict(alpha1=.8,alpha2=.95,core1_mm=19,core2_mm=15,
+            shift_mm=[2,94,0],tilt_deg=10,yaw_deg=2,pitch_deg=3,
+            box1_mm=221,box2_mm=230),
+        thermal=dict(ins_k=.2,ins_t=.0004,pkg_k=.25,pkg_sea_h=20.))
+    x=np.stack([encode(case)]*3)
+    y=np.zeros((3,14))
+    y[:,0]=.2
+    y[:,4]=.2
+    y[:,6:9]=[1e-5,1e-6,1e-5]
+    y[:,9:14]=np.log([1e5,500,500,20,20])
+    k=np.stack([np.eye(48)*.01]*3)
+    src=np.ones((3,48,3))
+    ext=np.stack([np.eye(2,dtype=complex)]*3)
+    atlas=GeomInit.fit(x,y,k,src,ext,ell=1.,lam=.1)
+    net=GeomFracET(ng=45,rank=48,hidden=16,nrate=4,
+                   soe_quad='trap',heat_dt=1.875)
+    net.eval()
+    ck=dict(src_scale=np.ones(3),y_scale=np.ones(6),
+            a_scale=np.ones(48),canonical=True)
+    t=np.array([0.,15.,30.])
+    v=np.array([40.,40.,0.])
+    pred=rollout(case,atlas,net,ck,t,v,shape_mix=.5)
+    rom=rollout(case,atlas,net,ck,t,v,heat_mode='rom')
+    assert pred['heat_rank']==48
+    assert pred['heat_state'].shape==(3,48)
+    assert rom['heat_state'].shape==(3,48)
+    assert np.isfinite(pred['z6']).all()
+    assert np.isfinite(rom['z6']).all()
+    assert np.max(abs(pred['material_budget_W']))<1e-6
+    assert np.max(abs(rom['material_budget_W']))<1e-6
