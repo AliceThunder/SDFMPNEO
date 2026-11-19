@@ -62,10 +62,12 @@ def main():
         from sdfmpneo_bfzi.geom_cold_domain import load as load_domain,check
         domain=load_domain(a.domain)
     out=dict(status='complete',rank=rank,cases={},summary={})
-    keys=('dynamic_z_rel_L2','current_rel_L2','material_mean_rmse_K',
-          'material_mean_max_K','sea_mean_max_K','pkg_mean_max_K',
-          'copper_max_K','energy_budget_W','sea_power_rel_L2',
-          'copper_power_rel_L2')
+    keys=('dynamic_z_rel_L2','cold_z_rel_L2','full_z_rel_L2',
+          'current_rel_L2','material_mean_rmse_K','material_mean_max_K',
+          'sea_mean_max_K','pkg_mean_max_K','copper_max_K','energy_budget_W',
+          'sea_power_rel_L2','copper_power_rel_L2',
+          *(f'{c}_dynamic_error_L2_over_total_delta'
+            for c in ('R11','X11','R12','X12','R22','X22')))
     for spec in mf['test']:
         rows=prepare(spec,rank)
         if not rows:continue
