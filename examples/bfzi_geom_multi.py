@@ -4,8 +4,9 @@ Manifest JSON:
 {"train":[{"anchor":"runs/T01_anchor.npz","teacher":["runs/T01_a.npz"]}],
  "val":[{"anchor":"runs/T02_anchor.npz","teacher":["runs/T02_b.npz"]}]}
 
-Every geometry receives the same five material-mean and 27 spatial mode
-definitions. The FV operators and true spatial reconstructions remain local.
+Every geometry receives the same five material-mean coordinates and rank-5
+spatial coordinates. The FV operators and true spatial reconstructions remain
+local.
 """
 from __future__ import annotations
 
