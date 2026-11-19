@@ -90,9 +90,9 @@
   "generation": {
     "output": "runs/geomfrac_cold_v7",
     "log": "runs/geomfrac_cold_v7_generate_01.log",
-    "job": "job-72",
-    "status": "running",
-    "offset": 400,
+    "job": "job-74",
+    "status": "batch3_running_batch4_queued",
+    "offset": 800,
     "limit": 400,
     "exit_code": 0,
     "next_offsets": [
@@ -100,12 +100,12 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 582,
+    "remaining_new_references": 493,
     "completed": 400,
-    "failed_count": 2,
-    "last_sample": "V7T0715",
+    "failed_count": 1,
+    "last_sample": "V7T0803",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T20:17:00+08:00",
+    "last_checked_at": "2026-11-19T20:56:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -138,29 +138,28 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 313,
-    "completed_total": 713,
+    "current_batch_completed": 3,
+    "completed_total": 802,
     "successful_attempts": 583,
     "replacement_file": "runs/geomfrac_cold_v7_replacements.json",
     "queue": {
-      "job": "job-73",
-      "status": "waiting_for_job-72",
-      "active_job_pid": 3804,
-      "command_file": "runs/geomfrac_cold_v7_queue.cmd",
-      "queue_log": "runs/geomfrac_cold_v7_queue.log",
-      "stages": [
-        "repair offset=400 limit=400, skip completed NPZ",
-        "generate offset=800 limit=400",
-        "generate offset=1200 limit=95"
-      ],
-      "reference_settings": {
-        "grid": "ultra",
-        "source_order": 5,
-        "source_mask": "subcell",
-        "heat_mode": "port-weak"
-      },
-      "max_runtime_minutes": 180
-    }
+      "job": "job-75",
+      "status": "waiting_for_job-74",
+      "command_file": "runs/geomfrac_cold_v7_batch4.cmd",
+      "queue_log": "runs/geomfrac_cold_v7_batch4_queue.log",
+      "next_batch": {
+        "offset": 1200,
+        "limit": 95
+      }
+    },
+    "unresolved_failures": [
+      "V7T0719"
+    ],
+    "previous_replacements_resolved": [
+      "V7T0121",
+      "V7T0570",
+      "V7T0573"
+    ]
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -168,7 +167,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Job-72 continues normally. Job-73 waits for its process to exit, then repairs two excluded geometries and generates remaining V7 samples with unchanged BFZI V150 settings. Any additional geometry failures are recorded for subsequent replacement before merge.",
+  "next": "Finish batch 3 (job-74) and queued batch 4 (job-75). Replace the remaining physically invalid V7T0719 and any new rejections, resume only missing NPZs, then merge V7 dataset and train unified ColdNet.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
