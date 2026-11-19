@@ -1,5 +1,5 @@
 {
-  "status": "physical_lead_cleaning_resumed",
+  "status": "cold_generation_and_independent_static_evaluation_complete",
   "as_of": "2026-11-19",
   "target": {
     "candidates": 500,
@@ -10,10 +10,9 @@
   "device": "XEnergy-Zhucy",
   "process": {
     "provider": "EXZA",
-    "job_id": "job-18",
-    "status": "running",
-    "restart_of": "job-17",
-    "reason": "job-17 stopped unexpectedly without a solver traceback; saved NPZ files preserved"
+    "generation_job": "job-18",
+    "final_training_job": "job-19",
+    "status": "both completed"
   },
   "observed_progress": {
     "successful": 304,
@@ -198,5 +197,68 @@
       "runs/geomfrac_coldclean_res_closed.json"
     ],
     "document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_COLD500_CLEAN_PILOT_V1.md"
+  },
+  "final": {
+    "valid_geometries": {
+      "train": 427,
+      "val": 56,
+      "test": 56,
+      "total": 539
+    },
+    "legacy_accepted": {
+      "train": 18,
+      "dev": 2
+    },
+    "total_training_geometries": 445,
+    "independent_test_cold_Z_pct": {
+      "PortSelf_V5": 1.0425517298201843,
+      "ColdNet": 0.9456961638921149,
+      "ColdRes": 0.578198835056703
+    },
+    "coldres_improved_geometries": 49,
+    "independent_test_geometries": 56,
+    "independent_test_Z_median_pct": {
+      "PortSelf_V5": 0.9422439803784964,
+      "ColdRes": 0.3697335235479566
+    },
+    "original_valid_dynamic_pct": {
+      "unseen_2G": {
+        "PortSelf_V5": 13.519675898846891,
+        "ColdNet": 9.474206793196458,
+        "ColdRes": 12.31509967018644
+      },
+      "replay_3G": {
+        "PortSelf_V5": 19.321152600450358,
+        "ColdNet": 10.984455223277548,
+        "ColdRes": 10.091660495755212
+      },
+      "BB_4G": {
+        "PortSelf_V5": 22.113605636486167,
+        "ColdNet": 45.60299697349261,
+        "ColdRes": 29.403184716297687
+      }
+    },
+    "decision": "Standalone cold surrogate has improved markedly; complete electothermal surrogate stays at V5 pending fresh physically valid dynamic holdouts.",
+    "reports": [
+      "runs/geomfrac_cold500_final.json",
+      "runs/geomfrac_coldnet_v1.json",
+      "runs/geomfrac_coldres_v1.json",
+      "runs/geomfrac_cold_plain_closed_v1.json",
+      "runs/geomfrac_cold_residual_closed_v1.json"
+    ]
+  },
+  "dynamic_holdout": {
+    "plan": "runs/geomfrac_cold_dyn6_plan.json",
+    "test_geometries": [
+      "C0441",
+      "C0043",
+      "C0416",
+      "C0027",
+      "C0725",
+      "C0260"
+    ],
+    "expected_histories": 12,
+    "pilot_job": "job-22",
+    "status": "new independent physical S5 generation in progress"
   }
 }
