@@ -1,0 +1,334 @@
+{
+  "description": "V7 core-only independent dynamic acceptance plan",
+  "version": 7,
+  "train": [],
+  "val": [],
+  "test": [
+    "C0416",
+    "C0725",
+    "V7D0001",
+    "V7D0002",
+    "V7D0003",
+    "V7D0004"
+  ],
+  "cases": {
+    "C0416": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.951,
+        "alpha2": 0.9223,
+        "core1_mm": 8,
+        "core2_mm": 5,
+        "shift_mm": [
+          8,
+          96,
+          9
+        ],
+        "tilt_deg": 10,
+        "yaw_deg": 9,
+        "pitch_deg": 7,
+        "box1_mm": 226,
+        "box2_mm": 222
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58.47,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 77.96,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "C0725": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.9732,
+        "alpha2": 0.7216,
+        "core1_mm": 9,
+        "core2_mm": 21,
+        "shift_mm": [
+          -9,
+          110,
+          -9
+        ],
+        "tilt_deg": -13,
+        "yaw_deg": 9,
+        "pitch_deg": 3,
+        "box1_mm": 240,
+        "box2_mm": 215
+      },
+      "alpha_per_K": 0.02116,
+      "thermal": {
+        "ins_k": 0.3117,
+        "ins_t": 0.000354,
+        "pkg_k": 0.2896,
+        "pkg_sea_h": 25.586,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.21,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 74.95,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V7D0001": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.723,
+        "alpha2": 0.8294,
+        "core1_mm": 20,
+        "core2_mm": 22,
+        "shift_mm": [
+          -10,
+          90,
+          7
+        ],
+        "tilt_deg": -17,
+        "yaw_deg": 0,
+        "pitch_deg": 0,
+        "box1_mm": 213,
+        "box2_mm": 214
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58.47,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 77.96,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V7D0002": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.7188,
+        "alpha2": 0.877,
+        "core1_mm": 22,
+        "core2_mm": 11,
+        "shift_mm": [
+          13,
+          112,
+          -5
+        ],
+        "tilt_deg": -1,
+        "yaw_deg": 12,
+        "pitch_deg": -10,
+        "box1_mm": 222,
+        "box2_mm": 230
+      },
+      "alpha_per_K": 0.01991,
+      "thermal": {
+        "ins_k": 0.2412,
+        "ins_t": 0.000424,
+        "pkg_k": 0.1946,
+        "pkg_sea_h": 30.186,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 54.69,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 72.92,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V7D0003": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.9207,
+        "alpha2": 0.8876,
+        "core1_mm": 20,
+        "core2_mm": 19,
+        "shift_mm": [
+          -12,
+          110,
+          -6
+        ],
+        "tilt_deg": -13,
+        "yaw_deg": -16,
+        "pitch_deg": 1,
+        "box1_mm": 222,
+        "box2_mm": 240
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58.47,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 77.96,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V7D0004": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.9057,
+        "alpha2": 0.7771,
+        "core1_mm": 9,
+        "core2_mm": 21,
+        "shift_mm": [
+          0,
+          95,
+          -9
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": -10,
+        "pitch_deg": 4,
+        "box1_mm": 214,
+        "box2_mm": 216
+      },
+      "alpha_per_K": 0.01991,
+      "thermal": {
+        "ins_k": 0.2412,
+        "ins_t": 0.000424,
+        "pkg_k": 0.1946,
+        "pkg_sea_h": 30.186,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 54.69,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 72.92,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    }
+  },
+  "reused_existing": [
+    "C0416",
+    "C0725"
+  ],
+  "selected_new": [
+    {
+      "name": "V7D0001",
+      "source_test": "V7E0016"
+    },
+    {
+      "name": "V7D0002",
+      "source_test": "V7E0028"
+    },
+    {
+      "name": "V7D0003",
+      "source_test": "V7E0046"
+    },
+    {
+      "name": "V7D0004",
+      "source_test": "V7E0047"
+    }
+  ],
+  "domain_model": "runs\\geomfrac_cold_v7_domain.json",
+  "note": "Two existing core dynamic geometries plus four new core geometries from the frozen V7 cold test split."
+}
