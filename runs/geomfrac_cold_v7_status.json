@@ -91,7 +91,7 @@
     "output": "runs/geomfrac_cold_v7",
     "log": "runs/geomfrac_cold_v7_generate_01.log",
     "job": "job-76",
-    "status": "batch3_resumed",
+    "status": "running_with_windows_supervisor",
     "offset": 800,
     "limit": 400,
     "exit_code": 0,
@@ -100,12 +100,12 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 331,
+    "remaining_new_references": 280,
     "completed": 400,
     "failed_count": 1,
     "last_sample": "V7T0970",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T20:56:00+08:00",
+    "last_checked_at": "2026-11-19T22:18:49+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -139,7 +139,7 @@
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
     "current_batch_completed": 3,
-    "completed_total": 964,
+    "completed_total": 1015,
     "successful_attempts": 583,
     "replacement_file": "runs/geomfrac_cold_v7_replacements.json",
     "queue": {
@@ -160,7 +160,24 @@
       "V7T0570",
       "V7T0573"
     ],
-    "recovery_note": "jobs 74 and 75 both ended with exitCode 1 at 2026-11-19 21:34+08; batch3 log stops after V7T0970 without COLD_SUMMARY; batch4 never started; job-76 restarted batch3 and skips saved samples"
+    "recovery_note": "jobs 74 and 75 both ended with exitCode 1 at 2026-11-19 21:34+08; batch3 log stops after V7T0970 without COLD_SUMMARY; batch4 never started; job-76 restarted batch3 and skips saved samples",
+    "actual_valid_npz": 1015,
+    "expected_npz": 1295,
+    "supervisor": {
+      "task": "SDFMPNEO_V7Cold",
+      "state": "running",
+      "trigger": "ONLOGON",
+      "restart_on_failure": {
+        "attempts": 10,
+        "interval_minutes": 1
+      },
+      "script": "examples/bfzi_cold_v7_run.py",
+      "launcher": "runs/geomfrac_cold_v7_watch.cmd",
+      "log": "runs/geomfrac_cold_v7_watch.log",
+      "stdout_log": "runs/geomfrac_cold_v7_watch_cmd.log",
+      "behavior": "Wait for currently running BFZI generator; resume batches offset 800 and 1200, skip finished NPZ, retry failures, generate native-BFZI-valid same-stratum replacements, atomically write patch and collect 995/150/150."
+    },
+    "status_note": "Job-76 remains active; supervisor waits until it exits to avoid concurrent writes to progress.json or NPZs."
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -168,7 +185,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Finish job-76 to V7T1200, then run final batch offset1200 limit95. Replace six currently rejected geometries with valid same-stratum samples and rerun only missing NPZs.",
+  "next": "Supervisor resumes missing V7 references, runs fourth batch, replaces unresolved geometries, and completes merged cold reference data with exact 995/150/150 new split counts; then proceed to 1500/228/226 merge and V7 ColdNet training.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -185,6 +202,12 @@
       ],
       "commit": "d56371045654c7d67cb48211e3a8813b5f4b4951",
       "summary": "Small override file replaces physically invalid geometry in generation and merge without rewriting the 450 KB frozen sampling plan."
+    },
+    {
+      "commit": "37cd212f0436f6707509175b4792847c5b943e60",
+      "file": "examples/bfzi_cold_generate.py",
+      "change": "Filter stale replacement/finalized IDs from active failures on resume",
+      "reason": "Keep progress failure state aligned to current patched V7 split."
     }
   ],
   "smoke_tests": {
