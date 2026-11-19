@@ -101,14 +101,15 @@
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 1295,
+    "remaining_new_references": 1227,
     "completed": 68,
     "failed_count": 0,
     "last_sample": "V7T0068",
     "last_sample_seconds": 15.38,
     "last_checked_at": "2026-11-19T17:42:00+08:00",
     "failed": 0,
-    "last_checked": "2026-11-19"
+    "last_checked": "2026-11-19",
+    "planned_new_references": 1295
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -165,7 +166,7 @@
     "plan_generator": "examples/bfzi_cold_v7_dyn_plan.py",
     "manifest_filter": "examples/bfzi_cold_v7_dyn_manifest.py",
     "selection": "four accepted core geometries from the frozen V7 cold test split, selected by geometry maximin coverage",
-    "status": "plan_generator_smoke_passed",
+    "status": "pipeline_smoke_passed_final_plan_pending_v7_domain_calibration",
     "smoke_plan": "runs/geomfrac_cold_v7_dyn_plan_smoke.json"
   }
 }
