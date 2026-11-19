@@ -144,7 +144,7 @@
     },
     "decision": "48 modes remove most of the missing skin structure; 64 adds negligible benefit in these 12 histories."
   },
-  "next": "Finish job-40 rank48 heat-head tangent fine-tune; evaluate the selected checkpoint on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline; only promote rank48 if the independent comparison improves.",
+  "next": "Finish job-40 V4 tangent heat-head fine-tune; then run the same rank48 heat-head fine-tune with the better V3 geometry-conditioned tangent, select on the 11G development set, and evaluate the selected checkpoint once on the frozen six-case/12-history dynamic holdout against V5 and the pre-finetune rank48 baseline.",
   "reports": [
     "runs/geomfrac_cold_dyn6_acceptance.json",
     "runs/geomfrac_cold_dyn6_eval.json",
@@ -152,7 +152,7 @@
     "runs/geomfrac_cold_dyn6_basis.json"
   ],
   "rank48": {
-    "status": "rank48_skin_tangent_complete_joint_finetune_running",
+    "status": "V4_joint_finetune_running_V3_tangent_candidate_ready",
     "atlas": "runs/geomfrac_init_pose42_kell_36g_r48_v1.npz",
     "atlas_report": "runs/geomfrac_init_pose42_kell_36g_r48_v1_dev.json",
     "model": "runs/geomfrac_et_pose42_kell_r48_v1.pt",
@@ -268,12 +268,34 @@
       "dev_geometries": 11,
       "epochs": 80,
       "patience": 40,
-      "learning_rate": 0.0002
+      "learning_rate": 0.0002,
+      "tangent_variant": "v4 geometry-free port-factorized tangent",
+      "tangent_model": "runs/geomfrac_rank48_skin_tan_v1.pt"
     },
     "focused_tests": {
       "status": "passed",
       "tests": 8,
       "command": "python -m pytest tests/test_bfzi_geom_skintan.py tests/test_bfzi_geom_multi.py -q"
+    },
+    "skin_tangent_v3": {
+      "status": "completed",
+      "job": "job-39",
+      "variant": "v3 geometry-conditioned compact physical descriptors",
+      "model": "runs/geomfrac_rank48_skin_tan_v3.pt",
+      "report": "runs/geomfrac_rank48_skin_tan_v3.json",
+      "train_geometries": 36,
+      "dev_geometries": 11,
+      "train_histories": 108,
+      "dev_histories": 33,
+      "epochs": 160,
+      "best_epoch": 120,
+      "baseline_dev_dynamic_z_pct": 17.168688666275226,
+      "best_dev_dynamic_z_pct": 16.151314858360326,
+      "improvement_pct": 5.93,
+      "current_pct": 7.8813182795727394,
+      "temperature_rmse_K": 0.8232045685784866,
+      "temperature_max_K": 2.1336898390028356,
+      "energy_budget_max_W": 2.3717257975346015e-11
     }
   }
 }
