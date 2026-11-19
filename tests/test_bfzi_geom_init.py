@@ -140,3 +140,18 @@ def test_copper_balance_accepts_rank48_operator():
     assert got['k'].shape==(48,48)
     assert np.allclose(got['k'],got['k'].T)
     assert np.linalg.eigvalsh(got['k'])[0]>0
+
+
+def test_rank32_source_correction_preserves_rank48_atlas_modes():
+    from sdfmpneo_bfzi.geom_srcfix import SrcFix
+
+    model=SrcFix(dict(idx=np.array([0]),x=np.zeros((1,1)),
+        mu=np.zeros(1),std=np.ones(1),ym=np.zeros(96),
+        beta=np.zeros((1,96)),ell=1.,lam=.01))
+    model.predict=lambda case: np.full((32,3),2.)
+    case=_case()
+    src=np.arange(48*3,dtype=float).reshape(48,3)
+    got=model.apply(case,dict(src=src))['src']
+    assert got.shape==(48,3)
+    assert np.all(got[:32]==2.)
+    assert np.array_equal(got[32:],src[32:])
