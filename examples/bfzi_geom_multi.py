@@ -78,6 +78,22 @@ def free_metric(rows,free,net,ck,heat_op="atlas",cu_link=None):
     return float(np.mean(errs))
 
 
+def rank48_extra(net):
+    """Train only the appended 16 skin-mode outputs; preserve the original 32."""
+    for param in net.parameters():
+        param.requires_grad_(False)
+    weight=net.heat_head[2].weight
+    bias=net.heat_head[2].bias
+    weight.requires_grad_(True)
+    bias.requires_grad_(True)
+    wm=torch.zeros_like(weight)
+    bm=torch.zeros_like(bias)
+    wm[32:]=1.
+    bm[32:]=1.
+    weight.register_hook(lambda grad,mask=wm:grad*mask)
+    bias.register_hook(lambda grad,mask=bm:grad*mask)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',type=Path,required=True)
@@ -90,6 +106,7 @@ def main():
                    help='only train the new heat-conditioned impedance head')
     p.add_argument('--heat-only',action='store_true',
                    help='freeze SOE impedance and train thermal head only')
+    p.add_argument('--rank48-extra-only',action='store_true',help='train only appended 16 rank48 skin-mode outputs')
     p.add_argument('--tangent-model',type=Path,default=None,
                    help='evaluate autonomous Z with pretrained geometry tangent')
     p.add_argument('--tangent-loss-weight',type=float,default=0.,
@@ -170,6 +187,8 @@ def main():
                 sa=sa_old
     elif a.reuse_scales:
         p.error('--reuse-scales requires --init-model')
+    if a.rank48_extra_only and (a.rank!=48 or not a.init_model or a.heat_only or a.head_only):
+        p.error('--rank48-extra-only requires rank48 and an init model, without other freeze modes')
     if a.head_only and a.heat_only:
         p.error('--head-only and --heat-only are exclusive')
     if a.head_only:
@@ -212,7 +231,7 @@ def main():
               SrcFix.load(cfg['source_model']),
               load_z(cfg['z_fix_model']),float(cfg['shape_mix']))
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
-                          weight_decay=a.weight_decay)
+                          weight_decay=(0. if a.rank48_extra_only else a.weight_decay))
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt,mode='min',factor=a.lr_factor,
         patience=max(1,(a.lr_patience+a.val_every-1)//a.val_every))
@@ -340,7 +359,7 @@ def main():
                  autonomous_src=True,zrel_weight=a.zrel_weight,
                  reuse_scales=a.reuse_scales,proj_tau=a.proj_tau,
                  heat_z=a.heat_z,head_only=a.head_only,
-                 heat_only=a.heat_only,
+                 heat_only=a.heat_only,rank48_extra_only=a.rank48_extra_only,
                  copper_z_loss_weight=a.cu_z_weight,
                  free_heat_op=a.free_heat_op,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
