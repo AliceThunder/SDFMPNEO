@@ -103,9 +103,9 @@
     "remaining_new_references": 895,
     "completed": 400,
     "failed_count": 0,
-    "last_sample": "V7T0423",
+    "last_sample": "V7T0437",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:15:00+08:00",
+    "last_checked_at": "2026-11-19T19:20:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -135,7 +135,7 @@
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
     },
-    "current_batch_completed": 23
+    "current_batch_completed": 37
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -209,7 +209,8 @@
     "document": "docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_PARALLEL_RESIDUAL_BRANCH_V1.md",
     "key_design": "shared geometry/condition encoder plus compact zero-initialized dynamic impedance residual head",
     "injection": "existing geom_free.py extra impedance-correction hook",
-    "rule": "do not change frozen V7 cold mainline; evaluate only after baseline dynamic model and grouped holdout are frozen"
+    "rule": "do not change frozen V7 cold mainline; evaluate only after baseline dynamic model and grouped holdout are frozen",
+    "input_contract": "reuse the exact 45D g feature tensor passed to GeomFracET, plus normalized thermal state, time, and voltage; replace geom_free.py's current 18D encode(case) extra input with g after V7 baseline freeze."
   },
   "first_batch_validation": {
     "rows": 400,
