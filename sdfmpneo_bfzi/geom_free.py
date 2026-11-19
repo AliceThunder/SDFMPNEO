@@ -89,7 +89,7 @@ def positivity(a,init,scale):
 
 
 def shape_step(prev,guess,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
-    """Shared physically forced thermal shape: 27D implicit dissipative step."""
+    """Shared physically forced thermal shape: (rank-5)D implicit dissipative step."""
     z,cur,ps,pc,sea=circuit(guess,init,port,guess,tan,g,scale,
                             voltage,amb,extra,tm)
     amp=np.array([.5*abs(cur[0])**2,
