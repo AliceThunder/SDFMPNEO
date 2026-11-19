@@ -103,9 +103,9 @@
     "remaining_new_references": 895,
     "completed": 400,
     "failed_count": 0,
-    "last_sample": "V7T0405",
+    "last_sample": "V7T0417",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T19:05:00+08:00",
+    "last_checked_at": "2026-11-19T19:10:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
@@ -134,7 +134,8 @@
       "override_file": "runs/geomfrac_cold_v7_replacements.json",
       "status": "generated",
       "output": "runs/geomfrac_cold_v7/samples/V7T0996.npz"
-    }
+    },
+    "current_batch_completed": 17
   },
   "acceptance": {
     "static_test": "226 unique geometries; report overall and by core/boundary/extreme",
@@ -209,5 +210,17 @@
     "key_design": "shared geometry/condition encoder plus compact zero-initialized dynamic impedance residual head",
     "injection": "existing geom_free.py extra impedance-correction hook",
     "rule": "do not change frozen V7 cold mainline; evaluate only after baseline dynamic model and grouped holdout are frozen"
+  },
+  "first_batch_validation": {
+    "rows": 400,
+    "nonfinite": 0,
+    "invalid_shapes": 0,
+    "nonpositive_self_resistance": 0,
+    "negative_seawater_self_resistance": 0,
+    "non_psd_air_inductance": 0,
+    "min_self_resistance_ohm": 0.23000523465875214,
+    "min_seawater_self_resistance_ohm": 0.10378527238322269,
+    "min_air_inductance_eigenvalue_H": 0.000011849157263216824,
+    "result": "passed"
   }
 }
