@@ -90,33 +90,49 @@
   "generation": {
     "output": "runs/geomfrac_cold_v7",
     "log": "runs/geomfrac_cold_v7_generate_01.log",
-    "job": "job-69",
-    "status": "running",
+    "job": "job-71",
+    "status": "first_batch_replacement_running",
     "offset": 0,
     "limit": 400,
-    "exit_code": null,
+    "exit_code": 0,
     "next_offsets": [
       400,
       800,
       1200
     ],
     "batch_limit": 400,
-    "remaining_new_references": 1227,
-    "completed": 256,
-    "failed_count": 1,
-    "last_sample": "V7T0257",
+    "remaining_new_references": 896,
+    "completed": 399,
+    "failed_count": 0,
+    "last_sample": "V7T0400",
     "last_sample_seconds": 15.38,
-    "last_checked_at": "2026-11-19T18:18:00+08:00",
+    "last_checked_at": "2026-11-19T19:02:00+08:00",
     "failed": 0,
     "last_checked": "2026-11-19",
     "planned_new_references": 1295,
-    "failures": {
-      "V7T0121": {
-        "reason": "BFZI oriented package extends outside seawater tank",
-        "stratum": "core",
-        "split": "train",
-        "disposition": "exclude physically invalid geometry; replace with unused feasible candidate before merge"
-      }
+    "failures": {},
+    "replacement": {
+      "replaced": "V7T0121",
+      "replacement": "V7T0996",
+      "stratum": "core",
+      "geometry": {
+        "alpha1": 0.824,
+        "alpha2": 0.9773,
+        "core1_mm": 12,
+        "core2_mm": 12,
+        "shift_mm": [
+          -2,
+          83,
+          -6
+        ],
+        "tilt_deg": 16,
+        "yaw_deg": 4,
+        "pitch_deg": 4,
+        "box1_mm": 220,
+        "box2_mm": 228
+      },
+      "validation": "native BFZI create() accepted oriented seawater OBB",
+      "override_file": "runs/geomfrac_cold_v7_replacements.json"
     }
   },
   "acceptance": {
@@ -125,7 +141,7 @@
     "dynamic": "frozen rank48 thermal model on six unseen geometries and twelve histories; report only domain-accepted core cases for formal deployment metrics",
     "promotion": "require static cold, in-domain dynamic, temperature and energy-budget improvement; retain V5 baseline until passed"
   },
-  "next": "Finish job-69 first 400 cold references; continue offsets 400, 800, 1200. After all 1295 new references complete, merge and train the unified ColdNet, calibrate the final domain gate, select four additional core test geometries for six-case dynamic acceptance, then run the frozen rank48 closed-loop evaluation.",
+  "next": "Finish job-71, which skips 399 existing successful first-batch files and generates V7T0996. Then run offset 400, 800, and 1200 batches sequentially. Merge once all 1295 new references are present, train unified ColdNet, calibrate core domain, and run rank48 dynamic acceptance.",
   "code_fixes": [
     {
       "file": "sdfmpneo_bfzi/geom_cold_domain.py",
@@ -133,6 +149,15 @@
       "fix": "store standardized core training features; create output parent directory",
       "commit": "8785b93c006892c39b28a7e2b61cb81347d75c97",
       "verification": "py_compile passed; domain fit/save/load/check smoke passed"
+    },
+    {
+      "files": [
+        "examples/bfzi_cold_v7_replacements.py",
+        "examples/bfzi_cold_generate.py",
+        "examples/bfzi_cold_v7_merge.py"
+      ],
+      "commit": "d56371045654c7d67cb48211e3a8813b5f4b4951",
+      "summary": "Small override file replaces physically invalid geometry in generation and merge without rewriting the 450 KB frozen sampling plan."
     }
   ],
   "smoke_tests": {
