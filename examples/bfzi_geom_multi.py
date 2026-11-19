@@ -109,6 +109,10 @@ def main():
     p.add_argument('--rank48-extra-only',action='store_true',help='train only appended 16 rank48 skin-mode outputs')
     p.add_argument('--tangent-model',type=Path,default=None,
                    help='evaluate autonomous Z with pretrained geometry tangent')
+    p.add_argument('--skin-tangent-model',type=Path,default=None,
+                   help='rank48 impedance tangent using the appended 16 skin states')
+    p.add_argument('--skin-tangent-base',type=Path,
+                   default=Path('runs/geomfrac_et_v9_ztune.pt'))
     p.add_argument('--tangent-loss-weight',type=float,default=0.,
                    help='supervise thermal state via tangent-projected impedance')
     p.add_argument('--out',type=Path,default=Path('runs/geomfrac_et_multi.pt'))
@@ -201,6 +205,8 @@ def main():
             param.requires_grad_(name.startswith('heat_head.'))
     if a.rank48_extra_only:
         rank48_extra(net)
+    if a.tangent_model and a.skin_tangent_model:
+        p.error('choose either --tangent-model or --skin-tangent-model')
     tangent=None
     if a.tangent_model:
         tck=torch.load(a.tangent_model,map_location='cpu',weights_only=True)
@@ -209,8 +215,13 @@ def main():
         else:
             from examples.bfzi_z_tangent import restore
         tangent=restore(a.tangent_model)
+    if a.skin_tangent_model:
+        if a.rank!=48:
+            p.error('--skin-tangent-model requires --rank 48')
+        from sdfmpneo_bfzi.geom_skintan import restore_rank48
+        tangent=restore_rank48(a.skin_tangent_model,a.skin_tangent_base)
     if a.tangent_loss_weight<0 or (a.tangent_loss_weight and tangent is None):
-        p.error('nonnegative tangent loss requires --tangent-model')
+        p.error('tangent loss requires a pretrained tangent model')
     free=None
     if a.select=='free_dynamic_z':
         if not a.free_plan:
