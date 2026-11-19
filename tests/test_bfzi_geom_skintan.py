@@ -132,8 +132,8 @@ def test_rank48_skin_tangent_uses_direct_skin_coordinates(tmp_path):
     predict=restore_rank48(skin,zfix)
     g=torch.zeros((2,45))
     a=torch.zeros((2,48))
-    out=predict(g,a,30.,8.)
-    assert predict.time_conditioned
+    out=predict(g,a)
+    assert not predict.time_conditioned
     assert out.shape==(2,6)
     assert torch.isfinite(out).all()
     assert torch.allclose(out,torch.zeros_like(out))
