@@ -84,7 +84,7 @@ def loss(model,rows,sy):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_cold_dyn6_plan.json"))
+    p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_pose42_plan.json"))
     p.add_argument("--manifest",type=Path,default=Path("runs/geomfrac_s5_v6_36g_hold6_manifest.json"))
     p.add_argument("--atlas",type=Path,default=Path("runs/geomfrac_init_pose42_kell_36g_r48_v1.npz"))
     p.add_argument("--model",type=Path,required=True)
