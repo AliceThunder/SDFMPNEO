@@ -42,3 +42,14 @@ def test_nested_geometry_free_tangent_checkpoint(tmp_path):
     assert out.shape==(2,6)
     assert torch.isfinite(out).all()
     assert torch.allclose(out,torch.zeros_like(out))
+
+
+def test_zfix_accepts_rank48_and_uses_nested_rank32_prefix():
+    torch.manual_seed(11)
+    net=ZFix(ng=45,sa=torch.ones(32).numpy())
+    g=torch.randn(3,45)
+    a=torch.randn(3,48)
+    y=net(g,a)
+    ref=net(g,a[:,:32])
+    assert y.shape==(3,6)
+    assert torch.allclose(y,ref)
