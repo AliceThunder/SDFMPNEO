@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse,json
 from pathlib import Path
 from examples.bfzi_cold_v7_plan import category,key,read
+from examples.bfzi_cold_v7_replacements import apply as apply_replacements
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -10,7 +11,7 @@ def main():
     p.add_argument("--new",type=Path,default=Path("runs/geomfrac_cold_v7/data.json"))
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_cold_v7/data_merged.json"))
     a=p.parse_args()
-    plan=read(a.plan);new=read(a.new)
+    plan=apply_replacements(read(a.plan));new=read(a.new)
     parts={s:[] for s in ("train","val","test")}
     for src in plan["existing_sources"].values():
         d=read(src)
