@@ -115,7 +115,7 @@ def evaluate(atlas,net,ck,tan,plan,manifest,split,extra=None,weight=0.,field=Non
             if oracle_heat in ('src','all'):
                 init['src']=teacher['src']
         prep_s=time.perf_counter()-tprep
-        for hi,hist in enumerate(prepare(spec,32)):
+        for hi,hist in enumerate(prepare(spec,net.rank)):
             t0=time.perf_counter()
             pred=rollout(case,atlas,net,ck,hist['time'],hist['voltage'],tan,
                          init_override=init,extra=dyn,shape_mix=shape_mix,
@@ -204,7 +204,7 @@ def main():
     p.add_argument('--cu-balance',action='store_true',help='enforce copper-package ROM energy exchange identity')
     p.add_argument('--conductance-mix',action='store_true',help='interpolate capacity-scaled heat conductances with passive copper exchanges')
     p.add_argument('--analytic-cu',choices=('off','cap','exchange'),default='off',help='continuous-winding Cu heat capacity and optional insulated exchange')
-    p.add_argument('--heat-mode',choices=('neural','rom','hybrid'),default='neural',help='online neural heat state, implicit 32D ROM, or hybrid')
+    p.add_argument('--heat-mode',choices=('neural','rom','hybrid'),default='neural',help='online neural heat state, implicit shared-rank ROM, or hybrid')
     p.add_argument('--rom-mix',type=float,default=0.,help='implicit ROM fraction of hybrid higher thermal modes')
     p.add_argument('--oracle-heat',choices=('none','src','kcap','all'),default='none',help='offline diagnostic: replace estimated heat inputs with S5 anchor (requires BFZI teacher)')
     p.add_argument('--oracle-cold',action='store_true',help='offline diagnostic: replace predicted cold z0, air inductance and external network with S5 anchor')
