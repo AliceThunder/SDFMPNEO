@@ -24,6 +24,8 @@ def main():
     p.add_argument('--manifest',type=Path,default=Path('runs/geomfrac_s5_cold_dyn6_manifest.json'))
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--thermal-model',type=Path,required=True)
+    p.add_argument('--skin-tan-model',type=Path,default=None,
+        help='optional tangent using direct rank48 skin coordinates')
     p.add_argument('--coldnet',type=Path,default=Path('runs/geomfrac_coldnet_v1.pt'))
     p.add_argument('--coldres',type=Path,default=Path('runs/geomfrac_coldres_v1.pt'))
     p.add_argument('--out',type=Path,required=True)
@@ -40,7 +42,11 @@ def main():
     net.load_state_dict(ck['state']);net.eval()
     atlas=GeomInit.load(cfg['atlas'])
     if atlas.rank!=rank:raise ValueError('thermal model and atlas ranks differ')
-    tan=load_z(cfg['z_fix_model'])
+    if a.skin_tan_model:
+        from sdfmpneo_bfzi.geom_skintan import restore_rank48
+        tan=restore_rank48(a.skin_tan_model,cfg['z_fix_model'])
+    else:
+        tan=load_z(cfg['z_fix_model'])
     mu=MutFix.load(cfg['mutual_model'])
     sf=SrcFix.load(cfg['source_model'])
     ports=dict(v5=PortSelf.load(cfg['port_self_model']),
