@@ -255,6 +255,9 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             # expensive warm-source reconstruction in teacher ingestion.
 
         gg = torch.as_tensor(row['geom'][None],dtype=torch.float32) if 'geom' in row else g
+        tan_ref=None
+        if tan_w:
+            tan_ref=tangent(gg.expand(len(t)-1,-1),a[1:])
         for k in range(1, len(t)):
             dt=float(t[k]-t[k-1])
             prev = cur if closed else a[k-1:k]
@@ -284,7 +287,7 @@ def score(net, rows, g, sx, sy, sa, closed=False, rom=None,
             if tan_w:
                 if tangent is None:
                     raise ValueError('tangent loss needs pretrained sea tangent')
-                res_t=zy-tangent(gg,a[k:k+1])
+                res_t=zy-tan_ref[k-1:k]
                 pr_tan.append(res_t.square().sum())
             if rr is not None:
                 pred_temp=state[0]@decoder.T
