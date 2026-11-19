@@ -174,6 +174,19 @@ examples/bfzi_cold_generate.py 支持 --offset 与 --limit，以批次方式续�
 
 首个替换记录：训练核心域 V7T0121 因封装 OBB 超出海水槽被剔除，由通过原生几何构建的 V7T0996 替换。生成器重跑 offset 0 时自动跳过其余 399 个已成功 NPZ，仅补算替换样本。
 
+### 4.5 自动续跑与异常恢复
+
+V7 冷态数据使用 `examples/bfzi_cold_v7_run.py` 自动续跑监督程序。XEnergy 上配置 Windows 任务 `SDFMPNEO_V7Cold`，任务启动文件为 `runs/geomfrac_cold_v7_watch.cmd`。
+
+- 启动时先检查是否已有 BFZI 生成器正在运行，等待它退出，避免多个批次同时修改同一数据目录。
+- 自动执行 offset 800 / 1200 的剩余批次；完整 `NPZ` 已存在则直接跳过。
+- 失败样本先按原配置重试；持续失败则为同一个 split、同一个几何区域生成经 BFZI 原生构建验证的新几何，再写入小型 `geomfrac_cold_v7_replacements.json` 覆盖文件。
+- 每批状态和数据采用临时文件重命名保存；监督程序遇到批次进程异常退出时等待后再次启动。
+- Windows 任务支持用户登录时恢复，失败后按 1 分钟间隔尝试重新启动最多 10 次。
+- 完成前核对新增训练/验证/测试分别为 995/150/150；合并完整 V7 训练数据仍执行原定 1500/228/226 验收。
+
+实时日志：`runs/geomfrac_cold_v7_watch.log`，进程输出：`runs/geomfrac_cold_v7_watch_cmd.log`。
+
 ## 5. 训练与验收
 
 ### 阶段 A：冷态参考数据闭合
