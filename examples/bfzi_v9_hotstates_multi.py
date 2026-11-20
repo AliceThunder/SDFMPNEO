@@ -21,6 +21,7 @@ def read(path):
 def save(path,rows):
     np.savez_compressed(path,
         name=np.asarray([r["name"] for r in rows]),
+        idx=np.asarray([r["idx"] for r in rows],int),
         g=np.asarray([r["g"] for r in rows]),
         a=np.asarray([r["a"] for r in rows]),
         sea=np.asarray([r["sea"] for r in rows]),
@@ -33,7 +34,7 @@ def main():
     p.add_argument("--bfzi-root",type=Path,required=True)
     p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_v8_full_plan.json"))
     p.add_argument("--manifest",type=Path,default=Path("runs/geomfrac_s5_v8_full_manifest.json"))
-    p.add_argument("--per-geom",type=int,default=8)
+    p.add_argument("--per-geom",type=int,default=16)
     p.add_argument("--seed",type=int,default=9032)
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_v9_hotstates_multi.npz"))
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_v9_hotstates_multi.json"))
@@ -55,16 +56,30 @@ def main():
     rows=[]
     if a.out.exists():
         with np.load(a.out) as d:
-            rows=[dict(name=str(n),g=g,a=h,sea=s,total=z,stats=t)
-                for n,g,h,s,z,t in zip(d["name"],d["g"],d["a"],
-                                       d["sea"],d["total"],d["stats"])]
-    report={"status":"running","per_geometry":a.per_geom,"seed":a.seed,
-            "completed":{},"failed":{}}
+            names=np.asarray(d["name"]).astype(str)
+            if "idx" in d.files:
+                indices=np.asarray(d["idx"],int)
+            else:
+                seen={}
+                indices=[]
+                for name in names:
+                    indices.append(seen.get(name,0));seen[name]=seen.get(name,0)+1
+                indices=np.asarray(indices,int)
+            rows=[dict(name=str(n),idx=int(i),g=g,a=h,sea=s,total=z,stats=t)
+                for n,i,g,h,s,z,t in zip(names,indices,d["g"],d["a"],
+                                         d["sea"],d["total"],d["stats"])]
+    if a.report.exists():
+        report=read(a.report)
+    else:
+        report={"completed":{},"failed":{}}
+    report.update(status="running",per_geometry=a.per_geom,seed=a.seed)
+    report.setdefault("completed",{});report.setdefault("failed",{})
     a.out.parent.mkdir(parents=True,exist_ok=True)
     for name in plan["train"]:
-        prior=sum(r["name"]==name for r in rows)
-        if prior>=a.per_geom:
-            report["completed"][name]=prior
+        done={r["idx"] for r in rows if r["name"]==name}
+        missing=[j for j in range(a.per_geom) if j not in done]
+        if not missing:
+            report["completed"][name]=len(done)
             continue
         t0=time.perf_counter()
         try:
@@ -106,42 +121,51 @@ def main():
             wet[:et.count]=1.
             cold_z,*_=et.em(np.zeros(et.n),np.array([1.,0.],complex))
             patterns=((0.,0.,0.),(10.,0.,0.),(0.,10.,0.),
-                      (20.,0.,0.),(0.,20.,0.),(12.,-6.,0.),
-                      (-6.,12.,0.),(8.,8.,5.),(40.,0.,0.),
-                      (0.,40.,0.),(0.,0.,20.),(40.,-10.,0.),
-                      (-10.,40.,0.),(20.,20.,15.),(60.,0.,0.),
-                      (0.,60.,0.))
-            for j in range(prior,a.per_geom):
-                ix=rng.integers(len(base));iy=rng.integers(len(base))
-                w=rng.uniform(.2,.8)
-                temp=w*base[ix]+(1.-w)*base[iy]
-                dt,dr,dw=patterns[j%len(patterns)]
-                temp=temp+dt*tx+dr*rx+dw*wet
-                temp=np.clip(temp,0.,80.)
-                z,*_=et.em(temp,np.array([1.,0.],complex))
-                skin_tx=float(temp[skin_ids[skin_pkg==0]].mean())
-                skin_rx=float(temp[skin_ids[skin_pkg==1]].mean())
-                stats=np.array([float(temp[:et.count].mean()),
-                    skin_tx,skin_rx,float(temp.max())])
-                rows.append(dict(name=name,g=g,
-                    a=project(rom,temp[np.asarray(head.state_order,int)],rom.phi),
-                    sea=pack(z.sea_z-cold_z.sea_z),
-                    total=pack(z.total_z-cold_z.total_z),stats=stats))
-                if (j+1)%4==0 or j+1==a.per_geom:
-                    save(a.out,rows)
-                    report["completed"][name]=j+1
-                    report["status"]="partial"
-                    a.report.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
+                (20.,0.,0.),(0.,20.,0.),(12.,-6.,0.),(-6.,12.,0.),
+                (8.,8.,5.),(40.,0.,0.),(0.,40.,0.),(0.,0.,20.),
+                (40.,-10.,0.),(-10.,40.,0.),(20.,20.,15.),
+                (60.,0.,0.),(0.,60.,0.))
+            for j in missing:
+                try:
+                    ix=rng.integers(len(base));iy=rng.integers(len(base))
+                    w=rng.uniform(.2,.8)
+                    temp=w*base[ix]+(1.-w)*base[iy]
+                    dt,dr,dw=patterns[j%len(patterns)]
+                    temp=np.clip(temp+dt*tx+dr*rx+dw*wet,0.,80.)
+                    z,*_=et.em(temp,np.array([1.,0.],complex))
+                    stats=np.array([float(temp[:et.count].mean()),
+                        float(temp[skin_ids[skin_pkg==0]].mean()),
+                        float(temp[skin_ids[skin_pkg==1]].mean()),
+                        float(temp.max())])
+                    rows.append(dict(name=name,idx=j,g=g,
+                        a=project(rom,temp[np.asarray(head.state_order,int)],rom.phi),
+                        sea=pack(z.sea_z-cold_z.sea_z),
+                        total=pack(z.total_z-cold_z.total_z),stats=stats))
+                    done.add(j)
+                    report["failed"].get(name,{}).pop(str(j),None)
+                    if not report["failed"].get(name):
+                        report["failed"].pop(name,None)
+                    if len(done)%4==0 or j==missing[-1]:
+                        save(a.out,rows)
                     print("V9_MULTI",name,j+1,a.per_geom,flush=True)
-            report["completed"][name]=a.per_geom
+                except Exception as e:
+                    msg=f"{type(e).__name__}: {e}"
+                    report["failed"].setdefault(name,{})[str(j)]=msg
+                    print("V9_MULTI_SAMPLE_FAILED",name,j+1,msg,flush=True)
+                    a.report.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
+                    continue
+            report["completed"][name]=len(done)
         except Exception as e:
-            report["failed"][name]=f"{type(e).__name__}: {e}"
-            print("V9_MULTI_FAILED",name,report["failed"][name],flush=True)
+            msg=f"{type(e).__name__}: {e}"
+            report["failed"][name]={"build":msg}
+            print("V9_MULTI_GEOM_FAILED",name,msg,flush=True)
         report["seconds"]=round(time.perf_counter()-t0,2)
+        report["sample_count"]=len(rows)
+        report["status"]="partial"
         a.report.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     save(a.out,rows)
-    report["status"]="complete" if not report["failed"] and len(rows)==48*a.per_geom else "partial"
     report["sample_count"]=len(rows)
+    report["status"]="complete" if len(rows)==48*a.per_geom and not report["failed"] else "partial"
     a.report.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     print("V9_MULTI_DONE",len(rows),"geometries",len(report["completed"]),
           "failed",len(report["failed"]),flush=True)
