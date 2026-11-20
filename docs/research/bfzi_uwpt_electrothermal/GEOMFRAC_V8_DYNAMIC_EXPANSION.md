@@ -550,3 +550,13 @@ V8 推荐候选配置保留；没有新增神经网络，原始 `thermal_mix=0`
 - `runs/geomfrac_s5_v8heat_manifest.json`、`runs/geomfrac_s5_v8heat_build_report.json`
 - `runs/geomfrac_v8_heat_holdout_base.json`、`runs/geomfrac_v8_heat_holdout_mix25.json`
 - `runs/geomfrac_v8_par48_holdout_mix25.json`（已见数据回溯）
+
+
+### V8H0004 长脉冲阻抗误差定位
+
+在300s独立历史中，25%混合后整段动态Z相对误差仍为32.9081%。
+按整个动态阻抗增量归一化的分通道误差：TX自电阻 R11 31.0658%，
+TX自电抗 X11 9.4165%，RX自电阻 R22 3.6612%，
+互阻抗 R12 2.9245%、X12 0.2000%。
+主要剩余误差集中在TX自阻抗的温度敏感性，优先复查冻结SkinTan与
+ParZ48对这一通道的响应，而非增加通用残差网络。
