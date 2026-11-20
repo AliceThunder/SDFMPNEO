@@ -113,7 +113,9 @@ def main():
         raise ValueError(f"expected {expected} histories, evaluated {len(rows)}")
     keys = ("cold_z_rel_L2", "dynamic_z_rel_L2", "current_rel_L2",
             "material_mean_rmse_K", "material_mean_max_K",
-            "sea_power_rel_L2", "copper_power_rel_L2")
+            "sea_power_rel_L2", "copper_power_rel_L2",
+            "R11_dynamic_rel_L2_self", "X11_dynamic_rel_L2_self",
+            "R22_dynamic_rel_L2_self", "X22_dynamic_rel_L2_self")
     overall = {k: avg(rows, k) for k in keys}
     overall["energy_budget_max_W"] = float(max(r["energy_budget_W"] for r in rows))
     per = {}
