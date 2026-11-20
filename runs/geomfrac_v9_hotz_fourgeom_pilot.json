@@ -1,0 +1,27 @@
+{
+  "status": "not_promoted",
+  "pilot": "four_geometry_hot_state_interpolation",
+  "samples": 400,
+  "geometries": 4,
+  "per_geometry": 100,
+  "train_count": 320,
+  "within_geometry_validation_count": 80,
+  "within_geometry_validation": {
+    "baseline_relative_L2": 2.5640716552734375,
+    "hotz_relative_L2": 0.06843776255846024
+  },
+  "heldout_development": {
+    "geometries": 15,
+    "histories": 41,
+    "baseline_dynamic_z_rel_L2": 0.16232098428977093,
+    "hotz_dynamic_z_rel_L2": 1.3736463658995925,
+    "baseline_r11_self_rel_L2": 0.1578483386134988,
+    "hotz_r11_self_rel_L2": 1.0110792926012797,
+    "baseline_r22_self_rel_L2": 0.20727700100023627,
+    "hotz_r22_self_rel_L2": 3.022799658649279
+  },
+  "conclusion": "Within-geometry random validation substantially overstates geometry generalization. The 4-geometry checkpoint is rejected. V9 training now uses 48-geometry data and geometry-disjoint validation.",
+  "checkpoint": "runs/geomfrac_v9_hotz.pt",
+  "report": "runs/geomfrac_v9_hotz_train.json",
+  "evaluation": "runs/geomfrac_v9_hot_val_candidate.json"
+}
