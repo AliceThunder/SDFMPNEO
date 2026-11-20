@@ -56,6 +56,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--cold",type=Path,default=Path("runs/geomfrac_cold_v8_frozen.pt"))
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_v8_gain.json"))
+    p.add_argument("--expand-plan",type=Path,default=None)
+    p.add_argument("--expand-manifest",type=Path,default=None)
     a=p.parse_args()
     torch.set_num_threads(2)
     env=list(build())
@@ -63,6 +65,14 @@ def main():
     env=tuple(env)
     cfg,plan,hold,ck,net,atlas,cold,sf,tan,dom=env
     mf=read("runs/geomfrac_s5_v6_36g_hold6_manifest.json")
+    if a.expand_plan and a.expand_manifest:
+        ex=read(a.expand_plan)
+        em=read(a.expand_manifest)
+        plan["cases"].update(ex["cases"])
+        for part in ("train","val"):
+            mf[part].extend(em.get(part,[]))
+        print("V8_EXPAND_USED",len(em.get("train",[])),
+              len(em.get("val",[])),flush=True)
     tr,trg=collect(mf["train"],plan,env)
     va,vag=collect(mf["val"],plan,env)
     names_tr={n for n,_ in trg}
