@@ -59,6 +59,37 @@ def gain_fit(rows, lam):
     return gain
 
 
+def react_fit(rows,lam):
+    """Fit imaginary sea impedance against the same spatial hot-source features."""
+    A=np.zeros((3,3,3));b=np.zeros((3,3))
+    for item in rows:
+        q=parts(item["row"],item["init"],item["case"]["alpha_per_K"])[1:]
+        y=np.asarray(item["row"]["y"],float)[1:,[1,3,5]]
+        for k in range(3):
+            x=q[:,:,k];target=y[:,k]
+            den=max(float(np.linalg.norm(target)),1.e-6)
+            wt=1./(den*den)
+            A[k]+=wt*(x.T@x)
+            b[k]+=wt*(x.T@target)
+    gain=np.zeros((3,3))
+    for k in range(3):
+        d=np.maximum(np.diag(A[k]),1.e-6*np.trace(A[k]))
+        gain[:,k]=np.clip(np.linalg.solve(
+            A[k]+lam*np.diag(d),b[k]),-2.,2.)
+    return gain
+
+
+def react_oracle(rows,gain):
+    arr=[]
+    for item in rows:
+        q=parts(item["row"],item["init"],item["case"]["alpha_per_K"])[1:]
+        y=np.asarray(item["row"]["y"],float)[1:,[1,3,5]]
+        pred=(q*gain[None]).sum(axis=1)
+        den=np.maximum(np.linalg.norm(y,axis=0),1.e-9)
+        arr.append(np.linalg.norm(pred-y,axis=0)/den)
+    return {k:float(v) for k,v in
+            zip(("X11","X12","X22"),np.mean(arr,axis=0))}
+
 def oracle(rows,gain):
     accum={"raw":np.zeros(3),"cal":np.zeros(3),"n":0}
     for item in rows:
@@ -114,15 +145,21 @@ def main():
         raise ValueError("expected frozen 48/15, 132/41 geometry-disjoint histories")
 
     gain=gain_fit(tr,a.ridge)
+    react_gain=react_fit(tr,a.ridge)
     or_train=oracle(tr,gain);or_val=oracle(va,gain)
+    rx_or_train=react_oracle(tr,react_gain)
+    rx_or_val=react_oracle(va,react_gain)
     print("REGION_GAINS",gain.tolist(),flush=True)
     print("REGION_ORACLE",json.dumps(or_val),flush=True)
+    print("REGION_REACT_GAINS",react_gain.tolist(),flush=True)
+    print("REGION_REACT_ORACLE",json.dumps(rx_or_val),flush=True)
 
-    def validate(beta):
+    def validate(beta,rx=0.):
         vals=[]
         for item in va:
             ex=WeakSea(tan,par,item["init"],item["case"]["alpha_per_K"],
-                       mix=beta,gain=gain)
+                       mix=beta,gain=gain,
+                       react_gain=react_gain,react_mix=rx)
             with torch.no_grad():
                 r=item["row"]
                 pred=rollout(item["case"],atlas,net,ck,r["time"],r["voltage"],
@@ -150,18 +187,36 @@ def main():
             and r["current_rel_L2"]<=1.03*baseline["current_rel_L2"]
             and r["sea_power_rel_L2"]<=1.03*baseline["sea_power_rel_L2"]):
             best=r;choice=float(key)
+    complex_trials={}
+    complex_choice=0.
+    complex_best=best
+    if choice is not None:
+        for rx in (.25,.5,.75,1.):
+            sc=validate(choice,rx=rx)
+            complex_trials[str(rx)]=sc
+            print("REGION_COMPLEX_DEV",rx,json.dumps(sc),flush=True)
+            if (sc["dynamic_z_rel_L2"]<complex_best["dynamic_z_rel_L2"]-.001
+                and sc["R11_dynamic_rel_L2_self"]<=1.02*baseline["R11_dynamic_rel_L2_self"]
+                and sc["R22_dynamic_rel_L2_self"]<=1.02*baseline["R22_dynamic_rel_L2_self"]
+                and sc["material_mean_rmse_K"]<=1.03*baseline["material_mean_rmse_K"]
+                and sc["current_rel_L2"]<=1.03*baseline["current_rel_L2"]):
+                complex_choice=rx
+                complex_best=sc
     out=dict(status="development_candidate" if choice is not None else "not_promoted",
         method="shared three-region BFZI cold Joule susceptibility; nine fitted gains",
         train_geometries=48,train_histories=132,
         val_geometries=15,val_histories=41,
         region_modes={"mean":[0],"low_order":[1,31],"skin":[32,47]},
-        ridge=a.ridge,gain=gain.tolist(),
+        ridge=a.ridge,gain=gain.tolist(),react_gain=react_gain.tolist(),
         oracle_train=or_train,oracle_val=or_val,
+        react_oracle_train=rx_or_train,react_oracle_val=rx_or_val,
         baseline=baseline,selected_mix=choice,best=best,trials=results,
+        complex_trials=complex_trials,complex_selected=complex_choice,
+        complex_best=complex_best,
         blind_not_used=True)
     a.out.write_text(json.dumps(out,indent=2)+"\n",encoding="utf-8")
     print("REGION_RESULT",json.dumps({k:out[k] for k in
-        ("status","selected_mix","baseline","best")}),flush=True)
+        ("status","selected_mix","baseline","best","complex_selected","complex_best")}),flush=True)
 
 
 if __name__=="__main__":
