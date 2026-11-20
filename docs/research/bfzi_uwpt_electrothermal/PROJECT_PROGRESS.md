@@ -1252,3 +1252,7 @@ V8独立验收入口`examples/bfzi_v8_accept.py`已加入并在XEnergy通过语�
 ## 2026-11-20 — V8 SkinTan候选通过开发集复验
 
 48/15互斥几何、132/41历史微调SkinTan V3，主热网络/SOE/共享图谱/ColdNet/SrcFix冻结。最佳epoch80，130轮早停。41条开发验证历史的动态阻抗误差17.2585%→17.0961%，电流8.6151%→8.6143%，海水功率16.4892%→16.4564%，五材料温升RMSE约0.496K。候选`runs/geomfrac_rank48_skin_tan_v8_expand.pt`，报告`runs/geomfrac_v8_tangent_expand.json`，完整验收复算`runs/geomfrac_v8_val_accept.json`。改进幅度有限，暂不替换正式V7。当前正在按冻结计划生成V8E0001–V8E0004四组全新BFZI V150参考，每组60s/300s两条激励，随后进行8条历史独立盲测。详见`GEOMFRAC_V8_DYNAMIC_EXPANSION.md`。
+
+## 2026-11-20 — V8独立盲测完成，微调候选拒绝晋级
+
+冻结盲测几何V8E0001–V8E0004的8条BFZI V150 S5参考（60s/300s激励）全部成功生成，失败0。相同V8 heat/GeomInit/ColdNet/SrcFix设置下，原始SkinTan V3基线动态阻抗误差10.7543%，V8微调候选12.7647%，恶化2.0105个百分点；电流、温升和功率指标基本不变。逐几何中E0001改善0.216个百分点，E0002恶化4.593个百分点，E0003恶化2.194个百分点，E0004恶化1.471个百分点。微调候选不晋级，正式模型保持原始SkinTan V3。参考生成报告`runs/geomfrac_s5_v8holdout_build_report.json`，盲测对比`runs/geomfrac_v8_holdout_base.json`、`runs/geomfrac_v8_holdout_candidate.json`。盲测集冻结并停止用于任何后续调参。下一步只在训练/开发集分析几何外推距离与切线修正幅值，改进跨几何正则化，并另建全新独立几何进行盲测。详见`GEOMFRAC_V8_DYNAMIC_EXPANSION.md`。
