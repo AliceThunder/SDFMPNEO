@@ -262,6 +262,25 @@ def main():
               SrcFix.load(cfg['source_model']),
               (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),
               float(cfg['shape_mix']))
+        if a.free_cold_model:
+            from sdfmpneo_bfzi.geom_memory import heat_drive
+            from sdfmpneo_bfzi.frac_memory import zmat
+            for row in train+val:
+                name=Path(row['file'].split('#')[0]).stem.split('_')[2]
+                copper=port.predict_parts(plan['cases'][name])[2]
+                if copper is None:
+                    raise ValueError('V8 thermal tuning needs copper-resolved ColdNet')
+                rom=row['rom']
+                cold=rom.port.copper(np.full(2,rom.amb))
+                lead=np.asarray(copper,complex)-cold
+                row['lead0']=lead
+                for k in range(1,len(row['time'])):
+                    row['src'][k]=heat_drive(
+                        float(row['voltage'][k-1]),zmat(row['z6'][k-1]),
+                        rom.ext,rom.port,row['temp_K'][k-1,rom.cu],
+                        rom.cap[rom.cu],lead=lead)
+            print('V8_THERM_CORRECTED_SOURCES',len(train),len(val),
+                  flush=True)
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=(0. if a.rank48_extra_only else a.weight_decay))
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
