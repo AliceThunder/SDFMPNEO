@@ -80,3 +80,24 @@ python D:\work\geomfrac-v8\examples\bfzi_s5_buildset.py --bfzi-root D:\work\geom
 - 保持零BFZI/网格在线推理成本。
 
 在达到目标之前，V7仍为正式模型，V8为研究候选。
+
+## 训练热源与V8推理一致性修复
+
+在将现有共享热网络接入V8闭环时，发现旧训练代码仍用
+`total_z - jωL_air - winding_copper` 估计海水发热，
+其中包括应留在电路端口外部的静态引线阻抗。
+这种训练输入与V8推理期间的显式铜阻抗分解不同。
+
+新增的V8训练路径通过同一个冻结ColdNet取得每个参考几何的
+`copper0`，计算
+`lead0 = copper0 - port.copper(T0)`：
+- 对历史数据的3通道教师热源输入重新调用
+  `heat_drive(...,lead=lead0)`，并保留原参考温度和阻抗。
+- 对训练闭环可微的 `_port_src` 在海水功率项中同步减去`lead0`。
+- V7原训练入口在没有 `--free-cold-model` 时保持原先行为。
+- 首次试训在发现训练/推理热源不一致后已中止，正式试训
+  使用新的正确热源重新启动。
+
+代码：`examples/bfzi_geom_multi.py`、
+`examples/bfzi_geom_neural.py`。
+在XEnergy完成语法检查与`tests/test_bfzi_cold_split.py`测试（2 passed）。
