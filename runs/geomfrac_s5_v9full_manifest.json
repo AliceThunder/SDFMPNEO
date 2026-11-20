@@ -1,0 +1,37 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_V9B0001_ultra_v9full_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V9B0001_ultra_v9full_drive1.npz",
+        "runs\\bfzi_s5_V9B0001_ultra_v9full_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V9B0002_ultra_v9full_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V9B0002_ultra_v9full_drive1.npz",
+        "runs\\bfzi_s5_V9B0002_ultra_v9full_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V9B0003_ultra_v9full_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V9B0003_ultra_v9full_drive1.npz",
+        "runs\\bfzi_s5_V9B0003_ultra_v9full_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V9B0004_ultra_v9full_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V9B0004_ultra_v9full_drive1.npz",
+        "runs\\bfzi_s5_V9B0004_ultra_v9full_drive2.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 300.0
+}
