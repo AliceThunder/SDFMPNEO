@@ -50,7 +50,11 @@ def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,
     cold=port.copper(np.full(2,ambient))
     air=np.array([[init['air'][0],init['air'][1]],
                   [init['air'][1],init['air'][2]]])
-    sea0=zmat(init['z0'])-1j*port.omega*air-np.diag(cold)
+    # Explicit terminal copper contains winding and external lead.
+    # Only winding copper follows the enclosed thermal state.
+    lead=(np.asarray(init['copper0'],complex)-cold
+          if 'copper0' in init else np.zeros(2,complex))
+    sea0=zmat(init['z0'])-1j*port.omega*air-np.diag(cold+lead)
     if tan is None:
         dsea=np.zeros((2,2),complex)
     else:
@@ -66,7 +70,7 @@ def circuit(a,init,port,state,tan,g,scale,voltage,ambient,extra=None,
                    tm,voltage)
         dsea+=zmat(np.asarray(corr,float))
     sea=sea0+dsea
-    z=sea+1j*port.omega*air+np.diag(cu)
+    z=sea+1j*port.omega*air+np.diag(cu+lead)
     cur=np.linalg.solve(z+init['ext'],np.array([voltage,0.],complex))
     psea=max(0.,float(.5*np.vdot(cur,sea.real@cur).real))
     pcu=.5*cu.real*abs(cur)**2
@@ -202,6 +206,9 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
     init=atlas.predict(case) if init_override is None else init_override
     geom,feat=geometry(case,init)
     port=geom_port(geom)
+    cold=port.copper(np.full(2,ambient))
+    lead=(np.asarray(init['copper0'],complex)-cold
+          if 'copper0' in init else np.zeros(2,complex))
     g=torch.as_tensor(feat[None],dtype=torch.float32)
     if extra is not None:
         eg=(g if getattr(extra,'shared_geom',False) else
@@ -232,7 +239,7 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
                                      tan,g,scale,ambient,ext_fn,tm)
             else:
                 u=heat_drive(float(v[i-1]),zprev,init['ext'],port,
-                    ambient+full[3:5]/scale[3:5],cap[3:5])
+                    ambient+full[3:5]/scale[3:5],cap[3:5],lead=lead)
                 hist,_,pred=net.step_et(hist,
                     torch.as_tensor((u/cs)[None],dtype=g.dtype),
                     dt,g,torch.as_tensor((old/scale)[None],dtype=g.dtype),ac)
