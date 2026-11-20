@@ -16,7 +16,7 @@ class WeakSea:
 
     shared_geom = True
 
-    def __init__(self, tan, par, init, alpha, mix=0.5):
+    def __init__(self, tan, par, init, alpha, mix=0.5, gain=None):
         if not 0.0 <= mix <= 1.0:
             raise ValueError("weak sea mixing fraction must be in [0,1]")
         src = np.asarray(init["src"], float)
@@ -29,6 +29,10 @@ class WeakSea:
         self.alpha = float(alpha)
         self.scale = torch.tensor(np.sqrt(cap[labels(48)]), dtype=torch.float32)
         self.src = torch.tensor(src, dtype=torch.float32)
+        coef=np.ones((3,3)) if gain is None else np.asarray(gain,float)
+        if coef.shape!=(3,3) or not np.isfinite(coef).all():
+            raise ValueError("regional seawater gains must have shape [3,3]")
+        self.gain=torch.tensor(coef,dtype=torch.float32)
 
     def __call__(self, g, a, t, v):
         if a.ndim != 2 or a.shape[1] != 48:
@@ -38,7 +42,12 @@ class WeakSea:
         if self.mix == 0:
             return old
         val = self.tan(g, a)
-        phy = self.alpha * ((a * self.scale.to(a)) @ self.src.to(a))
+        x=a*self.scale.to(a)
+        src=self.src.to(a)
+        pieces=torch.stack((x[:,:1]@src[:1],
+                            x[:,1:32]@src[1:32],
+                            x[:,32:48]@src[32:48]),dim=1)
+        phy=self.alpha*(pieces*self.gain.to(a)[None]).sum(dim=1)
         out = old.clone()
         idx = [0, 2, 4]
         out[:, idx] = ((1.0-self.mix)*old[:, idx] +
