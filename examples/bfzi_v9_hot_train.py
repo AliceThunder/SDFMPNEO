@@ -58,8 +58,8 @@ def main():
     dense={"V8X0001","V8X0002","V8X0003","V8X0004"}&set(names)
     candidates=np.asarray(sorted(set(names)-dense))
     nval=max(1,int(round(.2*len(candidates))))
-    val_geoms=sorted(rng.choice(candidates,size=nval,replace=False).tolist())
-    train_geoms=sorted(set(names)-set(val_geoms))
+    val_geoms=[str(n) for n in sorted(rng.choice(candidates,size=nval,replace=False).tolist())]
+    train_geoms=[str(n) for n in sorted(set(names)-set(val_geoms))]
     tr=np.flatnonzero(np.isin(ids,train_geoms))
     va=np.flatnonzero(np.isin(ids,val_geoms))
     if len(va)<20 or len(tr)<200:
