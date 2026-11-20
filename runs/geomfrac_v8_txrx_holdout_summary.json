@@ -1,0 +1,47 @@
+{
+  "status": "blind_not_improved",
+  "geometry_count": 2,
+  "history_count": 4,
+  "k_mix": 0.25,
+  "weak_sea_mix": 0.5,
+  "physical_used_to_select_mix": false,
+  "metrics": {
+    "dynamic_z_rel_L2": {
+      "base": 0.14529389625750677,
+      "physical": 0.14775818851321731
+    },
+    "R11_dynamic_rel_L2_self": {
+      "base": 0.1418392874821716,
+      "physical": 0.13011490650194688
+    },
+    "R22_dynamic_rel_L2_self": {
+      "base": 0.18828559261805788,
+      "physical": 0.1546732206565482
+    },
+    "X11_dynamic_rel_L2_self": {
+      "base": 0.1432884228986151,
+      "physical": 0.14338447169372087
+    },
+    "X22_dynamic_rel_L2_self": {
+      "base": 0.1288857932913292,
+      "physical": 0.12900223466415844
+    },
+    "material_mean_rmse_K": {
+      "base": 0.6086913805708505,
+      "physical": 0.6099848200915152
+    },
+    "current_rel_L2": {
+      "base": 0.007921521041870456,
+      "physical": 0.007877891395540421
+    },
+    "sea_power_rel_L2": {
+      "base": 0.0059817461426969875,
+      "physical": 0.006016496773317657
+    },
+    "copper_power_rel_L2": {
+      "base": 0.00818282498447485,
+      "physical": 0.00813752292246426
+    }
+  },
+  "source": "V8S0001,V8S0002 new frozen geometry-disjoint BFZI V150 S5 ultra"
+}
