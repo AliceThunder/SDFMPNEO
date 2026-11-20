@@ -24,6 +24,7 @@ def main():
     p.add_argument('--only-v8',action='store_true',help='evaluate V8 port only')
     p.add_argument('--plan',type=Path,default=Path('runs/geomfrac_cold_dyn6_plan.json'))
     p.add_argument('--manifest',type=Path,default=Path('runs/geomfrac_s5_cold_dyn6_manifest.json'))
+    p.add_argument('--atlas',type=Path,default=None)
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--thermal-model',type=Path,required=True)
     p.add_argument('--skin-tan-model',type=Path,default=None,
@@ -48,7 +49,7 @@ def main():
         soe_quad=ck.get('soe_quad','trap'),heat_dt=float(ck.get('heat_dt',1.875)),
         heat_z=bool(ck.get('heat_z',False)))
     net.load_state_dict(ck['state']);net.eval()
-    atlas=GeomInit.load(cfg['atlas'])
+    atlas=GeomInit.load(a.atlas or cfg['atlas'])
     if atlas.rank!=rank:raise ValueError('thermal model and atlas ranks differ')
     if a.skin_tan_model:
         from sdfmpneo_bfzi.geom_skintan import restore_rank48
