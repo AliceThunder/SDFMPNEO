@@ -142,6 +142,8 @@ def main():
                    help='best-checkpoint criterion for validation')
     p.add_argument('--proj-tau',type=float,default=0.,
                    help='projection quality scale in K for history sampling; 0=uniform')
+    p.add_argument('--free-cold-model',type=Path,default=None,
+                   help='use unified V7/V8 ColdNet for geometry-free validation')
     p.add_argument('--free-plan',type=Path,default=None,
                    help='geometry case plan for BFZI-free development selection')
     p.add_argument('--free-config',type=Path,default=Path('runs/geomfrac_free_v7_selection.json'),
@@ -238,11 +240,17 @@ def main():
         if any(Path(r['file'].split('#')[0]).stem.split('_')[2]
                not in plan['cases'] for r in val):
             p.error('development geometry missing from BFZI-free selection plan')
-        free=(plan,GeomInit.load(cfg['atlas']),
-              PortSelf.load(cfg['port_self_model']),
-              MutFix.load(cfg['mutual_model']),
+        if a.free_cold_model:
+            from sdfmpneo_bfzi.geom_coldnet import ColdNet
+            port=ColdNet.load(a.free_cold_model)
+            mutual=None
+        else:
+            port=PortSelf.load(cfg['port_self_model'])
+            mutual=MutFix.load(cfg['mutual_model'])
+        free=(plan,GeomInit.load(cfg['atlas']),port,mutual,
               SrcFix.load(cfg['source_model']),
-              (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),float(cfg['shape_mix']))
+              (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),
+              float(cfg['shape_mix']))
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=(0. if a.rank48_extra_only else a.weight_decay))
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
