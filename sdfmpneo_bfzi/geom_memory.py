@@ -50,14 +50,15 @@ def geom_port(g):
         np.full(2,4e-7*np.pi),np.full(2,293.15))
 
 
-def heat_drive(voltage,z,ext,port,tc,cap):
+def heat_drive(voltage,z,ext,port,tc,cap,lead=None):
     """Original BFZI energy sources: sea W, copper heating K/s for each port."""
     if voltage==0:
         return np.zeros(3)
     v=np.array([voltage,0.],complex)
     I=np.linalg.solve(z+ext,v)
     cu=port.copper(tc)
-    sea=z-1j*port.omega*port.air-np.diag(cu)
+    extra=np.zeros(2,complex) if lead is None else np.asarray(lead,complex)
+    sea=z-1j*port.omega*port.air-np.diag(cu+extra)
     qsea=max(.5*float(np.vdot(I,sea@I).real),0.)
     qcu=.5*cu.real*abs(I)**2
     return np.r_[qsea,qcu/np.asarray(cap,float)]
