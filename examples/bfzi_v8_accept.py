@@ -36,6 +36,8 @@ def main():
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
     p.add_argument("--parallel-model", type=Path, default=None)
+    p.add_argument("--skin-base-model", type=Path, default=None)
+    p.add_argument("--skin-mix", type=float, default=1.0)
     p.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
 
@@ -66,7 +68,18 @@ def main():
     atlas = GeomInit.load(a.atlas)
     cold = ColdNet.load(a.cold_model)
     src = SrcFix.load(cfg["source_model"])
-    tan = restore_rank48(a.skin_tangent, a.skin_base)
+    tan_new = restore_rank48(a.skin_tangent, a.skin_base)
+    if a.skin_base_model:
+        if not 0.0 <= a.skin_mix <= 1.0:
+            p.error("--skin-mix must be in [0,1]")
+        tan_old = restore_rank48(a.skin_base_model, a.skin_base)
+        alpha = float(a.skin_mix)
+        def tan(g, state):
+            return (1.0-alpha)*tan_old(g, state) + alpha*tan_new(g, state)
+        tan.time_conditioned = False
+    else:
+        tan = tan_new
+        alpha = 1.0
     extra = ParZ.load(a.parallel_model) if a.parallel_model else None
     mix = float(cfg["shape_mix"])
 
@@ -109,6 +122,7 @@ def main():
     out = dict(status="complete", split=a.split, geometry_count=len(names),
         history_count=len(rows), model=str(a.model), atlas=str(a.atlas),
         cold_model=str(a.cold_model), parallel_model=str(a.parallel_model) if a.parallel_model else None,
+        skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
         shape_mix=mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
         overall=overall, per_geometry=per, rows=rows)
