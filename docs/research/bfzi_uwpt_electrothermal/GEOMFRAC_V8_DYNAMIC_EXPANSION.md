@@ -101,3 +101,38 @@ python D:\work\geomfrac-v8\examples\bfzi_s5_buildset.py --bfzi-root D:\work\geom
 代码：`examples/bfzi_geom_multi.py`、
 `examples/bfzi_geom_neural.py`。
 在XEnergy完成语法检查与`tests/test_bfzi_cold_split.py`测试（2 passed）。
+
+## 首批新动态参考与热算子图谱候选
+
+首批 V8T0001–V8T0003 已完成6条动态历史。
+使用正式V7共享热网络加冻结主干V8铜阻抗分解，3组
+新训练几何上的独立动态历史平均结果：
+
+| 指标 | 新训练几何 |
+|---|---:|
+| 冷态复阻抗相对L2 | 0.04794% |
+| 动态阻抗增量相对L2 | 15.6646% |
+| 电流相对L2 | 0.7019% |
+| 五材料平均温度RMSE | 0.6787 K |
+| 海水功率相对L2 | 0.6220% |
+| 铜耗功率相对L2 | 1.1500% |
+
+结果 `runs/geomfrac_v8_new_dyn_eval.json`（XEnergy）。
+
+对新增的3个训练热算子锚点，复用现有`GeomInit.fit`重建
+共享rank48冷/热图谱，沿用原先核带宽、正则化、
+热参数缩放与独立线圈自阻抗插值。
+实现 `examples/bfzi_v8_atlas_expand.py`。
+
+在11组原开发几何上的热算子K相对F误差
+3.8050% → 3.7952%；1组全新开发几何
+V8V0001上的K误差5.2770% → 5.0991%。
+该新增验证几何60s物理历史上的动态阻抗增量误差
+5.4134% → 5.3853%，材料温度RMSE
+0.04839K → 0.04541K。
+
+这些收益来自离线追加几何锚点，在线仍是单一共享热算子。
+`runs/geomfrac_init_v8_expand.npz` 为候选模型，
+`runs/geomfrac_init_v8_expand.json` 记录图谱误差。
+尚待V8V0001的300s长脉冲历史和其余几何验证，
+不替换正式V7。
