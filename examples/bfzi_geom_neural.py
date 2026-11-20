@@ -140,7 +140,9 @@ def _port_src(row, rom, a, y, sy, voltage, tangent=None, geom=None):
             sea_air=torch.as_tensor(1j*rom.port.omega*rom.port.air,
                                     dtype=torch.complex64),
             ext=torch.as_tensor(rom.ext,dtype=torch.complex64),
-            cap=torch.as_tensor(cap,dtype=torch.float32))
+            cap=torch.as_tensor(cap,dtype=torch.float32),
+            lead=torch.as_tensor(np.asarray(row.get("lead0",np.zeros(2,complex)),complex),
+                                 dtype=torch.complex64))
     from sdfmpneo_bfzi.geom_train import zmat as ztorch
     p=row["port_t"]
     tc=a@p["cu_map"].T
@@ -148,7 +150,7 @@ def _port_src(row, rom, a, y, sy, voltage, tangent=None, geom=None):
     sea=tangent(geom,a) if tangent is not None else y[:,:6]*torch.as_tensor(sy[:6],dtype=y.dtype)
     dz=ztorch(sea)
     z=p["cold"]+dz+torch.diag_embed(cu-p["cu"])
-    sea=p["cold"]+dz-p["sea_air"]-torch.diag_embed(p["cu"])
+    sea=p["cold"]+dz-p["sea_air"]-torch.diag_embed(p["cu"]+p["lead"])
     v=torch.as_tensor(voltage,dtype=a.dtype).reshape(1)
     drive=torch.stack((v,torch.zeros_like(v)),dim=-1).to(torch.complex64)
     current=torch.linalg.solve(z+p["ext"],drive)
