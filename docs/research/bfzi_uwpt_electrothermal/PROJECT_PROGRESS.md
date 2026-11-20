@@ -1248,3 +1248,7 @@ V8独立验收入口`examples/bfzi_v8_accept.py`已加入并在XEnergy通过语�
 ## 2026-11-20 — V8热头训练停滞与并联残差实验
 
 全量132/41历史热头微调190轮正常结束，但自主动态阻抗选择指标17.3271%没有改善，best epoch=0，最终权重与初始化heat_head完全相同。梯度正常且单步参数更新会使V8自主误差变差，定位到训练score使用每几何局部ROM闭环，部署却使用共享GeomInit图谱/ColdNet/SrcFix和shape_step混合，训练损失未覆盖部署算子误差。48训练/15验证几何重新拟合SrcFix后，源场相对误差3.6582%→3.2441%，全验证自主动态阻抗17.3271%→17.2585%，改善较小。新增`examples/bfzi_v8_parallel.py`和V8配置，开始验证ParZ并联动态阻抗残差网络，主热网络及物理/图谱模块冻结，直接学习TX/RX自阻抗累计误差。详见`GEOMFRAC_V8_DYNAMIC_EXPANSION.md`。V7保持冻结。
+
+## 2026-11-20 — V8 SkinTan候选通过开发集复验
+
+48/15互斥几何、132/41历史微调SkinTan V3，主热网络/SOE/共享图谱/ColdNet/SrcFix冻结。最佳epoch80，130轮早停。41条开发验证历史的动态阻抗误差17.2585%→17.0961%，电流8.6151%→8.6143%，海水功率16.4892%→16.4564%，五材料温升RMSE约0.496K。候选`runs/geomfrac_rank48_skin_tan_v8_expand.pt`，报告`runs/geomfrac_v8_tangent_expand.json`，完整验收复算`runs/geomfrac_v8_val_accept.json`。改进幅度有限，暂不替换正式V7。当前正在按冻结计划生成V8E0001–V8E0004四组全新BFZI V150参考，每组60s/300s两条激励，随后进行8条历史独立盲测。详见`GEOMFRAC_V8_DYNAMIC_EXPANSION.md`。
