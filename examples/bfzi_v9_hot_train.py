@@ -54,14 +54,19 @@ def main():
             or not np.isfinite(g).all() or not np.isfinite(x).all()
             or not np.isfinite(y).all()):
         raise ValueError("invalid or incomplete V9 hot-state dataset")
-    names=np.unique(ids)
-    dense={"V8X0001","V8X0002","V8X0003","V8X0004"}&set(names)
-    candidates=np.asarray(sorted(set(names)-dense))
+    alias={"V8X0001":"V8T0001","V8X0002":"V8T0004",
+           "V8X0003":"V8T0007","V8X0004":"V8T0010"}
+    groups=np.asarray([alias.get(str(n),str(n)) for n in ids])
+    names=np.unique(groups)
+    fixed={"V8T0001","V8T0004","V8T0007","V8T0010"}&set(names)
+    candidates=np.asarray(sorted(set(names)-fixed))
+    if len(candidates)<5:
+        raise ValueError("geometry-disjoint V9 validation requires at least five non-aliased geometries")
     nval=max(1,int(round(.2*len(candidates))))
     val_geoms=[str(n) for n in sorted(rng.choice(candidates,size=nval,replace=False).tolist())]
     train_geoms=[str(n) for n in sorted(set(names)-set(val_geoms))]
-    tr=np.flatnonzero(np.isin(ids,train_geoms))
-    va=np.flatnonzero(np.isin(ids,val_geoms))
+    tr=np.flatnonzero(np.isin(groups,train_geoms))
+    va=np.flatnonzero(np.isin(groups,val_geoms))
     if len(va)<20 or len(tr)<200:
         raise ValueError("geometry-disjoint split is too small")
     base=restore_rank48(a.skin_tangent,a.skin_base)
@@ -80,8 +85,8 @@ def main():
     opt=torch.optim.Adam(net.parameters(),lr=1e-3,weight_decay=1e-4)
     gt=torch.as_tensor(g);xt=torch.as_tensor(x)
     rt=torch.as_tensor(res/ys)
-    counts={n:int(np.sum(ids[tr]==n)) for n in train_geoms}
-    wt=np.asarray([1./counts[ids[i]] for i in tr],np.float32)
+    counts={n:int(np.sum(groups[tr]==n)) for n in train_geoms}
+    wt=np.asarray([1./counts[groups[i]] for i in tr],np.float32)
     wt*=len(wt)/wt.sum()
     w=torch.as_tensor(wt)
     best=float("inf");saved=None;best_ep=0;wait=0;history=[]
@@ -116,8 +121,8 @@ def main():
     with torch.no_grad():
         corr=net(gt,xt).cpu().numpy()
     base_val=bp[va];new_val=base_val+corr[va]
-    bm=metrics(base_val,y[va],ids[va])
-    nm=metrics(new_val,y[va],ids[va])
+    bm=metrics(base_val,y[va],groups[va])
+    nm=metrics(new_val,y[va],groups[va])
     ck=dict(state=net.state_dict(),gm=net.gm.detach().cpu(),
         gs=net.gs.detach().cpu(),ass=net.ass.detach().cpu(),
         ys=net.ys.detach().cpu(),hidden=a.hidden,
