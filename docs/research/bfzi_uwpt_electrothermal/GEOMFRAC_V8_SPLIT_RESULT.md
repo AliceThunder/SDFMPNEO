@@ -85,3 +85,12 @@ SkinTan V3、时间与电压，分别推理 V7、V8。
 
 本报告包含实际运行所得结果；本地权重和完整逐样本数据
 存储于 `D:\work\geomfrac-v6\runs`，仓库保存实现及结果摘要。
+
+## 6. 可选在线推理实际检查
+
+更新后的 `examples/bfzi_v7_infer.py` 支持参数 `--cold-model`，默认仍为 V7。
+在 XEnergy 上使用 V8 权重和已有核心域输入运行 60s/5点的完整电磁热预测：
+结果 `status=ok`，`rank=48`，`max_material_K=296.0530 K`，
+能量预算最大残差 `5.19e-13 W`；
+冷态 BFZI 求解、逐几何热基构建、热FV求解次数全部为0。
+输出 `runs/geomfrac_v8_infer.npz`，退出码0。
