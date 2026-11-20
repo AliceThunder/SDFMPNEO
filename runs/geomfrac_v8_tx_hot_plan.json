@@ -1,0 +1,217 @@
+{
+  "description": "TX thermal response high-drive augmentation from V8 training geometries",
+  "version": 8,
+  "train": [
+    "V8X0001",
+    "V8X0002",
+    "V8X0003",
+    "V8X0004"
+  ],
+  "val": [],
+  "test": [],
+  "cases": {
+    "V8X0001": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.9705,
+        "alpha2": 0.7352,
+        "core1_mm": 6,
+        "core2_mm": 21,
+        "shift_mm": [
+          7,
+          94,
+          10
+        ],
+        "tilt_deg": -18,
+        "yaw_deg": 17,
+        "pitch_deg": 16,
+        "box1_mm": 236,
+        "box2_mm": 217
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 67.2405,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 97.45,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V8X0002": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.9471,
+        "alpha2": 0.9652,
+        "core1_mm": 12,
+        "core2_mm": 11,
+        "shift_mm": [
+          13,
+          82,
+          -1
+        ],
+        "tilt_deg": -18,
+        "yaw_deg": 17,
+        "pitch_deg": 12,
+        "box1_mm": 232,
+        "box2_mm": 238
+      },
+      "alpha_per_K": 0.02116,
+      "thermal": {
+        "ins_k": 0.3117,
+        "ins_t": 0.000354,
+        "pkg_k": 0.2896,
+        "pkg_sea_h": 25.586,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 64.6415,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 93.6875,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V8X0003": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.8883,
+        "alpha2": 0.8018,
+        "core1_mm": 20,
+        "core2_mm": 21,
+        "shift_mm": [
+          14,
+          105,
+          10
+        ],
+        "tilt_deg": -18,
+        "yaw_deg": -1,
+        "pitch_deg": 16,
+        "box1_mm": 229,
+        "box2_mm": 236
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 67.2405,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 97.45,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V8X0004": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.8995,
+        "alpha2": 0.8748,
+        "core1_mm": 8,
+        "core2_mm": 9,
+        "shift_mm": [
+          -8,
+          104,
+          -4
+        ],
+        "tilt_deg": -15,
+        "yaw_deg": -7,
+        "pitch_deg": -15,
+        "box1_mm": 238,
+        "box2_mm": 229
+      },
+      "alpha_per_K": 0.02116,
+      "thermal": {
+        "ins_k": 0.3117,
+        "ins_t": 0.000354,
+        "pkg_k": 0.2896,
+        "pkg_sea_h": 25.586,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 64.6415,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 93.6875,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    }
+  },
+  "source_train": {
+    "V8X0001": "V8T0001",
+    "V8X0002": "V8T0004",
+    "V8X0003": "V8T0007",
+    "V8X0004": "V8T0010"
+  },
+  "note": "Training only. V8E/P/H sealed tests excluded; none of these used for selection."
+}
