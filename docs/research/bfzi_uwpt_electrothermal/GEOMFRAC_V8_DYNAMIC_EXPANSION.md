@@ -248,7 +248,7 @@ V8铜/引线/海水热源一致性处理及初始闭环评估均已通过；
 ### 阻抗监督损失通路已完成一次小样本运行
 
 使用1组训练几何、1组验证几何（各3条历史）进行1轮烟雾测试，
-同时打开`zrel_weight=1.0`和`tangent_loss_weight=0.5)。
+同时打开`zrel_weight=1.0`和`tangent_loss_weight=0.5。
 运行正常，V8 ColdNet引线修正、rank48切线投影、
 全端口动态阻抗损失均完成前向与反向传播，
 成功输出报告`runs/geomfrac_et_v8_loss_smoke.json`。
