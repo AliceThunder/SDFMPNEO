@@ -4,7 +4,7 @@ import argparse,copy,json
 from pathlib import Path
 import numpy as np
 import torch
-from sdfmpneo_bfzi.geom_coldnet import ColdNet,feat,target
+from sdfmpneo_bfzi.geom_coldnet import ColdNet,feat,target,copper_target,OMEGA
 
 def read(p):return json.loads(Path(p).read_text(encoding="utf-8-sig"))
 def mat(z):
@@ -27,9 +27,9 @@ def circuits(data):
     return np.stack([out[k] for k in sorted(out)])
 def evaluate(net,rows,exts):
     if not rows:return None
-    ze=[];ae=[];ie=[];per={}
+    ze=[];ae=[];ie=[];per={};ce=[];pe=[]
     for row in rows:
-        z,air=net.predict(row["geometry"])
+        z,air,cu=net.predict_parts(row["geometry"])
         zr=np.asarray(row["z0"],float)
         ar=np.asarray(row["air"],float)
         if ar.shape==(2,2):ar=ar[[0,0,1],[0,1,1]]
@@ -40,15 +40,32 @@ def evaluate(net,rows,exts):
             pred=np.linalg.solve(mat(z)+ext,[1.,0.])
             ie.append(float(np.linalg.norm(pred-ref)/max(np.linalg.norm(ref),1e-12)))
         per[row["name"]]=100*ze[-1]
-    return dict(geometries=len(rows),cold_Z_pct=100*float(np.mean(ze)),
-                air_L_pct=100*float(np.mean(ae)),
-                current_pct=100*float(np.mean(ie)),
-                per_geometry=per)
+        rc=copper_target(row)
+        if cu is not None and rc is not None:
+            refcu=rc.reshape(2,2)[:,0]+1j*rc.reshape(2,2)[:,1]
+            ce.append(float(np.linalg.norm(cu-refcu)/max(np.linalg.norm(refcu),1e-12)))
+            if "sea" in row:
+                ar_mat=np.array([[air[0],air[1]],[air[1],air[2]]])
+                sp=mat(z)-1j*OMEGA*ar_mat-np.diag(cu)
+                sr=mat(np.asarray(row["sea"],float))
+                for ext in exts:
+                    ip=np.linalg.solve(mat(z)+ext,[1.,0.])
+                    ir=np.linalg.solve(mat(zr)+ext,[1.,0.])
+                    pp=max(0.,float(.5*np.vdot(ip,sp.real@ip).real))
+                    pr=max(0.,float(.5*np.vdot(ir,sr.real@ir).real))
+                    pe.append(abs(pp-pr)/max(abs(pr),1e-12))
+    out=dict(geometries=len(rows),cold_Z_pct=100*float(np.mean(ze)),
+             air_L_pct=100*float(np.mean(ae)),
+             current_pct=100*float(np.mean(ie)),per_geometry=per)
+    if ce:out["cold_copper_pct"]=100*float(np.mean(ce))
+    if pe:out["cold_sea_power_pct"]=100*float(np.mean(pe))
+    return out
 def by_stratum(net,rows,exts):
     return {s:evaluate(net,[r for r in rows if r.get("stratum")==s],exts)
             for s in ("core","boundary","extreme")}
 def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
-          batch=64,current_weight=.5,seed=72027):
+          batch=64,current_weight=.5,seed=72027,
+          copper_weight=0.,sea_score_weight=.02):
     torch.manual_seed(seed);torch.set_num_threads(2)
     tr=list(data["train"]);dev=list(data["val"]);test=list(data["test"])
     ids=[{json.dumps(r["geometry"],sort_keys=True) for r in x}
@@ -64,9 +81,22 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
     ym=y.mean(0)
     ys=np.maximum(y.std(0),np.array([.01,.003,.003,.003,.01,.003,
                                     .25,.025,.25],dtype=np.float32))
+    valid=np.zeros(len(tr),dtype=bool)
+    if copper_weight>0:
+        labels=[copper_target(r) for r in tr]
+        valid=np.array([v is not None for v in labels])
+        if valid.sum()<10:
+            raise ValueError("split training requires cold copper labels")
+        cu=np.stack([v if v is not None else np.zeros(4,dtype=np.float32)
+                     for v in labels])
+        ym=np.r_[ym,cu[valid].mean(0)]
+        ys=np.r_[ys,np.maximum(cu[valid].std(0),
+                              [.002,.001,.002,.001])]
+        y=np.column_stack((y,cu))
     net=ColdNet(xm,xs,ym,ys)
     xt=torch.as_tensor(x,dtype=torch.float32)
     yt=torch.as_tensor(y,dtype=torch.float32)
+    mask=torch.as_tensor(valid,dtype=torch.bool)
     ys_t=net.ys
     ext_t=torch.as_tensor(ext,dtype=torch.complex64)
     ir=[]
@@ -81,7 +111,7 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
         for start in range(0,len(tr),batch):
             ix=order[start:start+batch]
             pred=net(xt[ix])
-            loss_z=(((pred-yt[ix])/ys_t)**2).mean()
+            loss_z=(((pred[:,:9]-yt[ix,:9])/ys_t[:9])**2).mean()
             zm=zmat(pred)
             rhs=torch.zeros((len(ix),len(ext),2),dtype=torch.complex64)
             rhs[...,0]=1.
@@ -90,10 +120,15 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
             loss_i=((ip-ref).abs().square().sum(-1)/
                     ref.abs().square().sum(-1).clamp_min(1e-12)).mean()
             loss=loss_z+current_weight*loss_i
+            if copper_weight>0 and mask[ix].any():
+                cuerr=(pred[mask[ix],9:]-yt[ix][mask[ix],9:])/ys_t[9:]
+                loss=loss+copper_weight*cuerr.square().mean()
             opt.zero_grad(set_to_none=True);loss.backward();opt.step()
         if ep%5:continue
         net.eval();d=evaluate(net,dev,ext)
         score=d["cold_Z_pct"]+.1*d["current_pct"]+.05*d["air_L_pct"]
+        if copper_weight>0:
+            score+=sea_score_weight*d.get("cold_sea_power_pct",0.)
         history.append(dict(epoch=ep,loss=float(loss.detach()),
                             val_Z_pct=d["cold_Z_pct"],
                             val_current_pct=d["current_pct"],
@@ -112,7 +147,9 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
         test_geometries=len(test),train_strata=by_stratum(net,tr,ext),
         val=evaluate(net,dev,ext),val_strata=by_stratum(net,dev,ext),
         test=evaluate(net,test,ext),test_strata=by_stratum(net,test,ext),
-        current_loss_weight=current_weight,external_network_families=len(ext),
+        current_loss_weight=current_weight,copper_loss_weight=copper_weight,
+         sea_score_weight=sea_score_weight,copper_label_geometries=int(valid.sum()),
+         external_network_families=len(ext),
         history=history)
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -123,9 +160,12 @@ def main():
     p.add_argument("--epochs",type=int,default=600)
     p.add_argument("--batch",type=int,default=64)
     p.add_argument("--current-weight",type=float,default=.5)
+    p.add_argument("--copper-weight",type=float,default=0.)
+    p.add_argument("--sea-score-weight",type=float,default=.02)
     a=p.parse_args()
     res=train(read(a.data),read(a.circuits),out=a.out,epochs=a.epochs,
-              batch=a.batch,current_weight=a.current_weight)
+              batch=a.batch,current_weight=a.current_weight,
+               copper_weight=a.copper_weight,sea_score_weight=a.sea_score_weight)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(res,indent=2)+"\n",encoding="utf-8")
     print("V7_COLD_RESULT",json.dumps({k:res[k] for k in
