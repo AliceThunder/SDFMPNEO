@@ -1306,3 +1306,9 @@ BFZI V150固定热态数据生成器`examples/bfzi_v9_hotstates.py`已在XEnergy
 新增`examples/bfzi_v9_full_history_train.py`：对全部132条真实热历史生成真实/自主热状态配对（5088状态）共同监督现有SkinTanV3，冻结热网络及其余EM部分。分别用原V8热网及V9热网微调25轮，RX自身及总体Z误差均退化（分别16.2321→16.3989%、15.9733→16.0359%），两次电磁checkpoint均拒绝，保留V8原SkinTanV3。所有开发集指标在`runs/geomfrac_v9_full_train_summary.json`，理论与代码入口在`GEOMFRAC_V9_FULL_HISTORY_TRAIN.md`。
 
 已在生成物理参考前冻结全新独立盲测`runs/geomfrac_v9_full_blind_plan.json`：V9B0001–0004（来自未曾用于以往V8H/P/S/E的V7E0070/0072/0082/0141），每几何60s与300s完整BFZI V150 S5 ultra物理激励，合计4几何8条历史。XEnergy任务job-176进行物理生成；验收将比较冻结V8与V9仅热头候选、对全部自阻抗/温度/电流/功率检验，盲测不参与训练和调参。
+
+## 2026-11-21 — V9完整直接法盲测与区域复阻抗物理敏感度验收
+
+全新V9B0001–0004、8条BFZI V150 S5 ultra完整电磁热历史已全部成功，失败0，参考经断线自动恢复。独立盲测原V8与冻结V9热头：动态复阻抗9.7281%→10.1546%、TX R11自身10.9924%→11.1986%、RX R22自身11.4380%→12.0146%，五材料温度RMSE0.18396→0.18177K。V9热头**未通过盲测，不晋级**，仍保留冻结原V8。机器可读证据`runs/geomfrac_v9_full_blind_summary.json`及完整BFZI参考manifest/build report已入库。
+
+继续复用原48组训练几何132条完整物理历史，以现有BFZI冷态焦耳源为物理约束，拟合三组空间温度模式对R11/R12/R22和X11/X12/X22的18个共享敏感度系数，不增加网络。15组开发几何真实热状态下海水R11/R12/R22误差由33.43/15.18/28.60%降为10.91/2.86/12.59%，物理电抗X11/X12/X22误差6.63/7.93/8.99%。自主闭环实部0.5混合使动态Z16.2321%→15.4790%、TX R11 15.7848→14.4391%、RX R22 20.7277→19.3712%；加0.25虚部混合使动态Z15.4604%，收益0.0187pp，未达到选模门槛。此方向暂保留开发研究结果，未晋级、未使用V9B已冻结盲测调参。代码`sdfmpneo_bfzi/geom_weakz.py`、`examples/bfzi_v9_phys_region.py`，完整实验`runs/geomfrac_v9_phys_region.json`，总结`docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V9_FULL_HISTORY_TRAIN.md`。
