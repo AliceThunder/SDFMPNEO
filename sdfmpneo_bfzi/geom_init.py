@@ -278,6 +278,20 @@ def conductance_mix(atlas,init):
     return out
 
 
+
+def thermal_mix(atlas,init,weight):
+    """Blend two SPD thermal atlas representations in shared ROM coordinates."""
+    w=float(weight)
+    if not 0.<=w<=1.:
+        raise ValueError("thermal blend must be in [0,1]")
+    if w==0.:
+        return init
+    phys=conductance_mix(atlas,init)
+    out=dict(init)
+    out["k"]=(1.-w)*np.asarray(init["k"])+w*phys["k"]
+    return out
+
+
 def mix_init(case,base,extra=None,weight=0.):
     """Cold electrical blending; preserve the base dissipative thermal operator."""
     w=float(weight)
