@@ -59,7 +59,7 @@ def main():
         excludes=list(forbidden),
         note="Do not use these geometries for training, model selection or hyperparameter tuning.")
     a.out.parent.mkdir(parents=True,exist_ok=True)
-    a.out.write_text(json.dumps(out,indent=2)+"\\n",encoding="utf-8")
+    a.out.write_text(json.dumps(out,indent=2)+"\n",encoding="utf-8")
     print("V8_PAR48_HOLDOUT",json.dumps(out["source_test"]),flush=True)
 
 
