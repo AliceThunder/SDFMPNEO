@@ -98,6 +98,10 @@ def main():
                 pkg_sea_h=th.get("pkg_sea_h",20.),sea_max=373.15,
                 cu_max=1357.77,pkg_max=None)
             et=build(data,bf,ext,opts)
+            if report["failed"].get(name,{}).get("build"):
+                report["failed"][name].pop("build",None)
+                if not report["failed"][name]:
+                    report["failed"].pop(name,None)
             init=thermal_mix(atlas,src.apply(case,cold.apply(
                 case,atlas.predict(case))),.25)
             g=geometry(case,init)[1]
