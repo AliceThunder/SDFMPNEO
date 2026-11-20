@@ -341,3 +341,13 @@ V8自主闭环初始geometry-free动态阻抗选择分数为17.3271%。
 训练中仅更新rank48热输出层；电磁SOE和主网络冻结。
 候选权重`runs/geomfrac_et_v8_heat_tune.pt`，
 报告`runs/geomfrac_et_v8_heat_tune.json`。
+
+### V8独立几何验收入口
+
+新增`examples/bfzi_v8_accept.py`，在训练和模型选择结束后，
+对冻结V8E测试集执行纯几何输入推理，并与BFZI V150物理教师比较。
+统一使用扩展rank48热图谱、V8 ColdNet铜阻抗分解、
+海水源修正和SkinTan切线，统计冷态阻抗、动态阻抗、
+电流、五材料温度、海水功率、铜耗和能量预算。
+支持`val`和`test`两个划分，按冻结计划检查几何身份，
+不参与训练或选模。已在XEnergy完成语法编译。
