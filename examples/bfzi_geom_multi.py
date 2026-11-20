@@ -48,9 +48,10 @@ def prepare(spec,rank=32):
     return result
 
 
-def free_metric(rows,free,net,ck,heat_op="atlas",cu_link=None):
+def free_metric(rows,free,net,ck,heat_op="atlas",cu_link=None,par=None,k_mix=0.):
     """Select with the same BFZI-free closed loop used for deployment."""
     from sdfmpneo_bfzi.geom_free import rollout
+    from sdfmpneo_bfzi.geom_init import thermal_mix
     plan,atlas,ps,mu,src,tan,mix=free
     cache={}
     errs=[]
@@ -69,9 +70,9 @@ def free_metric(rows,free,net,ck,heat_op="atlas",cu_link=None):
                 from sdfmpneo_bfzi.geom_cu import apply as cu_apply
                 init=cu_apply(case,init,exchange=True,
                               profile=cu_link.predict(case))
-            cache[name]=init
+            cache[name]=thermal_mix(atlas,init,k_mix) if k_mix else init
         pred=rollout(case,atlas,net,ck,r['time'],r['voltage'],tan,
-                     init_override=cache[name],shape_mix=mix)['z6']
+                     init_override=cache[name],shape_mix=mix,extra=par)['z6']
         dz=pred-pred[0]
         true=r['z6']-r['z6'][0]
         errs.append(np.linalg.norm(dz-true)/max(np.linalg.norm(true),1e-12))
@@ -150,6 +151,10 @@ def main():
                    help='use unified V7/V8 ColdNet for geometry-free validation')
     p.add_argument('--free-plan',type=Path,default=None,
                    help='geometry case plan for BFZI-free development selection')
+    p.add_argument('--free-parallel-model',type=Path,default=None,
+                   help='frozen parallel impedance branch used in BFZI-free checkpoint selection')
+    p.add_argument('--free-k-mix',type=float,default=0.,
+                   help='physical thermal operator mix for BFZI-free checkpoint selection')
     p.add_argument('--free-config',type=Path,default=Path('runs/geomfrac_free_v7_selection.json'),
                    help='frozen geometry-free port/thermal model configuration')
     p.add_argument('--free-heat-op',choices=('atlas','conductance','contact'),default='atlas',help='geometry-only heat operator used for closed-loop checkpoint selection')
@@ -235,6 +240,12 @@ def main():
     if a.tangent_loss_weight<0 or (a.tangent_loss_weight and tangent is None):
         p.error('tangent loss requires a pretrained tangent model')
     free=None
+    par=None
+    if a.free_parallel_model:
+        from sdfmpneo_bfzi.geom_par48 import ParZ48
+        par=ParZ48.load(a.free_parallel_model)
+    if not 0.<=a.free_k_mix<=1.:
+        p.error('--free-k-mix requires a value in [0,1]')
     if a.select=='free_dynamic_z':
         if not a.free_plan:
             p.error('--select free_dynamic_z requires --free-plan')
@@ -300,7 +311,7 @@ def main():
         net.eval()
         with torch.no_grad():
             if a.select=='free_dynamic_z':
-                best=free_metric(val,free,net,eck,a.free_heat_op,cu_link)
+                best=free_metric(val,free,net,eck,a.free_heat_op,cu_link,par,a.free_k_mix)
             else:
                 init_z=eval_rollout(None,net,eck,val,tangent=tangent)
                 key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
@@ -357,7 +368,7 @@ def main():
             raise RuntimeError(f"validation diverged at epoch {ep+1}")
         if a.select=='free_dynamic_z':
             with torch.no_grad():
-                metric=free_metric(val,free,net,eck,a.free_heat_op,cu_link)
+                metric=free_metric(val,free,net,eck,a.free_heat_op,cu_link,par,a.free_k_mix)
         elif a.select in ('dynamic_z','thermal'):
             with torch.no_grad():
                 zval=eval_rollout(None,net,eck,val,tangent=tangent)
