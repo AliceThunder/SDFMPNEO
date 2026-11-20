@@ -1,4 +1,5 @@
 """Offline partial teacher-state substitution in frozen V7 tangent (six unseen geometries)."""
+import argparse
 import json
 from pathlib import Path
 import numpy as np
@@ -15,6 +16,10 @@ from sdfmpneo_bfzi.geom_heat import pack
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 
 def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--cold',type=Path,default=Path('runs/geomfrac_cold_v7.pt'))
+    p.add_argument('--out',type=Path,default=Path('runs/geomfrac_cold_v7_heat_oracle.json'))
+    a=p.parse_args()
     torch.set_num_threads(2)
     root=Path("runs")
     cfg=json.loads((root/"geomfrac_free_rank48_selection.json").read_text(encoding="utf-8-sig"))
@@ -25,7 +30,7 @@ def main():
         soe_quad=ck.get("soe_quad","trap"),heat_dt=float(ck.get("heat_dt",1.875)),heat_z=bool(ck.get("heat_z",False)))
     net.load_state_dict(ck["state"]);net.eval()
     atlas=GeomInit.load(cfg["atlas"])
-    cold=ColdNet.load(root/"geomfrac_cold_v7.pt")
+    cold=ColdNet.load(a.cold)
     sf=SrcFix.load(cfg["source_model"])
     tan=restore_rank48(root/"geomfrac_rank48_skin_tan_v3.pt",cfg["z_fix_model"])
     ways=("pred","true_mean","true_skin","true_shape","true_all")
@@ -71,7 +76,7 @@ def main():
         print("THERM_ORACLE_COMPONENT",name,cases[name],flush=True)
     avg={k:float(np.mean(v)) for k,v in err.items()}
     print("THERM_ORACLE_SUMMARY",avg,flush=True)
-    (root/"geomfrac_cold_v7_heat_oracle.json").write_text(
+    a.out.write_text(
         json.dumps(dict(methods=ways,summary=avg,cases=cases),indent=2)+"\n",encoding="utf-8")
 
 if __name__=="__main__":main()
