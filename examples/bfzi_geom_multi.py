@@ -97,6 +97,8 @@ def rank48_extra(net):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',type=Path,required=True)
+    p.add_argument('--expand-manifest',type=Path,default=None)
+    p.add_argument('--expand-plan',type=Path,default=None)
     p.add_argument('--init-model',type=Path,default=None)
     p.add_argument('--reuse-scales',action='store_true',
                    help='keep source/output/state scales when fine-tuning')
@@ -161,6 +163,12 @@ def main():
         cu_link=CuLink.load(a.cu_link_model)
     config=json.loads(a.manifest.read_text(encoding='utf-8-sig'))
     trspec,vaspec=config['train'],config['val']
+    if a.expand_manifest:
+        expanded=json.loads(a.expand_manifest.read_text(encoding='utf-8-sig'))
+        trspec=list(trspec)+list(expanded.get('train',[]))
+        vaspec=list(vaspec)+list(expanded.get('val',[]))
+        print('V8_THERM_EXPAND',len(expanded.get('train',[])),
+              len(expanded.get('val',[])),flush=True)
     trgeo={str(item['anchor']).replace('\\','/') for item in trspec}
     vageo={str(item['anchor']).replace('\\','/') for item in vaspec}
     if not trgeo or not vageo or trgeo & vageo:
@@ -229,6 +237,9 @@ def main():
         if not a.free_plan:
             p.error('--select free_dynamic_z requires --free-plan')
         plan=json.loads(a.free_plan.read_text(encoding='utf-8-sig'))
+        if a.expand_plan:
+            extra_plan=json.loads(a.expand_plan.read_text(encoding='utf-8-sig'))
+            plan['cases'].update(extra_plan['cases'])
         cfg=json.loads(a.free_config.read_text(encoding='utf-8-sig'))
         if plan.get('invalid_for_physics'):
             p.error('invalid BFZI-free selection plan')
