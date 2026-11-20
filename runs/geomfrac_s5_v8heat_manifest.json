@@ -1,0 +1,37 @@
+{
+  "train": [],
+  "val": [],
+  "test": [
+    {
+      "anchor": "runs\\bfzi_s5_V8H0001_ultra_v8heat_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V8H0001_ultra_v8heat_drive1.npz",
+        "runs\\bfzi_s5_V8H0001_ultra_v8heat_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V8H0002_ultra_v8heat_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V8H0002_ultra_v8heat_drive1.npz",
+        "runs\\bfzi_s5_V8H0002_ultra_v8heat_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V8H0003_ultra_v8heat_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V8H0003_ultra_v8heat_drive1.npz",
+        "runs\\bfzi_s5_V8H0003_ultra_v8heat_drive2.npz"
+      ]
+    },
+    {
+      "anchor": "runs\\bfzi_s5_V8H0004_ultra_v8heat_anchor.npz",
+      "teacher": [
+        "runs\\bfzi_s5_V8H0004_ultra_v8heat_drive1.npz",
+        "runs\\bfzi_s5_V8H0004_ultra_v8heat_drive2.npz"
+      ]
+    }
+  ],
+  "canonical": true,
+  "rank": 32,
+  "duration_s": 300.0
+}
