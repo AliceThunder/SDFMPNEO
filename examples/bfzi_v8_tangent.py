@@ -64,6 +64,14 @@ def fit(args):
     env=tuple(env)
     cfg,plan,hold,_,_,_,_,_,_,_=env
     mf=read("runs/geomfrac_s5_v6_36g_hold6_manifest.json")
+    if a.expand_plan and a.expand_manifest:
+        ex=read(a.expand_plan)
+        em=read(a.expand_manifest)
+        plan["cases"].update(ex["cases"])
+        for part in ("train","val"):
+            mf[part].extend(em.get(part,[]))
+        print("V8_EXPAND_USED",len(em.get("train",[])),
+              len(em.get("val",[])),flush=True)
     tr,gt=collect(mf["train"],plan,env)
     va,gv=collect(mf["val"],plan,env)
     names_tr={n for n,_ in gt}
@@ -153,6 +161,8 @@ def main():
     p.add_argument("--every",type=int,default=10)
     p.add_argument("--patience",type=int,default=50)
     p.add_argument("--lr",type=float,default=2e-4)
+    p.add_argument("--expand-plan",type=Path,default=None)
+    p.add_argument("--expand-manifest",type=Path,default=None)
     a=p.parse_args()
     fit(a)
 
