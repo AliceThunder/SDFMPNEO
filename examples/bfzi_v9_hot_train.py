@@ -1,4 +1,4 @@
-"""Train a geometry-shared hot-state sea-impedance residual from BFZI labels."""
+"""Train V9 hot-state impedance residual with geometry-disjoint validation."""
 from __future__ import annotations
 import argparse,json
 from pathlib import Path
@@ -12,21 +12,21 @@ def rel(pred,true):
     return float(np.linalg.norm(pred-true)/max(np.linalg.norm(true),1e-12))
 
 
-def report(pred,true,ids):
-    out={"all":rel(pred,true),"channels":{},"geometry":{}}
+def metrics(pred,true,ids):
     names=("R11","X11","R12","X12","R22","X22")
+    out={"all":rel(pred,true),"macro_geometry":None,"channels":{},"geometry":{}}
     for j,n in enumerate(names):
         out["channels"][n]=rel(pred[:,j],true[:,j])
     for name in np.unique(ids):
         m=ids==name
-        out["geometry"][str(name)]={"count":int(m.sum()),
-            "baseline":rel(pred[m],true[m])}
+        out["geometry"][str(name)]={"count":int(m.sum()),"rel_L2":rel(pred[m],true[m])}
+    out["macro_geometry"]=float(np.mean([v["rel_L2"] for v in out["geometry"].values()]))
     return out
 
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument("--data",type=Path,default=Path("runs/geomfrac_v9_hotstates.npz"))
+    p.add_argument("--data",type=Path,nargs="+",default=[Path("runs/geomfrac_v9_hotstates_multi.npz")])
     p.add_argument("--skin-tangent",type=Path,default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base",type=Path,default=Path("runs/geomfrac_et_v9_ztune.pt"))
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_v9_hotz.pt"))
@@ -38,23 +38,32 @@ def main():
     a=p.parse_args()
     torch.manual_seed(a.seed);rng=np.random.default_rng(a.seed)
     torch.set_num_threads(2)
-    with np.load(a.data) as d:
-        g=np.asarray(d["g"],np.float32)
-        x=np.asarray(d["a"],np.float32)
-        y=np.asarray(d["sea"],np.float32)
-        ids=np.asarray(d["name"]).astype(str)
+    parts=[]
+    for path in a.data:
+        with np.load(path) as d:
+            parts.append((np.asarray(d["g"],np.float32),
+                          np.asarray(d["a"],np.float32),
+                          np.asarray(d["sea"],np.float32),
+                          np.asarray(d["name"]).astype(str)))
+    g=np.concatenate([q[0] for q in parts])
+    x=np.concatenate([q[1] for q in parts])
+    y=np.concatenate([q[2] for q in parts])
+    ids=np.concatenate([q[3] for q in parts])
     if (g.shape!=(len(ids),45) or x.shape!=(len(ids),48)
-            or y.shape!=(len(ids),6) or len(ids)<100
+            or y.shape!=(len(ids),6) or len(ids)<300
             or not np.isfinite(g).all() or not np.isfinite(x).all()
             or not np.isfinite(y).all()):
         raise ValueError("invalid or incomplete V9 hot-state dataset")
-    tr=[];va=[]
-    for name in np.unique(ids):
-        ix=np.flatnonzero(ids==name)
-        ix=rng.permutation(ix)
-        n=max(1,int(round(.2*len(ix))))
-        va.extend(ix[:n]);tr.extend(ix[n:])
-    tr=np.asarray(sorted(tr));va=np.asarray(sorted(va))
+    names=np.unique(ids)
+    dense={"V8X0001","V8X0002","V8X0003","V8X0004"}&set(names)
+    candidates=np.asarray(sorted(set(names)-dense))
+    nval=max(1,int(round(.2*len(candidates))))
+    val_geoms=sorted(rng.choice(candidates,size=nval,replace=False).tolist())
+    train_geoms=sorted(set(names)-set(val_geoms))
+    tr=np.flatnonzero(np.isin(ids,train_geoms))
+    va=np.flatnonzero(np.isin(ids,val_geoms))
+    if len(va)<20 or len(tr)<200:
+        raise ValueError("geometry-disjoint split is too small")
     base=restore_rank48(a.skin_tangent,a.skin_base)
     with torch.no_grad():
         bp=[]
@@ -69,25 +78,31 @@ def main():
     ys=np.maximum(y[tr].std(0),1e-7)
     net=HotResidual(gm,gs,ass,ys,a.hidden)
     opt=torch.optim.Adam(net.parameters(),lr=1e-3,weight_decay=1e-4)
-    xt=torch.as_tensor(x);gt=torch.as_tensor(g)
+    gt=torch.as_tensor(g);xt=torch.as_tensor(x)
     rt=torch.as_tensor(res/ys)
+    counts={n:int(np.sum(ids[tr]==n)) for n in train_geoms}
+    wt=np.asarray([1./counts[ids[i]] for i in tr],np.float32)
+    wt*=len(wt)/wt.sum()
+    w=torch.as_tensor(wt)
     best=float("inf");saved=None;best_ep=0;wait=0;history=[]
     for ep in range(1,a.epochs+1):
         net.train()
-        order=rng.permutation(tr)
+        order=rng.permutation(len(tr))
         for lo in range(0,len(order),64):
-            ix=order[lo:lo+64]
+            pos=order[lo:lo+64];ix=tr[pos]
             opt.zero_grad(set_to_none=True)
             pred=net(gt[ix],xt[ix])/torch.as_tensor(ys)
-            loss=((pred-rt[ix])**2).mean()
+            each=((pred-rt[ix])**2).mean(dim=1)
+            loss=(each*w[pos]).sum()/w[pos].sum()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(),2.)
             opt.step()
         net.eval()
         with torch.no_grad():
             pv=net(gt[va],xt[va]).cpu().numpy()
-            v=float(np.mean(((pv-res[va])/ys)**2))
-        history.append({"epoch":ep,"val_mse":v})
+            each=np.mean(((pv-res[va])/ys)**2,axis=1)
+            v=float(np.mean([each[ids[va]==n].mean() for n in val_geoms]))
+        history.append({"epoch":ep,"val_macro_mse":v})
         if v<best-1e-7:
             best=v;best_ep=ep;wait=0
             saved={k:v.detach().clone() for k,v in net.state_dict().items()}
@@ -101,28 +116,27 @@ def main():
     with torch.no_grad():
         corr=net(gt,xt).cpu().numpy()
     base_val=bp[va];new_val=base_val+corr[va]
-    metrics={"baseline":report(base_val,y[va],ids[va]),
-             "corrected":report(new_val,y[va],ids[va])}
-    for name in np.unique(ids[va]):
-        m=ids[va]==name
-        metrics["baseline"]["geometry"][str(name)]["corrected"]=rel(new_val[m],y[va][m])
+    bm=metrics(base_val,y[va],ids[va])
+    nm=metrics(new_val,y[va],ids[va])
     ck=dict(state=net.state_dict(),gm=net.gm.detach().cpu(),
         gs=net.gs.detach().cpu(),ass=net.ass.detach().cpu(),
-        ys=net.ys.detach().cpu(),
-        hidden=a.hidden,skin_tangent=str(a.skin_tangent),skin_base=str(a.skin_base),
+        ys=net.ys.detach().cpu(),hidden=a.hidden,
+        skin_tangent=str(a.skin_tangent),skin_base=str(a.skin_base),
         sample_count=len(ids),train_count=len(tr),validation_count=len(va),
-        geometries=np.unique(ids).tolist(),seed=a.seed)
+        geometries=names.tolist(),train_geometries=train_geoms,
+        validation_geometries=val_geoms,seed=a.seed)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(ck,a.out)
-    result=dict(status="trained",samples=len(ids),geometries=len(np.unique(ids)),
-        train_count=len(tr),validation_count=len(va),best_epoch=best_ep,
-        best_val_mse=best,baseline_metrics=metrics["baseline"],
-        corrected_metrics=metrics["corrected"],history=history,
-        checkpoint=str(a.out))
+    result=dict(status="trained",samples=len(ids),geometries=len(names),
+        train_count=len(tr),validation_count=len(va),train_geometries=train_geoms,
+        validation_geometries=val_geoms,best_epoch=best_ep,
+        best_val_macro_mse=best,baseline_metrics=bm,
+        corrected_metrics=nm,history=history,checkpoint=str(a.out),
+        data_files=[str(v) for v in a.data])
     a.report.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     print("V9_TRAIN_RESULT",json.dumps({k:result[k] for k in
-        ("samples","geometries","train_count","validation_count","best_epoch",
-         "baseline_metrics","corrected_metrics")}),flush=True)
+        ("samples","geometries","train_count","validation_count","train_geometries",
+         "validation_geometries","best_epoch","baseline_metrics","corrected_metrics")}),flush=True)
 
 
 if __name__=="__main__":
