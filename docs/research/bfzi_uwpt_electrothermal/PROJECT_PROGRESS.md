@@ -1192,3 +1192,7 @@ W01 complete 600s/41-step/6-point inference 0.420s,
 Unseen complete dynamic cohort is the next acceptance gate;
 anchored V9 retains formal acceptance.
 See GEOMFRAC_GEOMETRY_FREE_V6.md.
+
+## 2026-11-20 — V7 后海水损耗功率物理分解候选
+
+V7 正式核心域主网络保持冻结。针对六组独立动态几何中海水功率平均相对误差 24.7713%，新增可选的13输出统一 ColdNet，通过已有 BFZI 冷铜阻抗标签显式分离静态端部铜阻抗与温度演化绕组阻抗，热驱动同步采用这一分解。训练、动态评估和局部单元测试入口已提交，候选尚未训练与完成独立验收，正式 V7 仍使用原9输出权重。详情见 GEOMFRAC_V8_SEA_LOSS_SPLIT.md。
