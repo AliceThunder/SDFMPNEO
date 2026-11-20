@@ -16,6 +16,7 @@ from sdfmpneo_bfzi.geom_init import GeomInit, thermal_mix
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_parallel import ParZ
 from sdfmpneo_bfzi.geom_par48 import ParZ48
+from sdfmpneo_bfzi.geom_weakz import WeakSea
 from sdfmpneo_bfzi.geom_skintan import restore_rank48
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
 
@@ -38,11 +39,14 @@ def main():
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
     p.add_argument("--parallel-model", type=Path, default=None)
     p.add_argument("--k-mix", type=float, default=0.0)
+    p.add_argument("--weak-sea-mix", type=float, default=0.0)
     p.add_argument("--skin-base-model", type=Path, default=None)
     p.add_argument("--skin-mix", type=float, default=1.0)
     p.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
 
+    if not 0.0 <= a.weak_sea_mix <= 1.0:
+        p.error("--weak-sea-mix must be in [0,1]")
     torch.set_num_threads(2)
     plan = json.loads(a.plan.read_text(encoding="utf-8-sig"))
     mf = json.loads(a.manifest.read_text(encoding="utf-8-sig"))
@@ -98,9 +102,11 @@ def main():
             init = cold.apply(case, init)
             init = src.apply(case, init)
             init = thermal_mix(atlas, init, a.k_mix)
+            ex = (WeakSea(tan, extra, init, case["alpha_per_K"], a.weak_sea_mix)
+                  if a.weak_sea_mix else extra)
             for row in prepare(spec, 48):
                 pred = rollout(case, atlas, net, eck, row["time"], row["voltage"],
-                               tan, init_override=init, extra=extra, shape_mix=mix)
+                               tan, init_override=init, extra=ex, shape_mix=mix)
                 item = metric(pred, row)
                 item["geometry"] = name
                 rows.append(item)
@@ -133,7 +139,7 @@ def main():
         history_count=len(rows), model=str(a.model), atlas=str(a.atlas),
         cold_model=str(a.cold_model), parallel_model=str(a.parallel_model) if a.parallel_model else None,
         skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
-        shape_mix=mix, k_mix=a.k_mix,
+        shape_mix=mix, k_mix=a.k_mix, weak_sea_mix=a.weak_sea_mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
         overall=overall, per_geometry=per, rows=rows)
     a.out.parent.mkdir(parents=True, exist_ok=True)
