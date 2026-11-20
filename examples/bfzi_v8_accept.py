@@ -15,6 +15,7 @@ from sdfmpneo_bfzi.geom_free import rollout
 from sdfmpneo_bfzi.geom_init import GeomInit
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_parallel import ParZ
+from sdfmpneo_bfzi.geom_par48 import ParZ48
 from sdfmpneo_bfzi.geom_skintan import restore_rank48
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
 
@@ -80,7 +81,12 @@ def main():
     else:
         tan = tan_new
         alpha = 1.0
-    extra = ParZ.load(a.parallel_model) if a.parallel_model else None
+    if a.parallel_model:
+        pck = torch.load(a.parallel_model, map_location="cpu", weights_only=True)
+        extra = (ParZ48.load(a.parallel_model) if "am" in pck["state"]
+                 else ParZ.load(a.parallel_model))
+    else:
+        extra = None
     mix = float(cfg["shape_mix"])
 
     rows = []
