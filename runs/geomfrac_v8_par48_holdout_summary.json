@@ -1,0 +1,136 @@
+{
+  "version": "v8-par48",
+  "source": "XEnergy SDFMPNEO physics BFZI V150 S5 ultra",
+  "split": "sealed_new_cold_test",
+  "geometries": 4,
+  "histories": 8,
+  "per_geometry": {
+    "V8P0001": {
+      "source_cold_test": "V7E0069",
+      "baseline": {
+        "cold_z_rel_L2": 0.0007726861631960996,
+        "dynamic_z_rel_L2": 0.0718805521109199,
+        "current_rel_L2": 0.005307165481967899,
+        "material_mean_rmse_K": 0.05259207541082731,
+        "material_mean_max_K": 0.16196051163584002,
+        "sea_power_rel_L2": 0.009563926872623307,
+        "copper_power_rel_L2": 0.010256002056342268,
+        "energy_budget_max_W": 1.029841753987253e-13
+      },
+      "parallel": {
+        "cold_z_rel_L2": 0.0007726861631960996,
+        "dynamic_z_rel_L2": 0.05165976516752219,
+        "current_rel_L2": 0.005314192298518084,
+        "material_mean_rmse_K": 0.05258891933299932,
+        "material_mean_max_K": 0.16196318882177252,
+        "sea_power_rel_L2": 0.009593792474405151,
+        "copper_power_rel_L2": 0.010267809067400034,
+        "energy_budget_max_W": 1.0129591022825438e-13
+      }
+    },
+    "V8P0002": {
+      "source_cold_test": "V7E0022",
+      "baseline": {
+        "cold_z_rel_L2": 0.00027680053677915656,
+        "dynamic_z_rel_L2": 0.1665014702341247,
+        "current_rel_L2": 0.0028175683692447974,
+        "material_mean_rmse_K": 0.4469446767185309,
+        "material_mean_max_K": 1.4009787654794934,
+        "sea_power_rel_L2": 0.004537487020624875,
+        "copper_power_rel_L2": 0.00817869146488473,
+        "energy_budget_max_W": 1.0155196827163312e-11
+      },
+      "parallel": {
+        "cold_z_rel_L2": 0.00027680053677915656,
+        "dynamic_z_rel_L2": 0.15806657108316516,
+        "current_rel_L2": 0.002816324480426619,
+        "material_mean_rmse_K": 0.44695802839871646,
+        "material_mean_max_K": 1.4009372801540678,
+        "sea_power_rel_L2": 0.0043318438801874075,
+        "copper_power_rel_L2": 0.008187364496422819,
+        "energy_budget_max_W": 1.0034190815473924e-11
+      }
+    },
+    "V8P0003": {
+      "source_cold_test": "V7E0008",
+      "baseline": {
+        "cold_z_rel_L2": 0.0009074751754215092,
+        "dynamic_z_rel_L2": 0.06798551995272739,
+        "current_rel_L2": 0.009476785270227463,
+        "material_mean_rmse_K": 0.1462915065668752,
+        "material_mean_max_K": 0.4977168175321367,
+        "sea_power_rel_L2": 0.005016700938677097,
+        "copper_power_rel_L2": 0.019312884779907023,
+        "energy_budget_max_W": 9.217325091794464e-13
+      },
+      "parallel": {
+        "cold_z_rel_L2": 0.0009074751754215092,
+        "dynamic_z_rel_L2": 0.054210925462020956,
+        "current_rel_L2": 0.00947077777727657,
+        "material_mean_rmse_K": 0.1462457191050896,
+        "material_mean_max_K": 0.4975942083223117,
+        "sea_power_rel_L2": 0.005213434277662313,
+        "copper_power_rel_L2": 0.019288072385294543,
+        "energy_budget_max_W": 9.080434125084646e-13
+      }
+    },
+    "V8P0004": {
+      "source_cold_test": "V7E0036",
+      "baseline": {
+        "cold_z_rel_L2": 0.00027026588992399084,
+        "dynamic_z_rel_L2": 0.27669808181913225,
+        "current_rel_L2": 0.00398824351554888,
+        "material_mean_rmse_K": 2.707957187740978,
+        "material_mean_max_K": 8.807907284331804,
+        "sea_power_rel_L2": 0.009630852703404445,
+        "copper_power_rel_L2": 0.012929755008824196,
+        "energy_budget_max_W": 3.403199708273172e-11
+      },
+      "parallel": {
+        "cold_z_rel_L2": 0.00027026588992399084,
+        "dynamic_z_rel_L2": 0.247367862807055,
+        "current_rel_L2": 0.003801702860315493,
+        "material_mean_rmse_K": 2.709231474090043,
+        "material_mean_max_K": 8.812310000291632,
+        "sea_power_rel_L2": 0.007726102722254817,
+        "copper_power_rel_L2": 0.013099927277934085,
+        "energy_budget_max_W": 3.3662485713755264e-11
+      }
+    }
+  },
+  "overall": {
+    "baseline": {
+      "cold_z_rel_L2": 0.0005568069413301891,
+      "dynamic_z_rel_L2": 0.14576640602922605,
+      "current_rel_L2": 0.00539744065924726,
+      "material_mean_rmse_K": 0.8384463616093029,
+      "material_mean_max_K": 2.7171408447448187,
+      "sea_power_rel_L2": 0.007187241883832431,
+      "copper_power_rel_L2": 0.012669333327489554,
+      "energy_budget_max_W": 3.403199708273172e-11
+    },
+    "parallel": {
+      "cold_z_rel_L2": 0.0005568069413301891,
+      "dynamic_z_rel_L2": 0.12782628112994082,
+      "current_rel_L2": 0.005350749354134191,
+      "material_mean_rmse_K": 0.8387560352317122,
+      "material_mean_max_K": 2.718201169397446,
+      "sea_power_rel_L2": 0.006716293338627422,
+      "copper_power_rel_L2": 0.01271079330676287,
+      "energy_budget_max_W": 3.3662485713755264e-11
+    }
+  },
+  "strength": 0.5,
+  "training_geometries": 48,
+  "dev_geometries": 15,
+  "training_histories": 132,
+  "dev_histories": 41,
+  "physics_generated": 8,
+  "physics_failed": 0,
+  "artifact_local": [
+    "geomfrac_s5_v8par48holdout_build_report.json",
+    "geomfrac_v8_par48_holdout_base.json",
+    "geomfrac_v8_par48_holdout_candidate.json"
+  ],
+  "conclusion": "Promote ParZ48 as a dynamic impedance research candidate; thermal K generalization remains open."
+}
