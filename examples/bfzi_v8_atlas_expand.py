@@ -42,7 +42,7 @@ def main():
     p.add_argument("--manifest",type=Path,default=Path("runs/geomfrac_s5_v8expand_manifest.json"))
     p.add_argument("--old-plan",type=Path,default=Path("runs/geomfrac_pose42_plan.json"))
     p.add_argument("--old-manifest",type=Path,default=Path("runs/geomfrac_s5_v6_36g_hold6_manifest.json"))
-    p.add_argument("--out",type=Path,default=Path("runs/geomfrac_init_v8_expand.pt.npz"))
+    p.add_argument("--out",type=Path,default=Path("runs/geomfrac_init_v8_expand.npz"))
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_init_v8_expand.json"))
     a=p.parse_args()
     old=GeomInit.load(a.base)
