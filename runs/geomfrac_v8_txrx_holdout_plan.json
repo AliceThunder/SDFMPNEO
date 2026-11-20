@@ -1,0 +1,134 @@
+{
+  "description": "Second untouched V8 full-physics holdout for full-state parallel impedance head",
+  "version": 8,
+  "train": [],
+  "val": [],
+  "test": [
+    "V8S0001",
+    "V8S0002"
+  ],
+  "cases": {
+    "V8S0001": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.8762,
+        "alpha2": 0.9744,
+        "core1_mm": 18,
+        "core2_mm": 9,
+        "shift_mm": [
+          4,
+          87,
+          10
+        ],
+        "tilt_deg": -14,
+        "yaw_deg": -12,
+        "pitch_deg": -1,
+        "box1_mm": 235,
+        "box2_mm": 215
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 58.47,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 77.96,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V8S0002": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.7334,
+        "alpha2": 0.977,
+        "core1_mm": 17,
+        "core2_mm": 18,
+        "shift_mm": [
+          -6,
+          92,
+          -9
+        ],
+        "tilt_deg": 8,
+        "yaw_deg": 9,
+        "pitch_deg": -5,
+        "box1_mm": 219,
+        "box2_mm": 238
+      },
+      "alpha_per_K": 0.02116,
+      "thermal": {
+        "ins_k": 0.3117,
+        "ins_t": 0.000354,
+        "pkg_k": 0.2896,
+        "pkg_sea_h": 25.586,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.21,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 74.95,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    }
+  },
+  "source_test": {
+    "V8S0001": "V7E0024",
+    "V8S0002": "V7E0097"
+  },
+  "frozen_from": "unused V7 cold test geometries",
+  "excludes": [
+    "V7E0008",
+    "V7E0016",
+    "V7E0060",
+    "V7E0047",
+    "V7E0046",
+    "V7E0078",
+    "V7E0087",
+    "V7E0022",
+    "V7E0028",
+    "V7E0036",
+    "V7E0020",
+    "V7E0100",
+    "V7E0069",
+    "V7E0039",
+    "V7E0050",
+    "V7E0023"
+  ],
+  "note": "Do not use these geometries for training, model selection or hyperparameter tuning."
+}
