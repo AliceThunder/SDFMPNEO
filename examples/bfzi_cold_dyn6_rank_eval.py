@@ -20,6 +20,8 @@ from sdfmpneo_bfzi.geom_ztune import restore as load_z
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--split',choices=('train','val','test'),default='test')
+    p.add_argument('--only-v8',action='store_true',help='evaluate V8 port only')
     p.add_argument('--plan',type=Path,default=Path('runs/geomfrac_cold_dyn6_plan.json'))
     p.add_argument('--manifest',type=Path,default=Path('runs/geomfrac_s5_cold_dyn6_manifest.json'))
     p.add_argument('--config',type=Path,required=True)
@@ -61,6 +63,9 @@ def main():
         ports['cold_v7']=ColdNet.load(a.cold_v7)
     if a.cold_v8:
         ports['cold_v8']=ColdNet.load(a.cold_v8)
+    if a.only_v8:
+        if not a.cold_v8:raise ValueError('--only-v8 requires --cold-v8')
+        ports={'cold_v8':ports['cold_v8']}
     domain=None
     if a.domain:
         from sdfmpneo_bfzi.geom_cold_domain import load as load_domain,check
@@ -72,7 +77,7 @@ def main():
           'sea_power_rel_L2','copper_power_rel_L2',
           *(f'{c}_dynamic_error_L2_over_total_delta'
             for c in ('R11','X11','R12','X12','R22','X22')))
-    for spec in mf['test']:
+    for spec in mf[a.split]:
         rows=prepare(spec,rank)
         if not rows:continue
         name=Path(rows[0]['file'].split('#')[0]).stem.split('_')[2]
