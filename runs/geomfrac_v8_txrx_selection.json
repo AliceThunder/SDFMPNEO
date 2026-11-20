@@ -1,0 +1,38 @@
+{
+  "version": 8,
+  "description": "Development-selected physically weighted seawater resistance for TX/RX",
+  "selected_on": "15 geometry-disjoint V8 development geometries, 41 histories",
+  "heat_model": "runs/geomfrac_et_v8_heat_tune.pt",
+  "config": "runs/geomfrac_free_rank48_v8_selection.json",
+  "skin_model": "runs/geomfrac_rank48_skin_tan_v3.pt",
+  "skin_base": "runs/geomfrac_et_v9_ztune.pt",
+  "parallel_model": "runs/geomfrac_v8_par48.pt",
+  "k_mix": 0.25,
+  "weak_sea_mix": 0.5,
+  "new_neural_weights": false,
+  "physical_source": "alpha_per_K * (heat_state_K * sqrt(material_cap[rank48_material])) @ predicted_cold_weak_source",
+  "real_channels": [
+    "R11",
+    "R12",
+    "R22"
+  ],
+  "imaginary_channels": "frozen neural model",
+  "train_geometry_ids": [
+    "V8X0001",
+    "V8X0002",
+    "V8X0003",
+    "V8X0004"
+  ],
+  "validation": {
+    "geometries": 15,
+    "histories": 41,
+    "baseline_dynamic_z_rel_L2": 0.16232098428977093,
+    "selected_dynamic_z_rel_L2": 0.15260352436606978,
+    "baseline_r11_self_rel_L2": 0.1578483386134988,
+    "selected_r11_self_rel_L2": 0.1437329281685681,
+    "baseline_r22_self_rel_L2": 0.20727700100023627,
+    "selected_r22_self_rel_L2": 0.1827153862170845
+  },
+  "sealed_test_plan": "runs/geomfrac_v8_txrx_holdout_plan.json",
+  "note": "V8S0001,V8S0002 were frozen before physical reference generation; no refit on tests."
+}
