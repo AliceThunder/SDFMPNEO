@@ -26,7 +26,8 @@ def save(path,rows):
         a=np.asarray([r["a"] for r in rows]),
         sea=np.asarray([r["sea"] for r in rows]),
         total=np.asarray([r["total"] for r in rows]),
-        stats=np.asarray([r["stats"] for r in rows]))
+        stats=np.asarray([r["stats"] for r in rows]),
+        scale=np.asarray([r.get("scale",1.) for r in rows],float))
 
 
 def main():
@@ -65,9 +66,11 @@ def main():
                 for name in names:
                     indices.append(seen.get(name,0));seen[name]=seen.get(name,0)+1
                 indices=np.asarray(indices,int)
-            rows=[dict(name=str(n),idx=int(i),g=g,a=h,sea=s,total=z,stats=t)
-                for n,i,g,h,s,z,t in zip(names,indices,d["g"],d["a"],
-                                         d["sea"],d["total"],d["stats"])]
+            scales=(np.asarray(d["scale"],float) if "scale" in d.files
+                    else np.ones(len(names)))
+            rows=[dict(name=str(n),idx=int(i),g=g,a=h,sea=s,total=z,stats=t,scale=float(q))
+                for n,i,g,h,s,z,t,q in zip(names,indices,d["g"],d["a"],
+                                         d["sea"],d["total"],d["stats"],scales)]
     if a.report.exists():
         report=read(a.report)
     else:
@@ -113,6 +116,9 @@ def main():
                         raise ValueError(f"{name}: teacher temperature shape {temp.shape}, expected (*,{et.n})")
                     base.extend(temp[1:]-et.amb)
             base=np.asarray(base)
+            low_pool=np.flatnonzero(np.max(base,axis=1)<=20.)
+            if not len(low_pool):
+                low_pool=np.arange(len(base))
             if len(base)<a.per_geom:
                 raise ValueError(f"{name}: too few non-ambient teacher states")
             skin_ids=np.arange(et.skin.start,et.skin.stop)
@@ -126,22 +132,35 @@ def main():
             cold_z,*_=et.em(np.zeros(et.n),np.array([1.,0.],complex))
             patterns=((0.,0.,0.),(10.,0.,0.),(0.,10.,0.),
                 (20.,0.,0.),(0.,20.,0.),(12.,-6.,0.),(-6.,12.,0.),
-                (8.,8.,5.),(40.,0.,0.),(0.,40.,0.),(0.,0.,20.),
-                (40.,-10.,0.),(-10.,40.,0.),(20.,20.,15.),
-                (60.,0.,0.),(0.,60.,0.))
+                (8.,8.,5.),(40.,0.,20.),(0.,40.,20.),(0.,0.,30.),
+                (40.,-10.,20.),(-10.,40.,20.),(20.,20.,25.),
+                (60.,0.,30.),(0.,60.,30.))
             for j in missing:
                 try:
-                    ix=rng.integers(len(base));iy=rng.integers(len(base))
-                    w=rng.uniform(.2,.8)
-                    temp=w*base[ix]+(1.-w)*base[iy]
                     dt,dr,dw=patterns[j%len(patterns)]
-                    temp=np.clip(temp+dt*tx+dr*rx+dw*wet,0.,80.)
-                    z,*_=et.em(temp,np.array([1.,0.],complex))
+                    pool=low_pool if j>=8 else np.arange(len(base))
+                    ok=False;temp=None;z=None;fac=1.
+                    for attempt in range(8):
+                        ix=rng.choice(pool);iy=rng.choice(pool)
+                        w=rng.uniform(.2,.8)
+                        raw=w*base[ix]+(1.-w)*base[iy]
+                        delta=dt*tx+dr*rx+dw*wet
+                        for fac in (1.,.8,.6,.4,.2,0.):
+                            cand=np.clip(raw+fac*delta,0.,80.)
+                            try:
+                                et.check_domain(cand)
+                                z,*_=et.em(cand,np.array([1.,0.],complex))
+                                temp=cand;ok=True;break
+                            except ValueError:
+                                continue
+                        if ok:break
+                    if not ok:
+                        raise ValueError("could not draw an in-domain temperature state after 8 attempts")
                     stats=np.array([float(temp[:et.count].mean()),
                         float(temp[skin_ids[skin_pkg==0]].mean()),
                         float(temp[skin_ids[skin_pkg==1]].mean()),
                         float(temp.max())])
-                    rows.append(dict(name=name,idx=j,g=g,
+                    rows.append(dict(name=name,idx=j,g=g,scale=fac,
                         a=project(rom,temp[np.asarray(head.state_order,int)],rom.phi),
                         sea=pack(z.sea_z-cold_z.sea_z),
                         total=pack(z.total_z-cold_z.total_z),stats=stats))
