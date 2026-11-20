@@ -42,6 +42,16 @@ def target(row):
                      OMEGA*l[0],OMEGA*l[1],OMEGA*l[2]],dtype=np.float32)
 
 
+def copper_target(row):
+    """BFZI cold terminal copper: [TX/RX] x [real, imaginary]."""
+    if "copper" not in row:
+        return None
+    cu=np.asarray(row["copper"],dtype=np.float32)
+    if cu.shape!=(2,2) or not np.isfinite(cu).all():
+        raise ValueError("invalid BFZI cold copper label")
+    return cu.ravel()
+
+
 def unpack(y):
     y=np.asarray(y,float)
     z=np.stack((y[...,0],y[...,1]+y[...,6],
@@ -54,6 +64,8 @@ def unpack(y):
 class ColdNet(nn.Module):
     def __init__(self,xm,xs,ym,ys,hidden=96):
         super().__init__()
+        if len(ym) not in (9,13):
+            raise ValueError('cold port model requires 9 or 13 outputs')
         self.register_buffer('xm',torch.as_tensor(xm,dtype=torch.float32))
         self.register_buffer('xs',torch.as_tensor(xs,dtype=torch.float32))
         self.register_buffer('ym',torch.as_tensor(ym,dtype=torch.float32))
@@ -65,17 +77,27 @@ class ColdNet(nn.Module):
     def forward(self,x):
         return self.net((x-self.xm)/self.xs)*self.ys+self.ym
 
-    def predict(self,case):
+    def predict_parts(self,case):
         g=case['geometry'] if 'geometry' in case else case
         with torch.no_grad():
             y=self(torch.as_tensor(feat(g)[None])).numpy()[0]
-        return unpack(y)
+        z,air=unpack(y)
+        cu=None
+        if len(y)==13:
+            a=y[9:13].reshape(2,2)
+            cu=a[:,0]+1j*a[:,1]
+        return z,air,cu
+
+    def predict(self,case):
+        return self.predict_parts(case)[:2]
 
     def apply(self,case,init):
-        z,air=self.predict(case)
+        z,air,cu=self.predict_parts(case)
         out=dict(init)
         out['z0']=z
         out['air']=air
+        if cu is not None:
+            out['copper0']=cu
         return out
 
     def save(self,path):
