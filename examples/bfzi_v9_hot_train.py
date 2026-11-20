@@ -106,7 +106,7 @@ def main():
     for name in np.unique(ids[va]):
         m=ids[va]==name
         metrics["baseline"]["geometry"][str(name)]["corrected"]=rel(new_val[m],y[va][m])
-    ck=dict(state=net.state_dict(),gm=gm,gs=gs,ass=ass,ys=ys,
+    ck=dict(state=net.state_dict(),gm=net.gm.detach().cpu(),\n        gs=net.gs.detach().cpu(),ass=net.ass.detach().cpu(),\n        ys=net.ys.detach().cpu(),
         hidden=a.hidden,skin_tangent=str(a.skin_tangent),skin_base=str(a.skin_base),
         sample_count=len(ids),train_count=len(tr),validation_count=len(va),
         geometries=np.unique(ids).tolist(),seed=a.seed)
