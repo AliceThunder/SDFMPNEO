@@ -14,6 +14,7 @@ from sdfmpneo_bfzi.geom_coldnet import ColdNet
 from sdfmpneo_bfzi.geom_free import rollout
 from sdfmpneo_bfzi.geom_init import GeomInit
 from sdfmpneo_bfzi.geom_neural import GeomFracET
+from sdfmpneo_bfzi.geom_parallel import ParZ
 from sdfmpneo_bfzi.geom_skintan import restore_rank48
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
 
@@ -34,6 +35,7 @@ def main():
     p.add_argument("--config", type=Path, default=Path("runs/geomfrac_free_rank48_selection.json"))
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
+    p.add_argument("--parallel-model", type=Path, default=None)
     p.add_argument("--out", type=Path, required=True)
     a = p.parse_args()
 
@@ -65,6 +67,7 @@ def main():
     cold = ColdNet.load(a.cold_model)
     src = SrcFix.load(cfg["source_model"])
     tan = restore_rank48(a.skin_tangent, a.skin_base)
+    extra = ParZ.load(a.parallel_model) if a.parallel_model else None
     mix = float(cfg["shape_mix"])
 
     rows = []
@@ -76,7 +79,7 @@ def main():
             init = src.apply(case, init)
             for row in prepare(spec, 48):
                 pred = rollout(case, atlas, net, eck, row["time"], row["voltage"],
-                               tan, init_override=init, shape_mix=mix)
+                               tan, init_override=init, extra=extra, shape_mix=mix)
                 item = metric(pred, row)
                 item["geometry"] = name
                 rows.append(item)
@@ -105,7 +108,8 @@ def main():
 
     out = dict(status="complete", split=a.split, geometry_count=len(names),
         history_count=len(rows), model=str(a.model), atlas=str(a.atlas),
-        cold_model=str(a.cold_model), shape_mix=mix,
+        cold_model=str(a.cold_model), parallel_model=str(a.parallel_model) if a.parallel_model else None,
+        shape_mix=mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
         overall=overall, per_geometry=per, rows=rows)
     a.out.parent.mkdir(parents=True, exist_ok=True)
