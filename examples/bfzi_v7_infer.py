@@ -58,11 +58,13 @@ def main():
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_v7_infer.npz"))
     p.add_argument("--config",type=Path,default=Path("runs/geomfrac_free_rank48_selection.json"))
     p.add_argument("--domain",type=Path,default=Path("runs/geomfrac_cold_v7_domain.json"))
+    p.add_argument("--cold-model",type=Path,default=Path("runs/geomfrac_cold_v7.pt"),
+                   help="optional copper-resolved V8 candidate; default V7 is unchanged")
     a=p.parse_args()
     data=json.loads(a.input.read_text(encoding="utf-8-sig"))
     cfg=json.loads(a.config.read_text(encoding="utf-8-sig"))
     cfg=dict(cfg,thermal_model="runs/geomfrac_et_pose42_kell_r48_thermal_v1.pt",
-             cold_model="runs/geomfrac_cold_v7.pt",
+             cold_model=str(a.cold_model),
              skin_model="runs/geomfrac_rank48_skin_tan_v3.pt")
     torch.set_num_threads(2)
     summary,pred=run(data,cfg,load_domain(a.domain))
