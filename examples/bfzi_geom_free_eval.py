@@ -49,6 +49,10 @@ def metric(pred,row):
     impedance={name+'_dynamic_error_L2_over_total_delta':
                float(np.linalg.norm((dz-dr)[:,j])/zden)
                for j,name in enumerate(parts)}
+    impedance.update({name+'_dynamic_rel_L2_self':
+               float(np.linalg.norm((dz-dr)[:,j])/
+                     max(float(np.linalg.norm(dr[:,j])),1e-12))
+               for j,name in enumerate(parts)})
     powers={}
     if psea is not None:
         powers['sea_power_rel_L2']=float(
