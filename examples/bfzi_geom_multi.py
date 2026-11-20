@@ -144,6 +144,8 @@ def main():
                    help='best-checkpoint criterion for validation')
     p.add_argument('--proj-tau',type=float,default=0.,
                    help='projection quality scale in K for history sampling; 0=uniform')
+    p.add_argument('--free-atlas',type=Path,default=None,
+                   help='offline expanded shared thermal atlas for validation')
     p.add_argument('--free-cold-model',type=Path,default=None,
                    help='use unified V7/V8 ColdNet for geometry-free validation')
     p.add_argument('--free-plan',type=Path,default=None,
@@ -258,7 +260,7 @@ def main():
         else:
             port=PortSelf.load(cfg['port_self_model'])
             mutual=MutFix.load(cfg['mutual_model'])
-        free=(plan,GeomInit.load(cfg['atlas']),port,mutual,
+        free=(plan,GeomInit.load(a.free_atlas or cfg['atlas']),port,mutual,
               SrcFix.load(cfg['source_model']),
               (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),
               float(cfg['shape_mix']))
