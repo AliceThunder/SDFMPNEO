@@ -1,0 +1,94 @@
+{
+  "status": "candidate",
+  "geometry_count": 15,
+  "history_count": 41,
+  "physical": "alpha * projected cold BFZI weak Joule source; no new network",
+  "baseline": {
+    "dynamic_z_rel_L2": 0.16232098428977093,
+    "R11_dynamic_error_L2_over_total_delta": 0.11174613169547212,
+    "R22_dynamic_error_L2_over_total_delta": 0.07817921175969597,
+    "current_rel_L2": 0.08615440455326724,
+    "material_mean_rmse_K": 0.4521113429825566,
+    "sea_power_rel_L2": 0.16479411432831906,
+    "copper_power_rel_L2": 0.16359692742880189,
+    "r11_self": 0.1578483386134988,
+    "r22_self": 0.20727700100023627
+  },
+  "oracle_em": {
+    "net_R11": 0.5188517305287411,
+    "phy_R11": 0.3342863248768239,
+    "net_R22": 0.8996736237746569,
+    "phy_R22": 0.28599402345109426,
+    "net_R12": 0.17519881009001653,
+    "phy_R12": 0.15175866383405837
+  },
+  "selected_beta": 0.5,
+  "best": {
+    "dynamic_z_rel_L2": 0.15260352436606978,
+    "R11_dynamic_error_L2_over_total_delta": 0.10341229886593495,
+    "R22_dynamic_error_L2_over_total_delta": 0.0719537942356876,
+    "current_rel_L2": 0.08618880116453022,
+    "material_mean_rmse_K": 0.4517001318980691,
+    "sea_power_rel_L2": 0.16440375043902092,
+    "copper_power_rel_L2": 0.16369244506303646,
+    "r11_self": 0.1437329281685681,
+    "r22_self": 0.1827153862170845
+  },
+  "trials": {
+    "0.0": {
+      "dynamic_z_rel_L2": 0.16232098428977093,
+      "R11_dynamic_error_L2_over_total_delta": 0.11174613169547212,
+      "R22_dynamic_error_L2_over_total_delta": 0.07817921175969597,
+      "current_rel_L2": 0.08615440455326724,
+      "material_mean_rmse_K": 0.4521113429825566,
+      "sea_power_rel_L2": 0.16479411432831906,
+      "copper_power_rel_L2": 0.16359692742880189,
+      "r11_self": 0.1578483386134988,
+      "r22_self": 0.20727700100023627
+    },
+    "0.25": {
+      "dynamic_z_rel_L2": 0.15578540191094256,
+      "R11_dynamic_error_L2_over_total_delta": 0.1065348944186134,
+      "R22_dynamic_error_L2_over_total_delta": 0.07465324848070737,
+      "current_rel_L2": 0.08617138930795057,
+      "material_mean_rmse_K": 0.451897531458295,
+      "sea_power_rel_L2": 0.16458884803524618,
+      "copper_power_rel_L2": 0.16364415643264316,
+      "r11_self": 0.1492978815167723,
+      "r22_self": 0.19407948525840352
+    },
+    "0.5": {
+      "dynamic_z_rel_L2": 0.15260352436606978,
+      "R11_dynamic_error_L2_over_total_delta": 0.10341229886593495,
+      "R22_dynamic_error_L2_over_total_delta": 0.0719537942356876,
+      "current_rel_L2": 0.08618880116453022,
+      "material_mean_rmse_K": 0.4517001318980691,
+      "sea_power_rel_L2": 0.16440375043902092,
+      "copper_power_rel_L2": 0.16369244506303646,
+      "r11_self": 0.1437329281685681,
+      "r22_self": 0.1827153862170845
+    },
+    "0.75": {
+      "dynamic_z_rel_L2": 0.15375499890479524,
+      "R11_dynamic_error_L2_over_total_delta": 0.10226180243719599,
+      "R22_dynamic_error_L2_over_total_delta": 0.07135754557872015,
+      "current_rel_L2": 0.0862066333289329,
+      "material_mean_rmse_K": 0.45151954454775606,
+      "sea_power_rel_L2": 0.16424267955270208,
+      "copper_power_rel_L2": 0.16374174266715802,
+      "r11_self": 0.14184435980816668,
+      "r22_self": 0.17713120877847427
+    },
+    "1.0": {
+      "dynamic_z_rel_L2": 0.16031304469130048,
+      "R11_dynamic_error_L2_over_total_delta": 0.10376424304295401,
+      "R22_dynamic_error_L2_over_total_delta": 0.07889364373106707,
+      "current_rel_L2": 0.08622487878423891,
+      "material_mean_rmse_K": 0.4513560982442454,
+      "sea_power_rel_L2": 0.1641007940574031,
+      "copper_power_rel_L2": 0.1637920020875623,
+      "r11_self": 0.14504236774252635,
+      "r22_self": 0.19225367745346586
+    }
+  }
+}
