@@ -294,8 +294,9 @@ def main():
         p.error('--shared-closure requires --select shared')
     if a.select=='shared' and not a.shared_closure:
         p.error('--select shared requires --shared-closure')
-    if a.shared_closure and a.shared_ramp<1:
-        p.error('--shared-ramp must be positive')
+    if a.shared_closure and (a.shared_ramp<1 or a.shared_warmup<0
+                              or a.shared_state_weight<0 or a.shared_z_weight<0):
+        p.error('invalid shared-closure curriculum or loss weights')
     if a.select=='free_dynamic_z' or a.shared_closure:
         if not a.free_plan:
             p.error('--select free_dynamic_z requires --free-plan')
@@ -324,7 +325,7 @@ def main():
             mutual=MutFix.load(cfg['mutual_model'])
         free=(plan,GeomInit.load(a.free_atlas or cfg['atlas']),port,mutual,
               SrcFix.load(cfg['source_model']),
-              (tangent if a.skin_tangent_model else load_z(cfg['z_fix_model'])),
+              (tangent if (a.skin_tangent_model or a.tangent_model) else load_z(cfg['z_fix_model'])),
               float(cfg['shape_mix']))
         if a.free_cold_model:
             from sdfmpneo_bfzi.geom_memory import heat_drive
@@ -481,7 +482,7 @@ def main():
                     z_weight=a.shared_z_weight,hist_weight=a.history_weight))
             else:
                 best_loss=float(score(net,val,None,sx,sy,sa,
-                    therm_w=a.therm_weight,zrel_weight if False else a.zrel_weight,
+                    therm_w=a.therm_weight,zrel_w=a.zrel_weight,
                     hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
             if not a.shared_closure and a.closed_weight:
                 best_loss+=a.closed_weight*float(score(net,val,None,
@@ -494,6 +495,8 @@ def main():
             a_scale=torch.as_tensor(sa,dtype=torch.float32),
             canonical=True,port_sea=True,architecture='GeomFracET',
             heat_z=a.heat_z,soe_quad=a.soe_quad,heat_dt=a.heat_dt,
+            shared_closure=a.shared_closure,
+            shared_shape_mix=(free[6] if a.shared_closure else None),
             drive_rule="left",
             train_files=[r['file'] for r in train],
             val_files=[r['file'] for r in val])
@@ -509,6 +512,12 @@ def main():
                  heat_only=a.heat_only,rank48_extra_only=a.rank48_extra_only,
                  copper_z_loss_weight=a.cu_z_weight,
                  free_heat_op=a.free_heat_op,
+                 shared_closure=a.shared_closure,
+                 shared_shape_mix=(free[6] if a.shared_closure else None),
+                 shared_state_weight=a.shared_state_weight,
+                 shared_z_weight=a.shared_z_weight,
+                 shared_warmup=a.shared_warmup,
+                 shared_ramp=a.shared_ramp,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
                  skin_tangent_model=str(a.skin_tangent_model) if a.skin_tangent_model else None,
                  skin_tangent_base=str(a.skin_tangent_base) if a.skin_tangent_model else None,
