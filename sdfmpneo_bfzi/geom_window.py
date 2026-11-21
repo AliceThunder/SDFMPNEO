@@ -160,15 +160,29 @@ class HeatWindow:
         a=self.positivity(old,a,dt,voltage,time)
         return h,a
 
-    def warm(self,row,start):
-        """Full earlier SOE memory, without long-horizon gradients."""
+    def warm(self,row,start,pred_src=None,pred_state=None,mix=0.):
+        """Warm full SOE memory using consistent teacher/autonomous exposure."""
+        if not 0<=mix<=1:
+            raise ValueError("SOE exposure must be in [0,1]")
         times=np.asarray(row["time"],float)
         source=torch.as_tensor(row["src"],dtype=torch.float32)
         states=torch.as_tensor(row["a"],dtype=torch.float32)
+        if pred_src is None:
+            pred_src=source
+        else:
+            pred_src=torch.as_tensor(pred_src,dtype=torch.float32)
+        if pred_state is None:
+            pred_state=states
+        else:
+            pred_state=torch.as_tensor(pred_state,dtype=torch.float32)
+        if pred_src.shape!=source.shape or pred_state.shape!=states.shape:
+            raise ValueError("autonomous SOE prefix shape mismatch")
         h=self.net.init_state(1)
         with torch.no_grad():
             for i in range(1,start+1):
                 dt=float(times[i]-times[i-1])
-                h,_,_=self.net.step_et(h,(source[i]/self.sx)[None],
-                        dt,self.g,states[i-1:i],self.sa)
+                u=(1-mix)*source[i]+mix*pred_src[i]
+                old=(1-mix)*states[i-1:i]+mix*pred_state[i-1:i]
+                h,_,_=self.net.step_et(h,(u/self.sx)[None],
+                                        dt,self.g,old,self.sa)
         return h.detach()
