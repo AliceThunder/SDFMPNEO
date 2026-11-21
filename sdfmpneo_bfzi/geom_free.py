@@ -187,7 +187,8 @@ def rom_step(prev,dt,voltage,init,port,tan,g,scale,amb,extra=None,tm=0.):
 
 @torch.no_grad()
 def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
-            init_override=None,extra=None,shape_mix=0.,heat_mode="neural",rom_mix=0.):
+            init_override=None,extra=None,shape_mix=0.,heat_mode="neural",rom_mix=0.,
+            feature_init_override=None):
     """Predict port Z and material temperatures with no BFZI anchor or mesh."""
     if not isinstance(atlas,GeomInit) or not isinstance(net,GeomFracET):
         raise TypeError("geometry-only atlas and GeomFracET required")
@@ -205,6 +206,8 @@ def rollout(case,atlas,net,ck,times,voltage,tan=None,ambient=293.15,
         raise ValueError("invalid voltage/time schedule")
     init=atlas.predict(case) if init_override is None else init_override
     geom,feat=geometry(case,init)
+    if feature_init_override is not None:
+        _,feat=geometry(case,feature_init_override)
     port=geom_port(geom)
     cold=port.copper(np.full(2,ambient))
     lead=(np.asarray(init['copper0'],complex)-cold
