@@ -147,3 +147,31 @@ def test_shared_history_geometry_weights_are_balanced():
     assert np.isclose(float(w[:3].sum()),float(w[3]))
     assert np.allclose(_hist_weights(rows,"equal").numpy(),1.)
     assert np.allclose(_hist_weights(rows,"step").numpy(),[10.,20.,30.,10.])
+
+
+def test_par48_self_reactance_mask_preserves_other_channels(tmp_path):
+    from sdfmpneo_bfzi.geom_par48 import ParZ48
+    m=ParZ48(np.zeros(45),np.ones(45),np.zeros(48),
+             np.ones(48),np.ones(6),hidden=8)
+    with torch.no_grad():
+        for p in m.net.parameters():
+            p.zero_()
+        m.net[0].weight[:,45]=1.
+        m.net[0].bias.fill_(1.)
+        m.net[2].weight.fill_(.1)
+        m.net[4].weight.fill_(.1)
+    g=torch.zeros((1,45))
+    a=torch.ones((1,48))
+    t=torch.ones((1,1))
+    v=torch.ones((1,1))*60.
+    full=m(g,a,t,v)
+    assert float(full[0,1].abs())>0.
+    m.mask_xself=True
+    filt=m(g,a,t,v)
+    assert torch.all(filt[:,[1,5]]==0.)
+    assert torch.allclose(filt[:,[0,2,3,4]],full[:,[0,2,3,4]])
+    path=tmp_path/"par.pt"
+    m.save(path)
+    loaded=ParZ48.load(path)
+    assert loaded.mask_xself
+    assert torch.allclose(loaded(g,a,t,v),filt)
