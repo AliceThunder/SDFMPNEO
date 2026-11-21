@@ -44,14 +44,21 @@ def main():
     if not selected:
         raise ValueError("smoke test requires nonzero physical excitation")
     row,start=selected[0]
-    win=HeatWindow(case,init,net,ec,tan,par,float(cfg["shape_mix"]))
+    win=HeatWindow(case,init,net,ec,tan,par,float(cfg["shape_mix"]),
+                   phys=read("runs/geomfrac_v9_phys_region.json"),grad_mix=1.)
+    original=HeatWindow(case,init,net,ec,tan,par,float(cfg["shape_mix"]))
     h=win.warm(row,start)
     old=torch.as_tensor(row["a"][start],dtype=torch.float32)*win.scale
     win.anchor(old)
+    original.anchor(old)
     with torch.no_grad():
         _,source=win.source(old,float(row["voltage"][start]),
                             float(row["time"][start]))
     z0,_,_,_=win.circuit(old,float(row["voltage"][start]),float(row["time"][start]))
+    zref,_,_,_=original.circuit(old,float(row["voltage"][start]),
+                               float(row["time"][start]))
+    if not torch.allclose(z0,zref,atol=2e-6,rtol=1e-6):
+        raise AssertionError("physical Jacobian altered frozen forward impedance")
     dt=float(row["time"][start+1]-row["time"][start])
     h,pred=win.step(h,old,dt,float(row["voltage"][start]),
                     float(row["time"][start+1]))
