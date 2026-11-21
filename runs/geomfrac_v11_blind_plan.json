@@ -193,7 +193,7 @@
           "duration": 60
         },
         {
-          "voltage": 74.5,
+          "voltage": 60,
           "off": [
             [
               45,
@@ -223,5 +223,16 @@
   "selection": "reserved cold-test geometry, disjoint from previous dynamic physical references",
   "selection_finalized_before_physics": true,
   "training_candidate": "runs/geomfrac_v11_cold.pt",
-  "notes": "4 new geometry disjoint from dynamics train/dev and prior V9/V10 blinds; g1/g2 external circuit coverage"
+  "notes": "4 new geometry disjoint from dynamics train/dev and prior V9/V10 blinds; g1/g2 external circuit coverage",
+  "physics_adjustment": {
+    "case": "V11B0004",
+    "history": 2,
+    "original_voltage_V": 74.5,
+    "adjusted_voltage_V": 60,
+    "reason": "BFZI native direct solver process exited twice during 300 s high-power reference; reduce drive for physical reference stability",
+    "surrogate_evaluation_started": false,
+    "unchanged_geometry": true,
+    "unchanged_duration_s": 300,
+    "unchanged_off_windows": true
+  }
 }
