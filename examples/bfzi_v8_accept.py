@@ -43,6 +43,7 @@ def main():
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
     p.add_argument("--parallel-model", type=Path, default=None)
+    p.add_argument("--par-no-self-x", action="store_true", help="diagnostic: omit ParZ self-reactance terms X11 and X22")
     p.add_argument("--k-mix", type=float, default=0.0)
     p.add_argument("--weak-sea-mix", type=float, default=0.0)
     p.add_argument("--skin-base-model", type=Path, default=None)
@@ -99,6 +100,20 @@ def main():
                  else ParZ.load(a.parallel_model))
     else:
         extra = None
+    if a.par_no_self_x:
+        if extra is None:
+            p.error("--par-no-self-x requires --parallel-model")
+        class ParMask(torch.nn.Module):
+            def __init__(self,base):
+                super().__init__()
+                self.base=base
+                self.shared_geom=getattr(base,"shared_geom",False)
+            def forward(self,g,state,t,v):
+                out=self.base(g,state,t,v).clone()
+                out[...,1]=0.
+                out[...,5]=0.
+                return out
+        extra=ParMask(extra)
     mix = float(cfg["shape_mix"])
 
     rows = []
@@ -175,6 +190,7 @@ def main():
         feature_cold_model=str(a.feature_cold_model) if a.feature_cold_model else None,
         oracle_heat=a.oracle_heat, oracle_cold=a.oracle_cold,
         parallel_model=str(a.parallel_model) if a.parallel_model else None,
+        par_no_self_x=a.par_no_self_x,
         skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
         shape_mix=mix, k_mix=a.k_mix, weak_sea_mix=a.weak_sea_mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
