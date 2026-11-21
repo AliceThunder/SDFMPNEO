@@ -6,6 +6,7 @@ never changes weights, optimizers or validation thresholds.
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -107,7 +108,10 @@ def main():
             "base" if name == "V8" else "cold") + ".json"
         cmd = [sys.executable, "-u", str(a.script), *common,
                "--model", heat, "--cold-model", cold, "--out", dest]
-        subprocess.run(cmd, check=True)
+        root = str(a.script.resolve().parent.parent)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
+        subprocess.run(cmd, check=True, env=env)
         results[name] = read(dest)
         got = results[name]
         if (got.get("status") != "complete"
