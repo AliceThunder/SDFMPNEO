@@ -31,7 +31,8 @@ def pack(z):
 class HeatWindow:
     """Torch-only physical circuit, 43D shape and five material budgets."""
 
-    def __init__(self,case,init,net,ck,tan,par,shape_mix=.5,ambient=293.15):
+    def __init__(self,case,init,net,ck,tan,par,shape_mix=.5,ambient=293.15,
+                 phys=None,grad_mix=0.):
         if net.rank!=48:
             raise ValueError("shared rank48 heat model required")
         self.net=net
@@ -41,6 +42,16 @@ class HeatWindow:
         if not 0<=self.mix<=1:
             raise ValueError("invalid thermal shape mix")
         self.ambient=ambient
+        self.grad_mix=float(grad_mix)
+        if not 0<=self.grad_mix<=1:
+            raise ValueError("physical Jacobian blend must be in [0,1]")
+        if self.grad_mix and phys is None:
+            raise ValueError("physical Jacobian requires BFZI training gains")
+        self.alpha=float(case["alpha_per_K"])
+        self.rgain=(torch.as_tensor(phys["gain"],dtype=torch.float32)
+                    if phys is not None else None)
+        self.xgain=(torch.as_tensor(phys["react_gain"],dtype=torch.float32)
+                    if phys is not None else None)
         geom,feat=geometry(case,init)
         self.port=geom_port(geom)
         self.g=torch.as_tensor(feat[None],dtype=torch.float32)
@@ -80,6 +91,15 @@ class HeatWindow:
         self.ref_cu=torch.as_tensor(cu,dtype=torch.complex64)
         self.cu_slope=torch.as_tensor(slope,dtype=torch.complex64)
 
+    def phys_z(self,a):
+        """BFZI weak-source regional complex susceptibility at this state."""
+        pieces=torch.stack((a[:1]@self.src[:1],
+                            a[1:32]@self.src[1:32],
+                            a[32:48]@self.src[32:48]))
+        r=(pieces*self.rgain).sum(dim=0)
+        x=(pieces*self.xgain).sum(dim=0)
+        return self.alpha*torch.stack((r[0],x[0],r[1],x[1],r[2],x[2]))
+
     def circuit(self,a,voltage,time):
         if self.ref_temp is None:
             raise ValueError("initialize copper tangent using anchor()")
@@ -89,6 +109,12 @@ class HeatWindow:
             t=torch.as_tensor([[time]],dtype=torch.float32)
             v=torch.as_tensor([[voltage]],dtype=torch.float32)
             dz=dz+self.par(self.g,state,t,v)[0]
+        if self.grad_mix:
+            # Preserve the exact frozen V8 forward sea Z. Use the physical
+            # regional susceptibility, not learned compensation, for dZ/da.
+            phy=self.phys_z(a)
+            dz=((1-self.grad_mix)*dz+self.grad_mix*
+                (dz.detach()+phy-phy.detach()))
         temp=self.ambient+a[3:5]/self.scale[3:5]
         cu=self.ref_cu+self.cu_slope*(temp-self.ref_temp)
         sea=self.sea0+zmat(dz)
