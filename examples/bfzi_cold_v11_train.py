@@ -39,14 +39,14 @@ def err_tail(err):
     return flat.topk(max(1,(len(flat)+3)//4)).values.mean()
 
 
-def loss_terms(net, x, y, ext, ir, scale):
+def loss_terms(net, x, y, ext, ir, scale, mask):
     pr=net(x)
     zm=zmat(pr)
     rhs=torch.zeros((len(x),len(ext),2),dtype=torch.complex64)
     rhs[...,0]=1
     ip=torch.linalg.solve(zm[:,None]+ext[None],rhs)
     zloss=(((pr[:,:9]-y[:,:9])/net.ys[:9])**2).mean()
-    culoss=(((pr[:,9:]-y[:,9:])/net.ys[9:])**2).mean()
+    culoss=(((pr[mask,9:]-y[mask,9:])/net.ys[9:])**2).mean() if mask.any() else zloss.new_zeros(())
     ce=port_err(ip,ir)
     curr=.5*ce.mean()+.25*ce[...,1].mean()+.25*err_tail(ce[...,1])
     ys=torch.stack((pr[:,0],pr[:,1]+pr[:,6],
@@ -55,11 +55,14 @@ def loss_terms(net, x, y, ext, ir, scale):
                     y[:,4],y[:,5]+y[:,8]),-1)
     er=((ys-yt)/scale).square()
     selfz=er.mean()+.25*er[:,2].mean()
-    pp=pwr(pr,ip)
-    pt=pwr(y,ir)
-    floor=.03*pt.abs().amax((1,2),keepdim=True).clamp_min(1e-10)
-    perr=((pp-pt)/(pt.abs()+floor)).square()
-    powloss=perr.mean()+.25*err_tail(perr[...,0])
+    if mask.any():
+        pp=pwr(pr[mask],ip[mask])
+        pt=pwr(y[mask],ir[mask])
+        floor=.03*pt.abs().amax((1,2),keepdim=True).clamp_min(1e-10)
+        perr=((pp-pt)/(pt.abs()+floor)).square()
+        powloss=perr.mean()+.25*err_tail(perr[...,0])
+    else:
+        powloss=zloss.new_zeros(())
     zr=zmat(y)
     grad=torch.linalg.solve(zr[:,None]+ext[None],
                             ((zm-zr)[:,None]@ir[...,None]))[...,0]
@@ -134,8 +137,14 @@ def train(a):
         raise ValueError("V11 needs 13-output physical copper ColdNet")
     xt=torch.as_tensor(np.asarray([feat(r["geometry"]) for r in tr]),
                        dtype=torch.float32)
-    yt=torch.as_tensor(np.asarray([np.r_[target(r),copper_target(r)]
-                                   for r in tr]),dtype=torch.float32)
+    copper=[copper_target(r) for r in tr]
+    valid=np.asarray([v is not None for v in copper],bool)
+    if valid.sum()<10:
+        raise ValueError("V11 copper/power loss requires physical copper labels")
+    yy=[np.r_[target(r),v if v is not None else np.zeros(4)]
+        for r,v in zip(tr,copper)]
+    yt=torch.as_tensor(np.asarray(yy),dtype=torch.float32)
+    mask=torch.as_tensor(valid,dtype=torch.bool)
     ex=torch.as_tensor(ext,dtype=torch.complex64)
     rhs=torch.zeros((len(tr),len(ext),2),dtype=torch.complex64)
     rhs[...,0]=1.
@@ -158,7 +167,7 @@ def train(a):
         order=rng.permutation(len(tr))
         for start in range(0,len(tr),a.batch):
             ix=order[start:start+a.batch]
-            terms=loss_terms(net,xt[ix],yt[ix],ex,ir[ix],selfscale)
+            terms=loss_terms(net,xt[ix],yt[ix],ex,ir[ix],selfscale,mask[ix])
             loss=sum(v*loss_w[k] for k,v in terms.items())
             if not torch.isfinite(loss):
                 raise RuntimeError("invalid balanced cold objective")
@@ -191,7 +200,8 @@ def train(a):
     result=dict(status="development_candidate" if best_ep else "not_promoted",
         model=str(a.out) if best_ep else None,init=str(a.init),
         best_epoch=best_ep,train_geometries=len(tr),val_geometries=len(va),
-        test_geometries=len(te),weights=loss_w,base_val=base,
+        test_geometries=len(te),copper_label_geometries=int(valid.sum()),
+        weights=loss_w,base_val=base,
         val=fin,test=test,history=hist)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
