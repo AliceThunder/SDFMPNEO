@@ -155,3 +155,54 @@ def test_rank32_source_correction_preserves_rank48_atlas_modes():
     assert got.shape==(48,3)
     assert np.all(got[:32]==2.)
     assert np.array_equal(got[32:],src[32:])
+
+
+def test_material_mean_operator_preserves_physical_energy_graph():
+    from sdfmpneo_bfzi.geom_init import conductance_mix, thermal_mix
+
+    cases=[_case(.8),_case(.9),_case(.95)]
+    x=np.stack([encode(c) for c in cases])
+    cap=np.array([[1e5,500.,510.,20.,21.],
+                  [1.1e5,520.,530.,22.,23.],
+                  [1.2e5,540.,550.,24.,25.]])
+    edges=np.array([[12.8,2.0,2.2,13.0,12.0],
+                    [12.8,2.5,2.3,14.0,13.0],
+                    [12.8,3.0,2.4,15.0,14.0]])
+    mats=[]
+    for c,e in zip(cap,edges):
+        h,a,b,d,f=e
+        g=np.zeros((5,5))
+        g[0,0]=h+a+b
+        g[1,1]=a+d
+        g[2,2]=b+f
+        g[3,3]=d
+        g[4,4]=f
+        g[0,1]=g[1,0]=-a
+        g[0,2]=g[2,0]=-b
+        g[1,3]=g[3,1]=-d
+        g[2,4]=g[4,2]=-f
+        k=np.eye(32)*.02
+        mass=np.sqrt(c)
+        k[:5,:5]=g/(mass[:,None]*mass[None,:])
+        mats.append(k)
+    y=np.zeros((3,14))
+    y[:,9:14]=np.log(cap)
+    src=np.ones((3,32,3))
+    ext=np.stack([np.eye(2,dtype=complex)]*3)
+    atlas=GeomInit.fit(x,y,np.stack(mats),src,ext,ell=6.,kell=.6)
+    assert atlas.kmm_edges is not None
+
+    def check(k,c):
+        mass=np.sqrt(c)
+        g=mass[:,None]*k[:5,:5]*mass[None,:]
+        assert np.allclose(g.sum(axis=1),[12.8,0.,0.,0.,0.],atol=1e-9)
+        assert np.allclose(g[[0,0,1,2],[3,4,2,3]],0.,atol=1e-12)
+        assert np.all(g[[0,0,1,2],[1,2,3,4]]<0.)
+
+    case=_case(.86)
+    init=atlas.predict(case)
+    check(init['k'],init['cap'])
+    phys=conductance_mix(atlas,init)
+    check(phys['k'],init['cap'])
+    mixed=thermal_mix(atlas,init,.25)
+    check(mixed['k'],init['cap'])
