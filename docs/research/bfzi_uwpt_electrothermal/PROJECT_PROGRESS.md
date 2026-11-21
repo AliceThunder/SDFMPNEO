@@ -1318,3 +1318,13 @@ BFZI V150固定热态数据生成器`examples/bfzi_v9_hotstates.py`已在XEnergy
 在已冻结 V9B 四组全新几何8条完整BFZI物理直接法历史上，进一步执行只读的铜/海水误差向量分解、物理参考rank48热态替换与冷态六分量逐项替换试验。详细结果和优先级见 `docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V9_ERROR_ATTRIBUTION.md`；数值见 `runs/geomfrac_v9_blind_error_diag.json`。
 
 核心：六分量总体动态阻抗误差平方平均80.1%集中R11+R22；V9B0001/0003海水阻抗温度映射误差主导；V9B0002冷态X22预测相对物理偏差+0.119426Ω，使冷态电路电流误差10.647%，单独替换真实X22后降至1.469%，由此放大铜温度/铜阻抗误差。8条历史6条铜与海水动态误差向量内积为负，参考rank48热状态替换仅1条改善，表明原神经温度映射与热模型存在显著误差补偿。V9冻结候选保持未晋级，下一阶段分别解决冷态X11/X22电路敏感性和海水复阻抗温度映射，再进行热网络联合训练。
+
+## 2026-11-21 — V10物理锚定的模块协同训练第一轮实现
+
+依照用户提出的级联误差传播与联合训练收敛问题，已新增V10方案并完成第一轮真实训练。方案完整说明：`docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V10_ERROR_AWARE_TRAIN.md`。冷态`examples/bfzi_cold_v7_train.py`添加一阶端口电流误差灵敏度与高误差尾部训练损失，复用V8 ColdNet，不新增任何推理网络；新权重`runs/geomfrac_v10_cold.pt`已上传研究分支，摘要`runs/geomfrac_v10_cold_summary.json`。
+
+原228组冷态开发几何平均电流误差1.7104→1.6344%，226组冷态测试几何1.8223→1.7413%；在15组完整BFZI历史开发几何、41条历史的V8其余模块完全冻结条件下，动态复阻抗16.2321→**15.7860%**，TX R11自身15.7848→15.2816%、RX R22自身20.7277→20.3394%、电流8.6154→7.9710%、五材料温度RMSE0.4521→0.4341K。V10 ColdNet已形成**开发集候选**，原V8正式权重未更换。
+
+已实现`sdfmpneo_bfzi/geom_window.py`的PyTorch可微热状态短窗口、SOE前缀记忆保留、真实/自主热源与温度初态一致混合、冷态与温度反馈、五材料守恒；并实现`examples/bfzi_v10_window_train.py`的2/4/8/16步课程训练及自主rollout选模、`examples/bfzi_v10_window_smoke.py`有非零梯度/实际85V物理热源单步检查。原V8热网微调16轮失败（动态Z16.2321→17.5110%）；改进一致性后联用新ColdNet12轮仍未晋级（15.7860→16.0997%），`runs/geomfrac_v10_window_heat.json`归档。原`examples/bfzi_v9_full_history_train.py`将使用自主热状态但以真热态阻抗监督的错误标签改为BFZI空间复阻抗敏感度修正标签，20轮训练也未晋级（`runs/geomfrac_v10_phys_skin.json`）。使用BFZI物理复数Jacobian仅替换反向梯度、保持原电磁前向冻结的8轮训练完成，开发集仍无可晋级提升（`runs/geomfrac_v10_phys_window_heat.json`），主热头与电磁头均保留V8冻结权重。
+
+已在生成参考前冻结全新几何`runs/geomfrac_v10_blind_plan.json`（V10B0001–4，共4组完全独立几何，每组60s、300s完整历史），独立BFZI V150 S5 ultra物理数据任务XEnergy `job-188`进行中，已完成至少V10B0001两条与V10B0002 60s共3/8条。冻结双模型自动验收脚本`examples/bfzi_v10_blind_accept.py`已入库并编译通过。只有独立全8条参考齐备且同条件整体指标通过才晋级整机。
