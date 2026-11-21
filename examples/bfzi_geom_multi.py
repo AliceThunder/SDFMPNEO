@@ -191,6 +191,8 @@ def main():
                    help='geometry case plan for BFZI-free development selection')
     p.add_argument('--free-parallel-model',type=Path,default=None,
                    help='frozen parallel impedance branch used in BFZI-free checkpoint selection')
+    p.add_argument('--free-par-mask-xself',action='store_true',
+                   help='retain SkinTan self-reactance and suppress ParZ48 X11/X22 residual')
     p.add_argument('--free-k-mix',type=float,default=0.,
                    help='physical thermal operator mix for BFZI-free checkpoint selection')
     p.add_argument('--free-config',type=Path,default=Path('runs/geomfrac_free_v7_selection.json'),
@@ -287,6 +289,10 @@ def main():
     if a.free_parallel_model:
         from sdfmpneo_bfzi.geom_par48 import ParZ48
         par=ParZ48.load(a.free_parallel_model)
+    if a.free_par_mask_xself:
+        if par is None:
+            p.error('--free-par-mask-xself requires --free-parallel-model')
+        par.mask_xself=True
     if not 0.<=a.free_k_mix<=1.:
         p.error('--free-k-mix requires a value in [0,1]')
     if a.shared_closure and (a.rank!=48 or not a.init_model or not a.free_plan):
@@ -501,6 +507,7 @@ def main():
             canonical=True,port_sea=True,architecture='GeomFracET',
             heat_z=a.heat_z,soe_quad=a.soe_quad,heat_dt=a.heat_dt,
             shared_closure=a.shared_closure,
+            free_par_mask_xself=a.free_par_mask_xself,
             shared_shape_mix=(free[6] if a.shared_closure else None),
             drive_rule="left",
             train_files=[r['file'] for r in train],
@@ -527,6 +534,7 @@ def main():
                  heat_only=a.heat_only,rank48_extra_only=a.rank48_extra_only,
                  copper_z_loss_weight=a.cu_z_weight,
                  free_heat_op=a.free_heat_op,
+                 free_par_mask_xself=a.free_par_mask_xself,
                  shared_closure=a.shared_closure,
                  shared_shape_mix=(free[6] if a.shared_closure else None),
                  shared_state_weight=a.shared_state_weight,
