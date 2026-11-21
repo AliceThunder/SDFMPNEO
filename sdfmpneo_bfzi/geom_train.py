@@ -404,25 +404,34 @@ def hist_loss(net,row,ctx,sx,sa,tan=None,par=None,shape_mix=.5,
     return loss,metrics
 
 
+def _hist_weights(rows,mode="step",device=None,dtype=torch.float32):
+    """Aggregate histories without letting one geometry dominate the fit."""
+    if mode=="equal":
+        vals=np.ones(len(rows),float)
+    elif mode=="step":
+        vals=np.asarray([len(r["time"])-1 for r in rows],float)
+    elif mode=="geometry":
+        names=[str(r["file"]).replace("\\","/").rsplit("/",1)[-1].split("_")[2]
+               for r in rows]
+        counts={name:names.count(name) for name in set(names)}
+        vals=np.asarray([1./counts[name] for name in names],float)
+    else:
+        raise ValueError("history weighting must be equal, step or geometry")
+    return torch.as_tensor(vals,dtype=dtype,device=device)
+
+
 def shared_score(net,rows,contexts,sx,sa,tan=None,par=None,shape_mix=.5,
                  src_mix=1.,state_weight=1.,z_weight=1.,
                  hist_weight="step",return_metrics=False):
     """Geometry-balanced collection of deployment-equivalent histories."""
     vals=[]
-    spans=[]
     metrics=[]
     for row in rows:
         loss,info=hist_loss(net,row,contexts[row["file"]],sx,sa,tan,par,
             shape_mix,src_mix,state_weight,z_weight,True)
         vals.append(loss)
-        spans.append(len(row["time"])-1)
         metrics.append(dict(file=row["file"],**info))
     v=torch.stack(vals)
-    if hist_weight=="equal":
-        total=v.mean()
-    elif hist_weight=="step":
-        w=v.new_tensor(spans)
-        total=(v*w).sum()/w.sum()
-    else:
-        raise ValueError("history weighting must be equal or step")
+    w=_hist_weights(rows,hist_weight,v.device,v.dtype)
+    total=(v*w).sum()/w.sum()
     return (total,metrics) if return_metrics else total
