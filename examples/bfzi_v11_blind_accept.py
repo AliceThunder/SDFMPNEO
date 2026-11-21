@@ -62,7 +62,11 @@ def main():
             and cur["R11_dynamic_rel_L2_self"]<=1.02*base["R11_dynamic_rel_L2_self"]
             and cur["R22_dynamic_rel_L2_self"]<=1.02*base["R22_dynamic_rel_L2_self"]
             and cur["current_rel_L2"]<=1.03*base["current_rel_L2"]
-            and cur["material_mean_rmse_K"]<=1.03*base["material_mean_rmse_K"])
+            and cur["material_mean_rmse_K"]<=1.03*base["material_mean_rmse_K"]
+            and cur["X11_dynamic_rel_L2_self"]<=1.03*base["X11_dynamic_rel_L2_self"]
+            and cur["X22_dynamic_rel_L2_self"]<=1.03*base["X22_dynamic_rel_L2_self"]
+            and cur["sea_power_rel_L2"]<=1.03*base["sea_power_rel_L2"]
+            and cur["copper_power_rel_L2"]<=1.03*base["copper_power_rel_L2"])
     per={name:{k:dict(V8=results["V8"]["per_geometry"][name][k],
                        V11_cold=results["V11_cold"]["per_geometry"][name][k])
                for k in KEYS} for name in names}
