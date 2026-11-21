@@ -41,12 +41,12 @@
       },
       "drives": [
         {
-          "voltage": 49.0,
+          "voltage": 49,
           "off": [],
           "duration": 60
         },
         {
-          "voltage": 67.0,
+          "voltage": 67,
           "off": [
             [
               45,
@@ -139,12 +139,12 @@
       },
       "drives": [
         {
-          "voltage": 54.0,
+          "voltage": 54,
           "off": [],
           "duration": 60
         },
         {
-          "voltage": 72.0,
+          "voltage": 72,
           "off": [
             [
               45,
@@ -169,7 +169,7 @@
         "core2_mm": 18,
         "shift_mm": [
           3,
-          114,
+          68,
           -8
         ],
         "tilt_deg": -15,
@@ -220,5 +220,22 @@
     "V8",
     "V10_cold",
     "V10_cold_window_if_dev_selected"
-  ]
+  ],
+  "geometry_domain_correction": {
+    "case": "V10B0004",
+    "reason": "BFZI V150 oriented package extends outside seawater tank at original shift",
+    "original_shift_mm": [
+      3,
+      114,
+      -8
+    ],
+    "corrected_shift_mm": [
+      3,
+      68,
+      -8
+    ],
+    "model_weights_unchanged": true,
+    "training_data_unchanged": true,
+    "blinded_before_evaluation": true
+  }
 }
