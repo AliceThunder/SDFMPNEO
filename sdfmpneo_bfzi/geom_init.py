@@ -72,6 +72,8 @@ class GeomInit:
                 self.src.shape[1:]!=(self.rank,3)):
             raise ValueError('invalid cold/thermal atlas dimensions')
         self.set_kscale(self.kexp)
+        self.kmm_edges=self._build_kmm_edges()
+
 
     def _kscale(self,x):
         from .geom_canon import labels
@@ -148,6 +150,49 @@ class GeomInit:
         self.slam=float(lam)
         return self
 
+    def _build_kmm_edges(self):
+        """Extract the conservative five-material conductance graph from anchors.
+
+        The physical topology is sea<->TX/RX package<->TX/RX copper.
+        Only seawater exchanges heat with ambient. Interpolating these five
+        positive conductances preserves every internal material energy sum.
+        """
+        cap=np.exp(self.y[:,9:14])
+        mass=np.sqrt(cap)
+        g=mass[:,:,None]*self.k[:,:5,:5]*mass[:,None,:]
+        row=g.sum(axis=2)
+        forbidden=((0,3),(0,4),(1,2),(1,4),(2,3),(3,4))
+        allowed=((0,1),(0,2),(1,3),(2,4))
+        scale=max(float(np.max(abs(g))),1.)
+        tol=1e-8*scale
+        if np.max(abs(g-np.swapaxes(g,1,2)))>tol:
+            return None
+        if max(float(np.max(abs(g[:,i,j]))) for i,j in forbidden)>tol:
+            return None
+        if np.max(abs(row[:,1:]))>tol or np.min(row[:,0])<=tol:
+            return None
+        edges=np.column_stack((row[:,0],
+            *[-g[:,i,j] for i,j in allowed]))
+        if np.min(edges)<=tol or not np.isfinite(edges).all():
+            return None
+        return edges
+
+    def _predict_kmm(self,w,cap):
+        """Build Kmm from positive ambient/interface conductances."""
+        h,g1,g2,g3,g4=np.asarray(w,float)@self.kmm_edges
+        g=np.zeros((5,5),float)
+        g[0,0]=h+g1+g2
+        g[1,1]=g1+g3
+        g[2,2]=g2+g4
+        g[3,3]=g3
+        g[4,4]=g4
+        g[0,1]=g[1,0]=-g1
+        g[0,2]=g[2,0]=-g2
+        g[1,3]=g[3,1]=-g3
+        g[2,4]=g[4,2]=-g4
+        mass=np.sqrt(np.asarray(cap,float))
+        return g/(mass[:,None]*mass[None,:])
+
     def predict(self,case,external=None):
         raw=encode(case)
         a=((raw-self.mu)/self.std)[None]
@@ -178,6 +223,8 @@ class GeomInit:
             z[[4,5]]=values[1]
         air=y[6:9]
         cap=np.exp(np.clip(y[9:14],-30,30))
+        if self.kmm_edges is not None:
+            k[:5,:5]=self._predict_kmm(wk,cap)
         if external is not None:
             ext=np.asarray(external,complex)
             if ext.shape!=(2,2):
@@ -275,6 +322,9 @@ def conductance_mix(atlas,init):
     h[np.ix_(cu,cu)]=dnew
     mass=np.sqrt(np.asarray(init["cap"],float)[lab])
     k=h/(mass[:,None]*mass[None,:])
+    if atlas.kmm_edges is not None:
+        w=np.asarray(init.get("thermal_norm_weights",init["norm_weights"]),float)
+        k[:5,:5]=atlas._predict_kmm(w,init["cap"])
     out=dict(init)
     out["k"]=.5*(k+k.T)
     return out
