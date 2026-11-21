@@ -177,21 +177,25 @@ class GeomInit:
             return None
         return edges
 
-    def _predict_kmm(self,w,cap):
-        """Build Kmm from positive ambient/interface conductances."""
-        h,g1,g2,g3,g4=np.asarray(w,float)@self.kmm_edges
-        g=np.zeros((5,5),float)
-        g[0,0]=h+g1+g2
-        g[1,1]=g1+g3
-        g[2,2]=g2+g4
-        g[3,3]=g3
-        g[4,4]=g4
-        g[0,1]=g[1,0]=-g1
-        g[0,2]=g[2,0]=-g2
-        g[1,3]=g[3,1]=-g3
-        g[2,4]=g[4,2]=-g4
+    def _predict_kmm(self,w,cap,k_seed):
+        """Project interpolated interface conductances onto the exact graph."""
         mass=np.sqrt(np.asarray(cap,float))
-        return g/(mass[:,None]*mass[None,:])
+        g=mass[:,None]*np.asarray(k_seed[:5,:5],float)*mass[None,:]
+        h=float(np.asarray(w,float)@self.kmm_edges[:,0])
+        g1,g2,g3,g4=(-g[0,1],-g[0,2],-g[1,3],-g[2,4])
+        if min(g1,g2,g3,g4)<=0 or h<=0:
+            raise ValueError("predicted material interface conductance is nonpositive")
+        out=np.zeros((5,5),float)
+        out[0,0]=h+g1+g2
+        out[1,1]=g1+g3
+        out[2,2]=g2+g4
+        out[3,3]=g3
+        out[4,4]=g4
+        out[0,1]=out[1,0]=-g1
+        out[0,2]=out[2,0]=-g2
+        out[1,3]=out[3,1]=-g3
+        out[2,4]=out[4,2]=-g4
+        return out/(mass[:,None]*mass[None,:])
 
     def predict(self,case,external=None):
         raw=encode(case)
@@ -224,7 +228,7 @@ class GeomInit:
         air=y[6:9]
         cap=np.exp(np.clip(y[9:14],-30,30))
         if self.kmm_edges is not None:
-            k[:5,:5]=self._predict_kmm(wk,cap)
+            k[:5,:5]=self._predict_kmm(wk,cap,k)
         if external is not None:
             ext=np.asarray(external,complex)
             if ext.shape!=(2,2):
@@ -324,7 +328,7 @@ def conductance_mix(atlas,init):
     k=h/(mass[:,None]*mass[None,:])
     if atlas.kmm_edges is not None:
         w=np.asarray(init.get("thermal_norm_weights",init["norm_weights"]),float)
-        k[:5,:5]=atlas._predict_kmm(w,init["cap"])
+        k[:5,:5]=atlas._predict_kmm(w,init["cap"],k)
     out=dict(init)
     out["k"]=.5*(k+k.T)
     return out
