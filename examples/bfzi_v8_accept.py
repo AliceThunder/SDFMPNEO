@@ -13,6 +13,8 @@ from examples.bfzi_geom_free_eval import metric
 from sdfmpneo_bfzi.geom_coldnet import ColdNet
 from sdfmpneo_bfzi.geom_free import rollout
 from sdfmpneo_bfzi.geom_init import GeomInit, thermal_mix
+from sdfmpneo_bfzi.geom_heat import GeomHeat
+from examples.bfzi_geom_init import pack as cold_pack
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_parallel import ParZ
 from sdfmpneo_bfzi.geom_par48 import ParZ48
@@ -35,6 +37,8 @@ def main():
     p.add_argument("--atlas", type=Path, default=Path("runs/geomfrac_init_v8_expand.npz"))
     p.add_argument("--cold-model", type=Path, default=Path("runs/geomfrac_cold_v8_frozen.pt"))
     p.add_argument("--feature-cold-model", type=Path, default=None)
+    p.add_argument("--oracle-heat", choices=("none", "src", "kcap", "all"), default="none")
+    p.add_argument("--oracle-cold", action="store_true")
     p.add_argument("--config", type=Path, default=Path("runs/geomfrac_free_rank48_selection.json"))
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
@@ -108,6 +112,17 @@ def main():
             if feature_cold is not None:
                 feature_init = feature_cold.apply(case, atlas.predict(case))
             init = thermal_mix(atlas, init, a.k_mix)
+            if a.oracle_heat != "none" or a.oracle_cold:
+                teacher = cold_pack(GeomHeat.load(spec["anchor"]), case, name, rank=48)
+                if a.oracle_cold:
+                    init["z0"] = teacher["y"][:6].copy()
+                    init["air"] = teacher["y"][6:9].copy()
+                    init["ext"] = teacher["ext"].copy()
+                if a.oracle_heat in ("kcap", "all"):
+                    init["k"] = teacher["k"]
+                    init["cap"] = teacher["cap"]
+                if a.oracle_heat in ("src", "all"):
+                    init["src"] = teacher["src"]
             ex = (WeakSea(tan, extra, init, case["alpha_per_K"], a.weak_sea_mix)
                   if a.weak_sea_mix else extra)
             for row in prepare(spec, 48):
@@ -146,6 +161,7 @@ def main():
         history_count=len(rows), model=str(a.model), atlas=str(a.atlas),
         cold_model=str(a.cold_model),
         feature_cold_model=str(a.feature_cold_model) if a.feature_cold_model else None,
+        oracle_heat=a.oracle_heat, oracle_cold=a.oracle_cold,
         parallel_model=str(a.parallel_model) if a.parallel_model else None,
         skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
         shape_mix=mix, k_mix=a.k_mix, weak_sea_mix=a.weak_sea_mix,
