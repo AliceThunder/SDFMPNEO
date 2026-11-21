@@ -174,7 +174,7 @@ def main():
     p.add_argument('--cu-z-weight',type=float,default=0.,help='copper-only physically weighted dynamic impedance loss')
     p.add_argument('--zrel-weight',type=float,default=0.,
                    help='full dynamic port-Z relative squared loss weight')
-    p.add_argument('--history-weight',choices=('equal','step'),default='step')
+    p.add_argument('--history-weight',choices=('equal','step','geometry'),default='step')
     p.add_argument('--batch-hist',type=int,default=0,
                    help='histories per stochastic step; 0 uses full training set')
     p.add_argument('--val-every',type=int,default=1,
