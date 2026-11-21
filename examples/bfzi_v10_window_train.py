@@ -129,8 +129,8 @@ def refresh(item,atlas,net,ec,tan,par,mix):
     item["pred"]=np.asarray(pred["heat_state"],np.float32)
     src=np.zeros((len(row["time"]),3),dtype=np.float32)
     src[1:,0]=np.asarray(pred["Psea_W"][:-1],np.float32)
-    src[1:,1:]=np.asarray(pred["Pcu_W"][:-1],np.float32)/
-               np.asarray(init["cap"][3:5],np.float32)[None]
+    src[1:,1:]=(np.asarray(pred["Pcu_W"][:-1],np.float32)/
+                 np.asarray(init["cap"][3:5],np.float32)[None])
     item["pred_src"]=src
 
 
