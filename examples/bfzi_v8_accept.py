@@ -37,7 +37,7 @@ def main():
     p.add_argument("--atlas", type=Path, default=Path("runs/geomfrac_init_v8_expand.npz"))
     p.add_argument("--cold-model", type=Path, default=Path("runs/geomfrac_cold_v8_frozen.pt"))
     p.add_argument("--feature-cold-model", type=Path, default=None)
-    p.add_argument("--oracle-heat", choices=("none", "src", "k", "cap", "kcap", "all"), default="none")
+    p.add_argument("--oracle-heat", choices=("none", "src", "k", "cap", "kcap", "kmean", "kcross", "kshape", "all"), default="none")
     p.add_argument("--oracle-cold", action="store_true")
     p.add_argument("--config", type=Path, default=Path("runs/geomfrac_free_rank48_selection.json"))
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
@@ -122,6 +122,17 @@ def main():
                     init["k"] = teacher["k"]
                 if a.oracle_heat in ("cap", "kcap", "all"):
                     init["cap"] = teacher["cap"]
+                if a.oracle_heat in ("kmean", "kcross", "kshape"):
+                    kk = np.asarray(init["k"], float).copy()
+                    kt = np.asarray(teacher["k"], float)
+                    if a.oracle_heat == "kmean":
+                        kk[:5, :5] = kt[:5, :5]
+                    elif a.oracle_heat == "kcross":
+                        kk[:5, 5:] = kt[:5, 5:]
+                        kk[5:, :5] = kt[5:, :5]
+                    else:
+                        kk[5:, 5:] = kt[5:, 5:]
+                    init["k"] = kk
                 if a.oracle_heat in ("src", "all"):
                     init["src"] = teacher["src"]
             ex = (WeakSea(tan, extra, init, case["alpha_per_K"], a.weak_sea_mix)
