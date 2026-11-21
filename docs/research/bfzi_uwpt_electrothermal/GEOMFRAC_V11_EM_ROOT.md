@@ -66,10 +66,10 @@ V8E 已用于本轮多项归因实验，当前属于独立复核集，后续正�
 
 建议优先实现五材料**保守导热图**的跨几何可学习校正，令材料平均模态导热矩阵
 
-[
-G_{mm} = operatorname{diag}(sqrt{C}),K_{mm},
-         operatorname{diag}(sqrt{C})
-]
+\[
+G_{mm} = \operatorname{diag}(\sqrt{C})\,K_{mm}\,
+         \operatorname{diag}(\sqrt{C})
+\]
 
 始终由四条非负内部导热边和一条非负环境换热边构建。网络预测受限的导热边修正（例如四个对数导热倍率），将修正后的 (G_{mm}) 变换回 (K_{mm})，交由物理热求解器更新材料温度。需确保：
 
