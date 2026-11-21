@@ -100,7 +100,8 @@ def main():
                  else ParZ.load(a.parallel_model))
     else:
         extra = None
-    if a.par_no_self_x:
+    mask_xself = bool(a.par_no_self_x or ck.get("free_par_mask_xself", False))
+    if mask_xself:
         if extra is None:
             p.error("--par-no-self-x requires --parallel-model")
         class ParMask(torch.nn.Module):
@@ -190,7 +191,7 @@ def main():
         feature_cold_model=str(a.feature_cold_model) if a.feature_cold_model else None,
         oracle_heat=a.oracle_heat, oracle_cold=a.oracle_cold,
         parallel_model=str(a.parallel_model) if a.parallel_model else None,
-        par_no_self_x=a.par_no_self_x,
+        par_no_self_x=mask_xself,
         skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
         shape_mix=mix, k_mix=a.k_mix, weak_sea_mix=a.weak_sea_mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
