@@ -24,7 +24,7 @@ from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.geom_par48 import ParZ48
 from sdfmpneo_bfzi.geom_skintan import restore_rank48
 from sdfmpneo_bfzi.geom_srcfix import SrcFix
-from sdfmpneo_bfzi.geom_window import HeatWindow,zmat
+from sdfmpneo_bfzi.geom_window import HeatWindow,zmat,pack
 
 
 def read(path):
@@ -63,10 +63,7 @@ def loss_window(item,span,start,exposure,weights):
         a0=torch.cat((a0[:5].clamp_min(0),a0[5:]))
         old=a0*win.scale
         win.anchor(old)
-        zbase,_,_,_=win.circuit(old,float(v[start]),float(t[start]))
-        zbase=win.port_z(zbase) if hasattr(win,"port_z") else torch.stack(
-            (zbase[0,0].real,zbase[0,0].imag,zbase[0,1].real,
-             zbase[0,1].imag,zbase[1,1].real,zbase[1,1].imag))
+        initial=old.detach()
     dtrue=truth-truth[0]
     scale_z=dtrue.square().sum(dim=1).mean().clamp_min(1e-10)
     current_scale=torch.as_tensor(item["i_scale"],dtype=torch.float32)
@@ -76,24 +73,30 @@ def loss_window(item,span,start,exposure,weights):
         dt=float(t[k]-t[k-1])
         h,old=win.step(h,old,dt,float(v[k-1]),float(t[k]))
         z,I,ps,pc=win.circuit(old,float(v[k]),float(t[k]))
-        zp=torch.stack((z[0,0].real,z[0,0].imag,z[0,1].real,
-                        z[0,1].imag,z[1,1].real,z[1,1].imag))
-        # True and modeled state must be evaluated at the same instant.
+        # At fixed time and drive, subtract response at the window's initial
+        # state. This prevents thermal training from compensating cold-Z error.
+        with torch.no_grad():
+            base_z,base_i,base_ps,base_pc=win.circuit(
+                initial,float(v[k]),float(t[k]))
+        zp=pack(z)
+        zb=pack(base_z)
         state=((old/win.scale-atrue[k])/win.sa).square().mean()
         skin=((old[32:]/win.scale[32:]-atrue[k,32:])/
               win.sa[32:]).square().mean()
-        zd=((zp-zbase)-(truth[k]-truth[start])).square().sum()/scale_z
-        # Remove fixed cold-circuit errors from current supervision.
+        zd=((zp-zb)-(truth[k]-truth[start])).square().sum()/scale_z
         drive=torch.tensor([float(v[k]),0.],dtype=torch.complex64)
         ti=torch.linalg.solve(zmat(truth[k])+item["ref_ext"],drive)
         ti0=torch.linalg.solve(zmat(truth[start])+item["ref_ext"],drive)
-        pi0=torch.linalg.solve(zmat(zbase)+win.ext,drive)
-        curr=((I-pi0)-(ti-ti0)).abs().square().sum()/current_scale
-        # Power response is an auxiliary target, normalized over the history.
-        pref=item["power"][k]
-        pow_err=((ps-pref[0])/power_scale[0]).square()
-        pow_err+=((pc[0]-pref[1])/power_scale[1]).square()
-        pow_err+=((pc[1]-pref[2])/power_scale[2]).square()
+        curr=((I-base_i)-(ti-ti0)).abs().square().sum()/current_scale
+        # Match differential physical loss rather than the absolute cold bias.
+        real_pow=item["power_coef"][k]*float(v[k])**2
+        base_pow=item["power_coef"][start]*float(v[k])**2
+        pow_err=(((ps-base_ps)-(real_pow[0]-base_pow[0]))/
+                 power_scale[0]).square()
+        pow_err+=(((pc[0]-base_pc[0])-(real_pow[1]-base_pow[1]))/
+                  power_scale[1]).square()
+        pow_err+=(((pc[1]-base_pc[1])-(real_pow[2]-base_pow[2]))/
+                  power_scale[2]).square()
         sums.append(state+weights["skin"]*skin+weights["z"]*zd+
                     weights["current"]*curr+weights["power"]*pow_err)
     return torch.stack(sums).mean()
@@ -147,6 +150,7 @@ def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
                 item["ref_ext"]=torch.as_tensor(ext,dtype=torch.complex64)
                 item["i_scale"]=max(float(np.mean(abs(currents)**2)),1e-8)
                 powers=[]
+                coeff=[]
                 for k,(z,i) in enumerate(zip(ztrue,currents)):
                     mat=np.array([[z[0]+1j*z[1],z[2]+1j*z[3]],
                                   [z[2]+1j*z[3],z[4]+1j*z[5]]])
@@ -155,7 +159,11 @@ def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
                     psea=max(float(.5*np.vdot(i,sea.real@i).real),0.)
                     pcu=.5*cu.real*abs(i)**2
                     powers.append([psea,*pcu])
-                item["power"]=torch.as_tensor(powers,dtype=torch.float32)
+                    iv=np.linalg.solve(mat+ext,np.array([1.,0.],complex))
+                    upsea=max(float(.5*np.vdot(iv,sea.real@iv).real),0.)
+                    upcu=.5*cu.real*abs(iv)**2
+                    coeff.append([upsea,*upcu])
+                item["power_coef"]=torch.as_tensor(coeff,dtype=torch.float32)
                 item["p_scale"]=np.maximum(np.mean(powers,axis=0),1.)
             out.append(item)
     return out,names
