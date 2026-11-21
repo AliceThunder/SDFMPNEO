@@ -34,6 +34,7 @@ def main():
     p.add_argument("--model", type=Path, required=True)
     p.add_argument("--atlas", type=Path, default=Path("runs/geomfrac_init_v8_expand.npz"))
     p.add_argument("--cold-model", type=Path, default=Path("runs/geomfrac_cold_v8_frozen.pt"))
+    p.add_argument("--feature-cold-model", type=Path, default=None)
     p.add_argument("--config", type=Path, default=Path("runs/geomfrac_free_rank48_selection.json"))
     p.add_argument("--skin-tangent", type=Path, default=Path("runs/geomfrac_rank48_skin_tan_v3.pt"))
     p.add_argument("--skin-base", type=Path, default=Path("runs/geomfrac_et_v9_ztune.pt"))
@@ -73,6 +74,8 @@ def main():
 
     atlas = GeomInit.load(a.atlas)
     cold = ColdNet.load(a.cold_model)
+    feature_cold = (ColdNet.load(a.feature_cold_model)
+                    if a.feature_cold_model else None)
     src = SrcFix.load(cfg["source_model"])
     tan_new = restore_rank48(a.skin_tangent, a.skin_base)
     if a.skin_base_model:
@@ -101,12 +104,16 @@ def main():
             init = atlas.predict(case)
             init = cold.apply(case, init)
             init = src.apply(case, init)
+            feature_init = None
+            if feature_cold is not None:
+                feature_init = feature_cold.apply(case, atlas.predict(case))
             init = thermal_mix(atlas, init, a.k_mix)
             ex = (WeakSea(tan, extra, init, case["alpha_per_K"], a.weak_sea_mix)
                   if a.weak_sea_mix else extra)
             for row in prepare(spec, 48):
                 pred = rollout(case, atlas, net, eck, row["time"], row["voltage"],
-                               tan, init_override=init, extra=ex, shape_mix=mix)
+                               tan, init_override=init, extra=ex, shape_mix=mix,
+                               feature_init_override=feature_init)
                 item = metric(pred, row)
                 item["geometry"] = name
                 rows.append(item)
@@ -137,7 +144,9 @@ def main():
 
     out = dict(status="complete", split=a.split, geometry_count=len(names),
         history_count=len(rows), model=str(a.model), atlas=str(a.atlas),
-        cold_model=str(a.cold_model), parallel_model=str(a.parallel_model) if a.parallel_model else None,
+        cold_model=str(a.cold_model),
+        feature_cold_model=str(a.feature_cold_model) if a.feature_cold_model else None,
+        parallel_model=str(a.parallel_model) if a.parallel_model else None,
         skin_mix=alpha, skin_base_model=str(a.skin_base_model) if a.skin_base_model else None,
         shape_mix=mix, k_mix=a.k_mix, weak_sea_mix=a.weak_sea_mix,
         online_BFZI_solves=0, geometry_specific_heat_basis_builds=0,
