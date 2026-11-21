@@ -1334,3 +1334,11 @@ BFZI V150固定热态数据生成器`examples/bfzi_v9_hotstates.py`已在XEnergy
 BFZI V150 S5 ultra 共4组全新几何、8条60/300秒完整物理历史最终全部成功。V10B0004最初封装超出海水域，物理参考生成前期的这次失败已作为参数越界记录；在模型预测评价前将平移从[3,114,-8]改为[3,68,-8]，物理参考补齐成功。见`runs/geomfrac_v10_blind_plan.json`、`runs/geomfrac_s5_v10err_manifest.json`与`runs/geomfrac_s5_v10err_build_report.json`。
 
 冻结V8与仅替换ColdNet的V10候选同条件比较：整体动态复阻抗误差10.6601%→10.4623%，TX R11自身16.2563%→15.9826%，RX X22自身7.5342%→6.5625%，材料均温RMSE0.17698→0.17511K；但是RX R22自身14.2712%→14.9050%、电流1.0981%→1.1536%、海水功率0.8731%→1.1206%、铜功率1.9806%→2.3590%，冷态总复阻抗0.0896%→0.1115%。按事先固定晋级门槛V10 **未通过，正式V8权重保留**。4组几何的总体动态Z有3组改善，说明上游电路敏感度训练有发展价值，接下来训练需更重视RX R22/电流/功率的几何泛化。结果`runs/geomfrac_v10_blind_summary.json`，逐模型`runs/geomfrac_v10_blind_base.json`和`runs/geomfrac_v10_blind_cold.json`，主线分析见`docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V10_ERROR_AWARE_TRAIN.md`。V10B盲测封存，不用于后续调参。
+
+## 2026-11-21 — V11 双端口及损耗物理约束训练
+
+继续V10闭环误差级联方案，针对V10B冻结盲测中的RX R22、电流及功率退化，实现了`examples/bfzi_cold_v11_train.py`。保留原ColdNet 13通道架构和在线成本，加入两端口电流独立归一与RX大误差尾部、自阻抗R11/X11/R22/X22实体监督，以及由复阻抗/空气电抗/铜阻抗和端口电流直接计算的铜海水焦耳功率一致性损失。铜标签缺失仅屏蔽其对应损失，其余样本照常训练。冷态228组开发几何选模保护RX和功率精度，1500训练几何、226冷态测试几何。代码已在XEnergy验证训练完成。
+
+分别从V8冷态和V10冷态出发训练。正式选择第二种初始化的最佳第5轮候选`runs/geomfrac_v11_cold.pt`（已提交权重），226冷态测试几何冷态Z0.13461%、平均电流1.65385%、海水功率1.87918%；15组独立开发几何41条完整BFZI历史闭环动态复阻抗16.23210%→**15.91200%**，R11自身15.78483→15.45765%、R22自身20.72770→20.43765%，电流8.61544→8.30598%、材料均温RMSE0.45211→0.43841K、海水功率16.47941→15.80422%、铜功率16.35969→15.79913%。正式V8仍冻结。两种初始化报告`runs/geomfrac_v11_cold.json`、`runs/geomfrac_v11_cold_a.json`，完整摘要`runs/geomfrac_v11_cold_summary.json`。说明：`docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V11_PORT_BALANCE.md`。
+
+独立BFZI V150物理验收的`runs/geomfrac_v11_blind_plan.json`与V11候选权重在参考数据生成前冻结。V11B0001–4四组几何、g1/g2两种外部匹配电路、每组60/300s两条完整历史，参考数据生产job-197运行中；冻结对比脚本`examples/bfzi_v11_blind_accept.py`完成编译检查。V9B/V10B历史不参与调参。
