@@ -132,3 +132,18 @@ def test_shared_history_loss_backpropagates_to_heat_head():
     grad=net.heat_head[2].weight.grad
     assert grad is not None and torch.isfinite(grad).all()
     assert float(grad.norm())>0.
+
+
+def test_shared_history_geometry_weights_are_balanced():
+    from sdfmpneo_bfzi.geom_train import _hist_weights
+    rows=[
+        {"file":"runs/bfzi_s5_A01_drive1.npz","time":np.arange(11)},
+        {"file":"runs/bfzi_s5_A01_drive2.npz","time":np.arange(21)},
+        {"file":"runs/bfzi_s5_A01_drive3.npz","time":np.arange(31)},
+        {"file":"runs/bfzi_s5_B01_drive1.npz","time":np.arange(11)},
+    ]
+    w=_hist_weights(rows,"geometry")
+    assert np.allclose(w.numpy(),[1/3,1/3,1/3,1.])
+    assert np.isclose(float(w[:3].sum()),float(w[3]))
+    assert np.allclose(_hist_weights(rows,"equal").numpy(),1.)
+    assert np.allclose(_hist_weights(rows,"step").numpy(),[10.,20.,30.,10.])
