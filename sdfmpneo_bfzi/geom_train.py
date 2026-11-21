@@ -205,7 +205,12 @@ def copper_t(temp,port):
         lo=port["cu_tab"][rows,idx]
         hi=port["cu_tab"][rows,idx+1]
         frac=pos-idx.to(pos.dtype)
-        return lo+(hi-lo)*frac
+        lookup=lo+(hi-lo)*frac
+        outside=(pos<0.)|(pos>port["cu_tab"].shape[1]-1)
+        if bool(torch.any(outside)):
+            exact=copper_t(temp,port["port"])
+            lookup=torch.where(outside,exact,lookup)
+        return lookup
     dtype=temp.dtype
     cdtype=torch.complex128 if dtype==torch.float64 else torch.complex64
     dev=temp.device
