@@ -157,6 +157,20 @@ def make_ctx(init,feat,port,par_geom=None,rank=48,ambient=293.15,dtype=torch.flo
     cold_t=torch.as_tensor(cold,dtype=cdtype,device=dev)
     lead_t=torch.as_tensor(lead,dtype=cdtype,device=dev)
     sea0=z0-1j*float(port.omega)*air_t-torch.diag(cold_t+lead_t)
+    from scipy.special import ive
+    cu_t0=float(ambient)-5.
+    cu_dt=.05
+    cu_grid=cu_t0+np.arange(1101,dtype=float)*cu_dt
+    cu_tab=np.empty((2,len(cu_grid)),complex)
+    for j in range(2):
+        fac=1.+port.alpha[j]*(cu_grid-port.ref[j])
+        sig=port.sigma[j]/fac
+        wave=np.sqrt(1j*port.omega*port.mu[j]*sig)
+        arg=wave*port.radius[j]
+        unit=wave*ive(0,arg)/(2.*np.pi*port.radius[j]*sig*ive(1,arg))
+        low=1./(np.pi*port.radius[j]**2*sig)+1j*port.omega*port.mu[j]/(8.*np.pi)
+        unit=np.where(abs(arg)<1e-3,low,unit)
+        cu_tab[j]=unit*port.length[j]
     guard=np.asarray(init.get("guard",[]),float)
     gmat=np.asarray(init.get("gmat",[]),int)
     if guard.size and (guard.ndim!=2 or guard.shape[1]!=rank-5
@@ -173,14 +187,25 @@ def make_ctx(init,feat,port,par_geom=None,rank=48,ambient=293.15,dtype=torch.flo
         z0=z0,ext=torch.as_tensor(init["ext"],dtype=cdtype,device=dev),
         air=air_t,sea0=sea0,cold=cold_t,lead=lead_t,
         omega=float(port.omega),port=port,ambient=float(ambient),
+        cu_t0=cu_t0,cu_dt=cu_dt,
+        cu_tab=torch.as_tensor(cu_tab,dtype=cdtype,device=dev),
+        _solve_cache={},
         guard=(torch.as_tensor(guard,dtype=dtype,device=dev) if guard.size else None),
         gmat=(torch.as_tensor(gmat,dtype=torch.long,device=dev) if gmat.size else None))
 
 
 def copper_t(temp,port):
-    """Exact differentiable modified-Bessel copper impedance."""
+    """Exact differentiable copper impedance; use an exact Bessel lookup in training."""
     if temp.shape[-1]!=2:
         raise ValueError("two copper temperatures are required")
+    if isinstance(port,dict) and "cu_tab" in port:
+        pos=(temp-float(port["cu_t0"]))/float(port["cu_dt"])
+        idx=torch.floor(pos).long().clamp(0,port["cu_tab"].shape[1]-2)
+        rows=torch.arange(2,device=temp.device)[None,:].expand_as(idx)
+        lo=port["cu_tab"][rows,idx]
+        hi=port["cu_tab"][rows,idx+1]
+        frac=pos-idx.to(pos.dtype)
+        return lo+(hi-lo)*frac
     dtype=temp.dtype
     cdtype=torch.complex128 if dtype==torch.float64 else torch.complex64
     dev=temp.device
@@ -214,7 +239,7 @@ def _circuit_t(state,ctx,tan,par,tm,voltage):
     scale=ctx["scale"]
     cap=ctx["cap"]
     mean=state[:,:5]/torch.sqrt(cap)[None]
-    cu=copper_t(ctx["ambient"]+mean[:,3:5],ctx["port"])
+    cu=copper_t(ctx["ambient"]+mean[:,3:5],ctx)
     st=state/scale[None]
     dz=torch.zeros((len(state),6),dtype=state.dtype,device=state.device)
     if tan is not None:
@@ -259,7 +284,7 @@ def _drive_t(zprev,state,ctx,voltage):
     """Exact deployment heat_drive from the previous port and copper state."""
     scale=ctx["scale"]
     tc=ctx["ambient"]+state[:,3:5]/scale[None,3:5]
-    cu=copper_t(tc,ctx["port"])
+    cu=copper_t(tc,ctx)
     sea=zprev-1j*ctx["omega"]*ctx["air"]-torch.diag_embed(
         cu+ctx["lead"][None])
     drive=torch.zeros((len(state),2),dtype=zprev.dtype,device=zprev.device)
@@ -278,17 +303,22 @@ def closure_t(prev,guess,dt,ctx,tan,par,tm,voltage,shape_mix=.5):
     k=ctx["k"]
     rank=prev.shape[-1]
     q,*_=_source_t(guess,ctx,tan,par,tm,voltage,copper=False)
-    mat_s=torch.eye(rank-5,dtype=k.dtype,device=k.device)/dt+k[5:,5:]
+    cache=ctx["_solve_cache"]
+    key=float(dt)
+    if key not in cache:
+        mat_s=torch.eye(rank-5,dtype=k.dtype,device=k.device)/dt+k[5:,5:]
+        mat_m=torch.eye(5,dtype=k.dtype,device=k.device)/dt+k[:5,:5]
+        cache[key]=(torch.linalg.inv(mat_s),torch.linalg.inv(mat_m))
+    inv_s,inv_m=cache[key]
     rhs_s=prev[:,5:]/dt+q[:,5:]-guess[:,:5]@k[:5,5:]
-    phys=torch.linalg.solve(mat_s,rhs_s.unsqueeze(-1)).squeeze(-1)
+    phys=rhs_s@inv_s.T
     shape=(1.-shape_mix)*guess[:,5:]+shape_mix*phys
-    mat_m=torch.eye(5,dtype=k.dtype,device=k.device)/dt+k[:5,:5]
 
     def solve_mean(target,shape_now):
         for _ in range(12):
             q,*_=_source_t(target,ctx,tan,par,tm,voltage,copper=True)
             rhs=prev[:,:5]/dt+q[:,:5]-shape_now@k[:5,5:].T
-            mean=torch.linalg.solve(mat_m,rhs.unsqueeze(-1)).squeeze(-1)
+            mean=rhs@inv_m.T
             target=torch.cat((mean,shape_now),dim=-1)
         return target
 
