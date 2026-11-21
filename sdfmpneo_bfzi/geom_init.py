@@ -252,7 +252,9 @@ def conductance_mix(atlas,init):
     lab=labels(atlas.rank)
     m=np.sqrt(np.exp(atlas.y[:,9:14])[:,lab])
     bank=atlas.k*m[:,:,None]*m[:,None,:]
-    w=np.asarray(init["norm_weights"],float)
+    # The thermal atlas has its own selected bandwidth (kell). Keep the
+    # conductance-coordinate branch on the same thermal weights as predict().
+    w=np.asarray(init.get("thermal_norm_weights",init["norm_weights"]),float)
     h=np.einsum("n,nij->ij",w,bank,optimize=True)
     cu=np.array([3,4])
     rest=np.array([i for i in range(atlas.rank) if i not in cu])
