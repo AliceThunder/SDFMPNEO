@@ -128,7 +128,7 @@ def shared_step(prev,guess,dt,k,q,shape_mix=.5):
     if shape_mix:
         mat=torch.eye(rank-5,dtype=k.dtype,device=k.device)/dt+k[5:,5:]
         rhs=(prev[...,5:]/dt+q[...,5:]
-             -guess[...,:5]@k[:5,5:].T)
+             -guess[...,:5]@k[:5,5:])
         phys=torch.linalg.solve(mat,rhs.unsqueeze(-1)).squeeze(-1)
         shape=(1.-shape_mix)*guess[...,5:]+shape_mix*phys
     else:
