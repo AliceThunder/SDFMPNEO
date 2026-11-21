@@ -57,7 +57,7 @@ def loss_window(item,span,start,exposure,weights):
     n=min(len(t),start+span+1)
     if n<=start+1:
         raise ValueError("short-window history requires at least one step")
-    h=win.warm(row,start)
+    h=win.warm(row,start,item["pred_src"],item["pred"],exposure)
     with torch.no_grad():
         a0=atrue[start]+exposure*(pred[start]-atrue[start])
         a0=torch.cat((a0[:5].clamp_min(0),a0[5:]))
@@ -119,6 +119,21 @@ def evaluate(rows,atlas,net,ec,tan,par,mix):
     return {k:float(np.mean([s[k] for s in score])) for k in keys}
 
 
+def refresh(item,atlas,net,ec,tan,par,mix):
+    """Current deployment trajectory for state and SOE source exposure."""
+    row=item["row"]
+    init=item["init"]
+    with torch.no_grad():
+        pred=rollout(item["case"],atlas,net,ec,row["time"],row["voltage"],
+                    tan,init_override=init,extra=par,shape_mix=mix)
+    item["pred"]=np.asarray(pred["heat_state"],np.float32)
+    src=np.zeros((len(row["time"]),3),dtype=np.float32)
+    src[1:,0]=np.asarray(pred["Psea_W"][:-1],np.float32)
+    src[1:,1:]=np.asarray(pred["Pcu_W"][:-1],np.float32)/
+               np.asarray(init["cap"][3:5],np.float32)[None]
+    item["pred_src"]=src
+
+
 def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
     out=[];names=set()
     for spec in specs:
@@ -133,10 +148,7 @@ def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
         for row in prepare(spec,48):
             item=dict(case=case,init=init,row=row,win=win)
             if train:
-                with torch.no_grad():
-                    pred=rollout(case,atlas,net,ec,row["time"],row["voltage"],
-                         tan,init_override=init,extra=par,shape_mix=mix)
-                item["pred"]=pred["heat_state"].copy()
+                refresh(item,atlas,net,ec,tan,par,mix)
                 # The physical reference includes its own exact port/circuit.
                 ztrue=np.asarray(row["z6"],float)
                 vt=np.asarray(row["voltage"],float)
@@ -174,6 +186,8 @@ def main():
     p.add_argument("--manifest",type=Path,default=Path("runs/geomfrac_s5_v8_full_manifest.json"))
     p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_v8_full_plan.json"))
     p.add_argument("--init-model",type=Path,default=Path("runs/geomfrac_et_v8_heat_tune.pt"))
+    p.add_argument("--cold-model",type=Path,default=Path("runs/geomfrac_cold_v8_frozen.pt"))
+    p.add_argument("--refresh-every",type=int,default=4)
     p.add_argument("--epochs",type=int,default=16)
     p.add_argument("--updates",type=int,default=8)
     p.add_argument("--batch",type=int,default=3)
@@ -186,7 +200,7 @@ def main():
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_v10_window_heat.pt"))
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_v10_window_heat.json"))
     a=p.parse_args()
-    if min(a.epochs,a.updates,a.batch,a.val_every)<=0:
+    if min(a.epochs,a.updates,a.batch,a.val_every,a.refresh_every)<=0:
         p.error("positive epochs, batch, updates and validation interval required")
     torch.manual_seed(19437)
     torch.set_num_threads(2)
@@ -196,7 +210,7 @@ def main():
     cfg=read("runs/geomfrac_free_rank48_v8_selection.json")
     net,ck,ec=load_heat(a.init_model)
     atlas=GeomInit.load(cfg["atlas"])
-    cold=ColdNet.load("runs/geomfrac_cold_v8_frozen.pt")
+    cold=ColdNet.load(a.cold_model)
     src=SrcFix.load(cfg["source_model"])
     tan=restore_rank48("runs/geomfrac_rank48_skin_tan_v3.pt",
                        "runs/geomfrac_et_v9_ztune.pt")
@@ -221,6 +235,11 @@ def main():
                           lr=a.lr,weight_decay=1e-4)
     history=[]
     for ep in range(1,a.epochs+1):
+        if ep>1 and (ep-1)%a.refresh_every==0:
+            net.eval()
+            for item in tr:
+                refresh(item,atlas,net,ec,tan,par,mix)
+            print("V10_REFRESH",ep,len(tr),flush=True)
         span=(2,4,8,16)[min(3,(ep-1)*4//a.epochs)]
         exposure=min(.7,.15+.5*(ep-1)/max(1,a.epochs-1))
         net.train()
@@ -277,6 +296,7 @@ def main():
         val_geometries=len(vn),val_histories=len(va),
         training="frozen ColdNet/physical EM; teacher SOE prefix and differentiable window",
         weights=weights,init_model=str(a.init_model),
+        cold_model=str(a.cold_model),refresh_every=a.refresh_every,
         blind_not_used=True)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
