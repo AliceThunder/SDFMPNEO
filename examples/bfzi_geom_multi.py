@@ -23,6 +23,7 @@ from sdfmpneo_bfzi.geom_canon import make_rom,mode_scale
 from sdfmpneo_bfzi.geom_heat import GeomHeat
 from sdfmpneo_bfzi.geom_neural import GeomFracET
 from sdfmpneo_bfzi.s5_bridge import feature
+from sdfmpneo_bfzi.geom_train import shared_score
 
 
 def prepare(spec,rank=32):
