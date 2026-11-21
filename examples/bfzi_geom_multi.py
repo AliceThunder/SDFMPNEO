@@ -79,6 +79,43 @@ def free_metric(rows,free,net,ck,heat_op="atlas",cu_link=None,par=None,k_mix=0.)
     return float(np.mean(errs))
 
 
+
+
+def build_shared_contexts(rows,free,par,heat_op="atlas",cu_link=None,k_mix=0.):
+    """Freeze the same geometry-only atlas inputs used by deployment."""
+    from sdfmpneo_bfzi.geom_free import geometry
+    from sdfmpneo_bfzi.geom_memory import geom_port
+    from sdfmpneo_bfzi.geom_init import thermal_mix,encode
+    from sdfmpneo_bfzi.geom_train import make_ctx
+    plan,atlas,ps,mu,src,tan,mix=free
+    cache={}
+    contexts={}
+    for row in rows:
+        name=Path(row["file"].split("#")[0]).stem.split("_")[2]
+        if name not in cache:
+            case=plan["cases"][name]
+            init=atlas.predict(case)
+            for model in (ps,mu,src):
+                if model is not None:
+                    init=model.apply(case,init)
+            if heat_op=="conductance":
+                from sdfmpneo_bfzi.geom_init import conductance_mix
+                init=conductance_mix(atlas,init)
+            if heat_op=="contact":
+                from sdfmpneo_bfzi.geom_cu import apply as cu_apply
+                init=cu_apply(case,init,exchange=True,
+                              profile=cu_link.predict(case))
+            if k_mix:
+                init=thermal_mix(atlas,init,k_mix)
+            geom,feat=geometry(case,init)
+            port=geom_port(geom)
+            pg=(feat if par is None or getattr(par,"shared_geom",False)
+                else encode(case))
+            cache[name]=make_ctx(init,feat,port,par_geom=pg,rank=atlas.rank)
+        contexts[row["file"]]=cache[name]
+    return contexts
+
+
 def rank48_extra(net):
     """Train only the appended 16 skin-mode outputs; preserve the original 32."""
     for param in net.parameters():
@@ -141,7 +178,7 @@ def main():
                    help='histories per stochastic step; 0 uses full training set')
     p.add_argument('--val-every',type=int,default=1,
                    help='validate every N training epochs')
-    p.add_argument('--select',choices=('loss','dynamic_z','thermal','free_dynamic_z'),default='loss',
+    p.add_argument('--select',choices=('loss','dynamic_z','thermal','free_dynamic_z','shared'),default='loss',
                    help='best-checkpoint criterion for validation')
     p.add_argument('--proj-tau',type=float,default=0.,
                    help='projection quality scale in K for history sampling; 0=uniform')
@@ -159,6 +196,11 @@ def main():
                    help='frozen geometry-free port/thermal model configuration')
     p.add_argument('--free-heat-op',choices=('atlas','conductance','contact'),default='atlas',help='geometry-only heat operator used for closed-loop checkpoint selection')
     p.add_argument('--cu-link-model',type=Path,default=None,help='frozen geometry-conditioned package contact-mode coefficients')
+    p.add_argument('--shared-closure',action='store_true',help='train through the deployed shared-atlas EM/thermal feedback loop')
+    p.add_argument('--shared-warmup',type=int,default=5)
+    p.add_argument('--shared-ramp',type=int,default=20)
+    p.add_argument('--shared-state-weight',type=float,default=1.)
+    p.add_argument('--shared-z-weight',type=float,default=1.)
     a=p.parse_args()
     if a.cu_z_weight<0:
         p.error('copper impedance weight must be nonnegative')
@@ -246,7 +288,15 @@ def main():
         par=ParZ48.load(a.free_parallel_model)
     if not 0.<=a.free_k_mix<=1.:
         p.error('--free-k-mix requires a value in [0,1]')
-    if a.select=='free_dynamic_z':
+    if a.shared_closure and (a.rank!=48 or not a.init_model or not a.free_plan):
+        p.error('--shared-closure requires rank48, --init-model and --free-plan')
+    if a.shared_closure and a.select!='shared':
+        p.error('--shared-closure requires --select shared')
+    if a.select=='shared' and not a.shared_closure:
+        p.error('--select shared requires --shared-closure')
+    if a.shared_closure and a.shared_ramp<1:
+        p.error('--shared-ramp must be positive')
+    if a.select=='free_dynamic_z' or a.shared_closure:
         if not a.free_plan:
             p.error('--select free_dynamic_z requires --free-plan')
         plan=json.loads(a.free_plan.read_text(encoding='utf-8-sig'))
@@ -261,9 +311,10 @@ def main():
         from sdfmpneo_bfzi.geom_mutual import MutFix
         from sdfmpneo_bfzi.geom_srcfix import SrcFix
         from sdfmpneo_bfzi.geom_ztune import restore as load_z
+        check_rows=(train+val) if a.shared_closure else val
         if any(Path(r['file'].split('#')[0]).stem.split('_')[2]
-               not in plan['cases'] for r in val):
-            p.error('development geometry missing from BFZI-free selection plan')
+               not in plan['cases'] for r in check_rows):
+            p.error('training/development geometry missing from BFZI-free selection plan')
         if a.free_cold_model:
             from sdfmpneo_bfzi.geom_coldnet import ColdNet
             port=ColdNet.load(a.free_cold_model)
@@ -294,6 +345,15 @@ def main():
                         rom.cap[rom.cu],lead=lead)
             print('V8_THERM_CORRECTED_SOURCES',len(train),len(val),
                   flush=True)
+    shared_ctx={}
+    if a.shared_closure:
+        if tangent is None:
+            p.error('--shared-closure requires --skin-tangent-model or --tangent-model')
+        if par is not None:
+            for param in par.parameters():
+                param.requires_grad_(False)
+        shared_ctx=build_shared_contexts(train+val,free,par,a.free_heat_op,cu_link,a.free_k_mix)
+        print('SHARED_CONTEXTS',len(shared_ctx),'geometries',len({Path(k.split('#')[0]).stem.split('_')[2] for k in shared_ctx}),flush=True)
     opt=torch.optim.AdamW((v for v in net.parameters() if v.requires_grad),lr=a.lr,
                           weight_decay=(0. if a.rank48_extra_only else a.weight_decay))
     sched=torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -307,11 +367,15 @@ def main():
     best_loss=None
     eck=dict(src_scale=sx,y_scale=sy,a_scale=sa,
              canonical=True,port_sea=True)
-    if a.select in ('dynamic_z','thermal','free_dynamic_z') and a.init_model:
+    if a.select in ('dynamic_z','thermal','free_dynamic_z','shared') and a.init_model:
         net.eval()
         with torch.no_grad():
             if a.select=='free_dynamic_z':
                 best=free_metric(val,free,net,eck,a.free_heat_op,cu_link,par,a.free_k_mix)
+            elif a.select=='shared':
+                best=float(shared_score(net,val,shared_ctx,sx,sa,tangent,par,free[6],
+                    src_mix=1.,state_weight=a.shared_state_weight,
+                    z_weight=a.shared_z_weight,hist_weight=a.history_weight))
             else:
                 init_z=eval_rollout(None,net,eck,val,tangent=tangent)
                 key='dynamic_Z_rel_L2' if a.select=='dynamic_z' else 'temperature_max_K'
@@ -330,7 +394,8 @@ def main():
               'max',round(float(prob.max()),5),flush=True)
     if a.closed_warmup<0 or a.closed_ramp<=0:
         p.error('closed warmup/ramp must be nonnegative/positive')
-    warmup=(a.closed_warmup+a.closed_ramp) if a.closed_weight else 0
+    warmup=((a.shared_warmup+a.shared_ramp) if a.shared_closure else
+            ((a.closed_warmup+a.closed_ramp) if a.closed_weight else 0))
     for ep in range(a.epochs):
         if a.batch_hist and a.batch_hist<len(train):
             if a.proj_tau:
@@ -342,9 +407,15 @@ def main():
             batch=train
         net.train()
         opt.zero_grad(set_to_none=True)
-        loss=score(net,batch,None,sx,sy,sa,therm_w=a.therm_weight,
-                   zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight)
-        if a.closed_weight and ep>=a.closed_warmup:
+        if a.shared_closure:
+            smix=min(1.,max(0.,(ep+1-a.shared_warmup)/a.shared_ramp))
+            loss=shared_score(net,batch,shared_ctx,sx,sa,tangent,par,free[6],
+                src_mix=smix,state_weight=a.shared_state_weight,
+                z_weight=a.shared_z_weight,hist_weight=a.history_weight)
+        else:
+            loss=score(net,batch,None,sx,sy,sa,therm_w=a.therm_weight,
+                       zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight)
+        if not a.shared_closure and a.closed_weight and ep>=a.closed_warmup:
             mix=min(1.,(ep+1-a.closed_warmup)/a.closed_ramp)
             loss+=a.closed_weight*score(net,batch,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=mix,
@@ -358,9 +429,14 @@ def main():
             continue
         net.eval()
         with torch.no_grad():
-            v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
-                          zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
-            if a.closed_weight:
+            if a.shared_closure:
+                v=float(shared_score(net,val,shared_ctx,sx,sa,tangent,par,free[6],
+                    src_mix=1.,state_weight=a.shared_state_weight,
+                    z_weight=a.shared_z_weight,hist_weight=a.history_weight))
+            else:
+                v=float(score(net,val,None,sx,sy,sa,therm_w=a.therm_weight,
+                              zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
+            if not a.shared_closure and a.closed_weight:
                 v+=a.closed_weight*float(score(net,val,None,sx,sy,sa,
                         closed=True,therm_w=a.therm_weight,src_mix=1.,
                         zrel_w=a.zrel_weight,hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
@@ -369,6 +445,8 @@ def main():
         if a.select=='free_dynamic_z':
             with torch.no_grad():
                 metric=free_metric(val,free,net,eck,a.free_heat_op,cu_link,par,a.free_k_mix)
+        elif a.select=='shared':
+            metric=v
         elif a.select in ('dynamic_z','thermal'):
             with torch.no_grad():
                 zval=eval_rollout(None,net,eck,val,tangent=tangent)
@@ -397,10 +475,15 @@ def main():
     if best_loss is None:
         net.eval()
         with torch.no_grad():
-            best_loss=float(score(net,val,None,sx,sy,sa,
-                therm_w=a.therm_weight,zrel_w=a.zrel_weight,
-                hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
-            if a.closed_weight:
+            if a.shared_closure:
+                best_loss=float(shared_score(net,val,shared_ctx,sx,sa,tangent,par,free[6],
+                    src_mix=1.,state_weight=a.shared_state_weight,
+                    z_weight=a.shared_z_weight,hist_weight=a.history_weight))
+            else:
+                best_loss=float(score(net,val,None,sx,sy,sa,
+                    therm_w=a.therm_weight,zrel_weight if False else a.zrel_weight,
+                    hist_weight=a.history_weight, tangent=tangent, tan_w=a.tangent_loss_weight, cu_z_w=a.cu_z_weight))
+            if not a.shared_closure and a.closed_weight:
                 best_loss+=a.closed_weight*float(score(net,val,None,
                     sx,sy,sa,closed=True,therm_w=a.therm_weight,
                     src_mix=1.,zrel_w=a.zrel_weight,
