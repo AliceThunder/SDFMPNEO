@@ -48,6 +48,9 @@ def main():
     h=win.warm(row,start)
     old=torch.as_tensor(row["a"][start],dtype=torch.float32)*win.scale
     win.anchor(old)
+    with torch.no_grad():
+        _,source=win.source(old,float(row["voltage"][start]),
+                            float(row["time"][start]))
     z0,_,_,_=win.circuit(old,float(row["voltage"][start]),float(row["time"][start]))
     dt=float(row["time"][start+1]-row["time"][start])
     h,pred=win.step(h,old,dt,float(row["voltage"][start]),
@@ -66,6 +69,7 @@ def main():
         raise AssertionError("differentiable SOE heat head gradients are invalid")
     print("V10_WINDOW_SMOKE",json.dumps(dict(name=name,
         dt=dt,drive_v=float(row["voltage"][start]),
+        input_sea_w=float(source[0].detach()),
         loss=float(loss.detach()),grad_norm=float(grad.norm()),
         source_w=float(ps.detach()),copper_w=pc.detach().tolist(),
         current_A=[float(I[0].real.detach()),
