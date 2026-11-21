@@ -11,6 +11,7 @@ import torch
 
 from examples.bfzi_geom_multi import prepare
 from examples.bfzi_geom_free_eval import metric
+from sdfmpneo_bfzi.geom_canon import labels
 from sdfmpneo_bfzi.geom_coldnet import ColdNet
 from sdfmpneo_bfzi.geom_free import geometry,rollout
 from sdfmpneo_bfzi.geom_init import GeomInit,thermal_mix
@@ -29,6 +30,27 @@ def avg(rows,key):
     return float(np.mean([r[key] for r in rows]))
 
 
+def phys_delta(item,truth,pred,phy):
+    """BFZI-constrained local impedance change when thermal input changes."""
+    init=item["init"]
+    src=np.asarray(init["src"],float)
+    scale=np.sqrt(np.asarray(init["cap"],float)[labels(48)])
+    gain=np.asarray(phy["gain"],float)
+    react=np.asarray(phy["react_gain"],float)
+    def calc(a):
+        x=a*scale[None]
+        parts=np.stack((x[:,:1]@src[:1],
+                        x[:,1:32]@src[1:32],
+                        x[:,32:48]@src[32:48]),axis=1)
+        real=(parts*gain[None]).sum(axis=1)
+        imag=(parts*react[None]).sum(axis=1)
+        z=np.empty((len(a),6),float)
+        z[:,0::2]=real
+        z[:,1::2]=imag
+        return float(item["case"]["alpha_per_K"])*z
+    return calc(pred)-calc(truth)
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_v8_full_plan.json"))
@@ -42,9 +64,18 @@ def main():
     p.add_argument("--pred-weight",type=float,default=0.5)
     p.add_argument("--prior",type=float,default=.15)
     p.add_argument("--val-every",type=int,default=5)
+    p.add_argument("--phys-gain",type=Path,
+                   default=Path("runs/geomfrac_v9_phys_region.json"))
+    p.add_argument("--phys-weight",type=float,default=.5,
+                   help="physically consistent label shift for predicted states")
     p.add_argument("--out",type=Path,default=Path("runs/geomfrac_v9_full_skin.pt"))
     p.add_argument("--report",type=Path,default=Path("runs/geomfrac_v9_full_skin.json"))
     args=p.parse_args()
+    if not 0<=args.phys_weight<=1:
+        p.error("physical label shift weight must be in [0,1]")
+    phy=read(args.phys_gain) if args.phys_weight else None
+    if phy is not None and ("gain" not in phy or "react_gain" not in phy):
+        p.error("physical calibration must provide real/imaginary susceptibility")
 
     torch.manual_seed(9227)
     np.random.seed(9227)
@@ -116,7 +147,8 @@ def main():
                 scores.append(metric(pred,r))
         return {k:avg(scores,k) for k in (
             "dynamic_z_rel_L2","R11_dynamic_rel_L2_self",
-            "R22_dynamic_rel_L2_self","current_rel_L2",
+            "R22_dynamic_rel_L2_self","X11_dynamic_rel_L2_self",
+            "X22_dynamic_rel_L2_self","current_rel_L2",
             "material_mean_rmse_K","sea_power_rel_L2",
             "copper_power_rel_L2")}
 
@@ -146,7 +178,9 @@ def main():
             if w<=0:
                 continue
             gs.append(g.copy());states.append(a)
-            times.append(t);volts.append(v);truth.append(z)
+            target=z if a is true or phy is None else (
+                z+args.phys_weight*phys_delta(item,true,est,phy).astype(np.float32))
+            times.append(t);volts.append(v);truth.append(target)
             weights.extend([w/n]*n)
         if (i+1)%24==0:
             print("V9_FULL_HISTORY",i+1,len(train),flush=True)
@@ -189,6 +223,8 @@ def main():
         improved=(scv["dynamic_z_rel_L2"]<best["dynamic_z_rel_L2"]-0.001
             and scv["R11_dynamic_rel_L2_self"]<=base_score["R11_dynamic_rel_L2_self"]*1.01
             and scv["R22_dynamic_rel_L2_self"]<=base_score["R22_dynamic_rel_L2_self"]*1.01
+            and scv["X11_dynamic_rel_L2_self"]<=base_score["X11_dynamic_rel_L2_self"]*1.02
+            and scv["X22_dynamic_rel_L2_self"]<=base_score["X22_dynamic_rel_L2_self"]*1.02
             and scv["material_mean_rmse_K"]<=base_score["material_mean_rmse_K"]*1.04
             and scv["current_rel_L2"]<=base_score["current_rel_L2"]*1.04)
         if improved:
@@ -204,6 +240,7 @@ def main():
         train_histories=len(train),val_histories=len(val),
         train_geometries=len(train_names),val_geometries=len(val_names),
         paired_states=len(g),pred_weight=args.pred_weight,
+        phys_weight=args.phys_weight,phys_gain=str(args.phys_gain),
         heat_model=str(args.heat_model),skin_model=str(args.skin_model),
         checkpoint=str(args.out) if best_ep else None)
     args.report.parent.mkdir(parents=True,exist_ok=True)
