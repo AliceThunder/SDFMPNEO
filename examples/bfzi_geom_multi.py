@@ -465,7 +465,11 @@ def main():
             best_loss=v
             best_train=float(loss.detach())
             saved={k:vv.detach().clone() for k,vv in net.state_dict().items()}
-        if (ep+1)%50==0:
+        if a.shared_closure and (ep+1)%10==0:
+            print("SHARED_TRAIN",ep+1,"source_mix",round(smix,3),
+                  "train",round(float(loss.detach()),7),
+                  "val",round(v,7),"best",best_epoch,flush=True)
+        elif (ep+1)%50==0:
             print("TRAIN",ep+1,"train",round(float(loss.detach()),6),
                   "val",round(v,6),"select",round(metric,6),
                   "best",best_epoch,flush=True)
@@ -504,6 +508,16 @@ def main():
     a.out.parent.mkdir(parents=True,exist_ok=True)
     torch.save(ck,a.out)
     autonomous=eval_rollout(None,net,ck,val,tangent=tangent)
+    shared_val_loss=None
+    shared_val_rows=None
+    if a.shared_closure:
+        with torch.no_grad():
+            shared_val_loss,shared_val_rows=shared_score(
+                net,val,shared_ctx,sx,sa,tangent,par,free[6],
+                src_mix=1.,state_weight=a.shared_state_weight,
+                z_weight=a.shared_z_weight,hist_weight=a.history_weight,
+                return_metrics=True)
+            shared_val_loss=float(shared_val_loss)
     metrics=dict(architecture='GeomFracET-cross-geometry',
                  mode=f'canonical-material-{net.rank}',rank=net.rank,
                  soe_quad=a.soe_quad,heat_dt=a.heat_dt,
@@ -519,6 +533,9 @@ def main():
                  shared_z_weight=a.shared_z_weight,
                  shared_warmup=a.shared_warmup,
                  shared_ramp=a.shared_ramp,
+                 shared_validation_loss=shared_val_loss,
+                 shared_validation=shared_val_rows,
+                 free_k_mix=a.free_k_mix,
                  tangent_model=str(a.tangent_model) if a.tangent_model else None,
                  skin_tangent_model=str(a.skin_tangent_model) if a.skin_tangent_model else None,
                  skin_tangent_base=str(a.skin_tangent_base) if a.skin_tangent_model else None,
