@@ -1,0 +1,110 @@
+{
+  "status": "not_promoted",
+  "baseline": {
+    "dynamic_z_rel_L2": 0.1578603726763595,
+    "R11_dynamic_rel_L2_self": 0.15281568339754792,
+    "R22_dynamic_rel_L2_self": 0.20339399616935255,
+    "X11_dynamic_rel_L2_self": 0.13451200367641583,
+    "X22_dynamic_rel_L2_self": 0.1448607188403567,
+    "current_rel_L2": 0.07971016973295873,
+    "material_mean_rmse_K": 0.43411055109949487,
+    "sea_power_rel_L2": 0.1509283150344975,
+    "copper_power_rel_L2": 0.15363763564027458
+  },
+  "best": {
+    "dynamic_z_rel_L2": 0.1578603726763595,
+    "R11_dynamic_rel_L2_self": 0.15281568339754792,
+    "R22_dynamic_rel_L2_self": 0.20339399616935255,
+    "X11_dynamic_rel_L2_self": 0.13451200367641583,
+    "X22_dynamic_rel_L2_self": 0.1448607188403567,
+    "current_rel_L2": 0.07971016973295873,
+    "material_mean_rmse_K": 0.43411055109949487,
+    "sea_power_rel_L2": 0.1509283150344975,
+    "copper_power_rel_L2": 0.15363763564027458
+  },
+  "best_epoch": 0,
+  "checkpoint": null,
+  "history": [
+    {
+      "epoch": 3,
+      "span": 2,
+      "exposure": 0.2409090909090909,
+      "training_loss": 0.029059087857604027,
+      "dynamic_z_rel_L2": 0.15738055789112676,
+      "R11_dynamic_rel_L2_self": 0.1518476179966284,
+      "R22_dynamic_rel_L2_self": 0.20919271843204182,
+      "X11_dynamic_rel_L2_self": 0.13436831506632152,
+      "X22_dynamic_rel_L2_self": 0.14490083135963724,
+      "current_rel_L2": 0.07970996787669006,
+      "material_mean_rmse_K": 0.4338627805962064,
+      "sea_power_rel_L2": 0.1509030766618658,
+      "copper_power_rel_L2": 0.1536375138978229
+    },
+    {
+      "epoch": 6,
+      "span": 4,
+      "exposure": 0.37727272727272726,
+      "training_loss": 0.43051117782791454,
+      "dynamic_z_rel_L2": 0.15827024305728915,
+      "R11_dynamic_rel_L2_self": 0.1528664414606631,
+      "R22_dynamic_rel_L2_self": 0.2117532044240887,
+      "X11_dynamic_rel_L2_self": 0.13497807843348913,
+      "X22_dynamic_rel_L2_self": 0.14581556917808897,
+      "current_rel_L2": 0.07970974609629193,
+      "material_mean_rmse_K": 0.4357033293942081,
+      "sea_power_rel_L2": 0.15090973579377578,
+      "copper_power_rel_L2": 0.1536400967106347
+    },
+    {
+      "epoch": 9,
+      "span": 8,
+      "exposure": 0.5136363636363637,
+      "training_loss": 0.1558916438370943,
+      "dynamic_z_rel_L2": 0.1597421736182046,
+      "R11_dynamic_rel_L2_self": 0.1549265586632522,
+      "R22_dynamic_rel_L2_self": 0.21148569664583036,
+      "X11_dynamic_rel_L2_self": 0.13604030548463855,
+      "X22_dynamic_rel_L2_self": 0.14740164357015811,
+      "current_rel_L2": 0.07971015474757023,
+      "material_mean_rmse_K": 0.4386324317755241,
+      "sea_power_rel_L2": 0.1509331715792643,
+      "copper_power_rel_L2": 0.15364722844849346
+    },
+    {
+      "epoch": 12,
+      "span": 16,
+      "exposure": 0.65,
+      "training_loss": 0.448186789949735,
+      "dynamic_z_rel_L2": 0.16099680767652372,
+      "R11_dynamic_rel_L2_self": 0.1565227734849375,
+      "R22_dynamic_rel_L2_self": 0.21203542634801617,
+      "X11_dynamic_rel_L2_self": 0.1368882039290416,
+      "X22_dynamic_rel_L2_self": 0.14856635614055536,
+      "current_rel_L2": 0.0797101982452071,
+      "material_mean_rmse_K": 0.440943701498274,
+      "sea_power_rel_L2": 0.15094972723553007,
+      "copper_power_rel_L2": 0.15365313579885015
+    }
+  ],
+  "windows": [
+    2,
+    4,
+    8,
+    16
+  ],
+  "train_geometries": 48,
+  "train_histories": 132,
+  "val_geometries": 15,
+  "val_histories": 41,
+  "training": "frozen ColdNet/physical EM; teacher SOE prefix and differentiable window",
+  "weights": {
+    "skin": 0.35,
+    "z": 0.25,
+    "current": 0.15,
+    "power": 0.015
+  },
+  "init_model": "runs\\geomfrac_et_v8_heat_tune.pt",
+  "cold_model": "runs\\geomfrac_v10_cold.pt",
+  "refresh_every": 3,
+  "blind_not_used": true
+}
