@@ -16,6 +16,18 @@ def zmat(y):
     c=torch.complex(y[:,4],y[:,5]+y[:,8])
     return torch.stack((torch.stack((a,b),-1),
                         torch.stack((b,c),-1)),-2)
+def response_loss(pred, true, ext, ir):
+    """First-order current error and its upper tail for sensitive circuits."""
+    zp=zmat(pred)
+    zr=zmat(true)
+    A=zr[:,None]+ext[None]
+    delta=(zp-zr)[:,None]@ir[...,None]
+    di=torch.linalg.solve(A,delta)[...,0]
+    e=di.abs().square().sum(-1)/ir.abs().square().sum(-1).clamp_min(1e-12)
+    hard=e.flatten().topk(max(1,(e.numel()+3)//4)).values.mean()
+    return .5*(e.mean()+hard)
+
+
 def circuits(data):
     out={}
     for row in data.get("train",[])+data.get("dev",[]):
@@ -56,7 +68,9 @@ def evaluate(net,rows,exts):
                     pe.append(abs(pp-pr)/max(abs(pr),1e-12))
     out=dict(geometries=len(rows),cold_Z_pct=100*float(np.mean(ze)),
              air_L_pct=100*float(np.mean(ae)),
-             current_pct=100*float(np.mean(ie)),per_geometry=per)
+             current_pct=100*float(np.mean(ie)),
+             current_p90_pct=100*float(np.quantile(ie,.9)),
+             current_max_pct=100*float(np.max(ie)),per_geometry=per)
     if ce:out["cold_copper_pct"]=100*float(np.mean(ce))
     if pe:out["cold_sea_power_pct"]=100*float(np.mean(pe))
     return out
@@ -65,7 +79,8 @@ def by_stratum(net,rows,exts):
             for s in ("core","boundary","extreme")}
 def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
           batch=64,current_weight=.5,seed=72027,
-          copper_weight=0.,sea_score_weight=.02):
+          copper_weight=0.,sea_score_weight=.02,sens_weight=0.,
+          init_model=None):
     torch.manual_seed(seed);torch.set_num_threads(2)
     tr=list(data["train"]);dev=list(data["val"]);test=list(data["test"])
     ids=[{json.dumps(r["geometry"],sort_keys=True) for r in x}
@@ -93,7 +108,9 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
         ys=np.r_[ys,np.maximum(cu[valid].std(0),
                               [.002,.001,.002,.001])]
         y=np.column_stack((y,cu))
-    net=ColdNet(xm,xs,ym,ys)
+    net=(ColdNet.load(init_model) if init_model else ColdNet(xm,xs,ym,ys))
+    if len(net.ym)!=y.shape[1]:
+        raise ValueError("cold initialization has incompatible output dimension")
     xt=torch.as_tensor(x,dtype=torch.float32)
     yt=torch.as_tensor(y,dtype=torch.float32)
     mask=torch.as_tensor(valid,dtype=torch.bool)
@@ -103,6 +120,8 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
     for row in tr:
         ir.append([np.linalg.solve(mat(row["z0"])+e,[1.,0.]) for e in ext])
     ir_t=torch.as_tensor(np.asarray(ir),dtype=torch.complex64)
+    if sens_weight<0:
+        raise ValueError("physical sensitivity loss weight must be nonnegative")
     opt=torch.optim.AdamW(net.parameters(),lr=lr,weight_decay=1e-4)
     best=float("inf");best_ep=0;best_state=copy.deepcopy(net.state_dict())
     history=[];rng=np.random.default_rng(seed)
@@ -120,6 +139,9 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
             loss_i=((ip-ref).abs().square().sum(-1)/
                     ref.abs().square().sum(-1).clamp_min(1e-12)).mean()
             loss=loss_z+current_weight*loss_i
+            if sens_weight:
+                loss=loss+sens_weight*response_loss(pred[:,:9],yt[ix,:9],
+                                                     ext_t,ref)
             if copper_weight>0 and mask[ix].any():
                 cuerr=(pred[mask[ix],9:]-yt[ix][mask[ix],9:])/ys_t[9:]
                 loss=loss+copper_weight*cuerr.square().mean()
@@ -127,11 +149,14 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
         if ep%5:continue
         net.eval();d=evaluate(net,dev,ext)
         score=d["cold_Z_pct"]+.1*d["current_pct"]+.05*d["air_L_pct"]
+        if sens_weight:
+            score+=.08*d["current_p90_pct"]
         if copper_weight>0:
             score+=sea_score_weight*d.get("cold_sea_power_pct",0.)
         history.append(dict(epoch=ep,loss=float(loss.detach()),
                             val_Z_pct=d["cold_Z_pct"],
                             val_current_pct=d["current_pct"],
+                            val_current_p90_pct=d["current_p90_pct"],
                             val_air_pct=d["air_L_pct"]))
         if score<best:
             best=score;best_ep=ep;best_state=copy.deepcopy(net.state_dict())
@@ -148,6 +173,7 @@ def train(data,cir,*,out,epochs=600,patience=100,lr=6e-4,
         val=evaluate(net,dev,ext),val_strata=by_stratum(net,dev,ext),
         test=evaluate(net,test,ext),test_strata=by_stratum(net,test,ext),
         current_loss_weight=current_weight,copper_loss_weight=copper_weight,
+        sensitivity_loss_weight=sens_weight,init_model=str(init_model) if init_model else None,
          sea_score_weight=sea_score_weight,copper_label_geometries=int(valid.sum()),
          external_network_families=len(ext),
         history=history)
@@ -162,10 +188,15 @@ def main():
     p.add_argument("--current-weight",type=float,default=.5)
     p.add_argument("--copper-weight",type=float,default=0.)
     p.add_argument("--sea-score-weight",type=float,default=.02)
+    p.add_argument("--sens-weight",type=float,default=0.,
+                   help="cold circuit Jacobian loss incl. upper quartile sensitive cases")
+    p.add_argument("--init-model",type=Path,default=None,
+                   help="warm-start frozen ColdNet without overwriting existing model")
     a=p.parse_args()
     res=train(read(a.data),read(a.circuits),out=a.out,epochs=a.epochs,
               batch=a.batch,current_weight=a.current_weight,
-               copper_weight=a.copper_weight,sea_score_weight=a.sea_score_weight)
+               copper_weight=a.copper_weight,sea_score_weight=a.sea_score_weight,
+               sens_weight=a.sens_weight,init_model=a.init_model)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(res,indent=2)+"\n",encoding="utf-8")
     print("V7_COLD_RESULT",json.dumps({k:res[k] for k in
