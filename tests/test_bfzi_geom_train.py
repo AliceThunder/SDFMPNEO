@@ -79,7 +79,9 @@ def test_torch_copper_matches_original_bessel_model_and_gradient():
     got=copper_t(temp,port)
     ref=np.stack([port.copper(x) for x in temp.detach().numpy()])
     assert np.allclose(got.detach().numpy(),ref,rtol=2e-10,atol=2e-12)
-    got.real.sum().backward()
+    lookup=copper_t(temp,ctx)
+    assert np.allclose(lookup.detach().numpy(),ref,rtol=2e-7,atol=2e-9)
+    lookup.real.sum().backward()
     assert temp.grad is not None and torch.isfinite(temp.grad).all()
 
 
