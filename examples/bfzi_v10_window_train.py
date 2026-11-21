@@ -134,7 +134,7 @@ def refresh(item,atlas,net,ec,tan,par,mix):
     item["pred_src"]=src
 
 
-def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
+def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train,phy=None,grad_mix=0.):
     out=[];names=set()
     for spec in specs:
         name=Path(spec["anchor"].replace("\\","/")).stem.split("_")[2]
@@ -144,7 +144,8 @@ def create_rows(specs,plan,atlas,cold,src,net,ec,tan,par,mix,train):
         case=plan["cases"][name]
         init=thermal_mix(atlas,src.apply(case,cold.apply(
             case,atlas.predict(case))),.25)
-        win=HeatWindow(case,init,net,ec,tan,par,mix)
+        win=HeatWindow(case,init,net,ec,tan,par,mix,
+                       phys=phy,grad_mix=grad_mix)
         for row in prepare(spec,48):
             item=dict(case=case,init=init,row=row,win=win)
             if train:
@@ -187,6 +188,10 @@ def main():
     p.add_argument("--plan",type=Path,default=Path("runs/geomfrac_v8_full_plan.json"))
     p.add_argument("--init-model",type=Path,default=Path("runs/geomfrac_et_v8_heat_tune.pt"))
     p.add_argument("--cold-model",type=Path,default=Path("runs/geomfrac_cold_v8_frozen.pt"))
+    p.add_argument("--phys-grad",type=Path,
+                   default=Path("runs/geomfrac_v9_phys_region.json"))
+    p.add_argument("--grad-mix",type=float,default=0.,
+                   help="physical dZsea/da in backward pass; exact V8 forward unchanged")
     p.add_argument("--refresh-every",type=int,default=4)
     p.add_argument("--epochs",type=int,default=16)
     p.add_argument("--updates",type=int,default=8)
@@ -205,6 +210,9 @@ def main():
     torch.manual_seed(19437)
     torch.set_num_threads(2)
     rng=np.random.default_rng(19437)
+    if not 0<=a.grad_mix<=1:
+        p.error("--grad-mix must be between 0 and 1")
+    phy=read(a.phys_grad) if a.grad_mix else None
     plan=read(a.plan)
     mf=read(a.manifest)
     cfg=read("runs/geomfrac_free_rank48_v8_selection.json")
@@ -219,8 +227,8 @@ def main():
         param.requires_grad_(False)
     mix=float(cfg["shape_mix"])
     net.eval()
-    tr,tn=create_rows(mf["train"],plan,atlas,cold,src,net,ec,tan,par,mix,True)
-    va,vn=create_rows(mf["val"],plan,atlas,cold,src,net,ec,tan,par,mix,False)
+    tr,tn=create_rows(mf["train"],plan,atlas,cold,src,net,ec,tan,par,mix,True,phy,a.grad_mix)
+    va,vn=create_rows(mf["val"],plan,atlas,cold,src,net,ec,tan,par,mix,False,phy,a.grad_mix)
     if (tn & vn or len(tn)!=48 or len(vn)!=15 or len(tr)!=132 or len(va)!=41):
         raise ValueError("require frozen geometry-disjoint 48/15 and 132/41 histories")
     baseline=evaluate(va,atlas,net,ec,tan,par,mix)
@@ -297,6 +305,8 @@ def main():
         training="frozen ColdNet/physical EM; teacher SOE prefix and differentiable window",
         weights=weights,init_model=str(a.init_model),
         cold_model=str(a.cold_model),refresh_every=a.refresh_every,
+        physical_gradient_mix=a.grad_mix,
+        physical_gradient_source=str(a.phys_grad) if a.grad_mix else None,
         blind_not_used=True)
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
