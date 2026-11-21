@@ -107,3 +107,33 @@ def loss(pred,target,deriv,y_scale,w,phys=.65,pkg=.9,sea=.15):
         ez[:,:,5]+=deriv[:,:,3]*dt[:,:,1]
         rows=rows+phys*(ez/scale[:6]).square().mean((1,2))
     return (rows*w).mean()
+
+
+def shared_step(prev,guess,dt,k,q,shape_mix=.5):
+    """Differentiable shared-atlas Kss/Ksm shape and Kmm/Kms mean update.
+
+    State and source vectors use the 48-mode energy coordinates. q is held
+    fixed over this step and includes sea and copper heating in its first
+    five material coordinates.
+    """
+    if dt<=0:
+        raise ValueError("thermal step must be positive")
+    if not 0.<=shape_mix<=1.:
+        raise ValueError("shape_mix must be within [0,1]")
+    if prev.shape!=guess.shape or prev.shape!=q.shape:
+        raise ValueError("thermal state and source shapes must match")
+    rank=prev.shape[-1]
+    if k.shape!=(rank,rank) or rank<=5:
+        raise ValueError("shared thermal operator shape mismatch")
+    if shape_mix:
+        mat=torch.eye(rank-5,dtype=k.dtype,device=k.device)/dt+k[5:,5:]
+        rhs=(prev[...,5:]/dt+q[...,5:]
+             -guess[...,:5]@k[:5,5:].T)
+        phys=torch.linalg.solve(mat,rhs.unsqueeze(-1)).squeeze(-1)
+        shape=(1.-shape_mix)*guess[...,5:]+shape_mix*phys
+    else:
+        shape=guess[...,5:]
+    mat=torch.eye(5,dtype=k.dtype,device=k.device)/dt+k[:5,:5]
+    rhs=prev[...,:5]/dt+q[...,:5]-shape@k[:5,5:].T
+    mean=torch.linalg.solve(mat,rhs.unsqueeze(-1)).squeeze(-1)
+    return torch.cat((mean,shape),dim=-1)
