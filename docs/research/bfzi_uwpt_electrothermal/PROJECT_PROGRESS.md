@@ -1328,3 +1328,9 @@ BFZI V150固定热态数据生成器`examples/bfzi_v9_hotstates.py`已在XEnergy
 已实现`sdfmpneo_bfzi/geom_window.py`的PyTorch可微热状态短窗口、SOE前缀记忆保留、真实/自主热源与温度初态一致混合、冷态与温度反馈、五材料守恒；并实现`examples/bfzi_v10_window_train.py`的2/4/8/16步课程训练及自主rollout选模、`examples/bfzi_v10_window_smoke.py`有非零梯度/实际85V物理热源单步检查。原V8热网微调16轮失败（动态Z16.2321→17.5110%）；改进一致性后联用新ColdNet12轮仍未晋级（15.7860→16.0997%），`runs/geomfrac_v10_window_heat.json`归档。原`examples/bfzi_v9_full_history_train.py`将使用自主热状态但以真热态阻抗监督的错误标签改为BFZI空间复阻抗敏感度修正标签，20轮训练也未晋级（`runs/geomfrac_v10_phys_skin.json`）。使用BFZI物理复数Jacobian仅替换反向梯度、保持原电磁前向冻结的8轮训练完成，开发集仍无可晋级提升（`runs/geomfrac_v10_phys_window_heat.json`），主热头与电磁头均保留V8冻结权重。
 
 已在生成参考前冻结全新几何`runs/geomfrac_v10_blind_plan.json`（V10B0001–4，共4组完全独立几何，每组60s、300s完整历史），独立BFZI V150 S5 ultra物理数据任务XEnergy `job-188`进行中，已完成至少V10B0001两条与V10B0002 60s共3/8条。冻结双模型自动验收脚本`examples/bfzi_v10_blind_accept.py`已入库并编译通过。只有独立全8条参考齐备且同条件整体指标通过才晋级整机。
+
+## 2026-11-21 — V10 级联误差训练独立盲测验收完成
+
+BFZI V150 S5 ultra 共4组全新几何、8条60/300秒完整物理历史最终全部成功。V10B0004最初封装超出海水域，物理参考生成前期的这次失败已作为参数越界记录；在模型预测评价前将平移从[3,114,-8]改为[3,68,-8]，物理参考补齐成功。见`runs/geomfrac_v10_blind_plan.json`、`runs/geomfrac_s5_v10err_manifest.json`与`runs/geomfrac_s5_v10err_build_report.json`。
+
+冻结V8与仅替换ColdNet的V10候选同条件比较：整体动态复阻抗误差10.6601%→10.4623%，TX R11自身16.2563%→15.9826%，RX X22自身7.5342%→6.5625%，材料均温RMSE0.17698→0.17511K；但是RX R22自身14.2712%→14.9050%、电流1.0981%→1.1536%、海水功率0.8731%→1.1206%、铜功率1.9806%→2.3590%，冷态总复阻抗0.0896%→0.1115%。按事先固定晋级门槛V10 **未通过，正式V8权重保留**。4组几何的总体动态Z有3组改善，说明上游电路敏感度训练有发展价值，接下来训练需更重视RX R22/电流/功率的几何泛化。结果`runs/geomfrac_v10_blind_summary.json`，逐模型`runs/geomfrac_v10_blind_base.json`和`runs/geomfrac_v10_blind_cold.json`，主线分析见`docs/research/bfzi_uwpt_electrothermal/GEOMFRAC_V10_ERROR_AWARE_TRAIN.md`。V10B盲测封存，不用于后续调参。
