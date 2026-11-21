@@ -37,11 +37,14 @@ def main():
     par=ParZ48.load("runs/geomfrac_v8_par48.pt")
     for p in par.parameters():
         p.requires_grad_(False)
-    row=prepare(spec,48)[0]
+    histories=prepare(spec,48)
+    selected=[(row,i) for row in histories
+              for i in range(2,len(row["time"])-1)
+              if abs(float(row["voltage"][i]))>1]
+    if not selected:
+        raise ValueError("smoke test requires nonzero physical excitation")
+    row,start=selected[0]
     win=HeatWindow(case,init,net,ec,tan,par,float(cfg["shape_mix"]))
-    start=2
-    if len(row["time"])<=start+1:
-        raise ValueError("history too short for SOE memory test")
     h=win.warm(row,start)
     old=torch.as_tensor(row["a"][start],dtype=torch.float32)*win.scale
     win.anchor(old)
@@ -62,9 +65,11 @@ def main():
             or float(grad.abs().sum())<=0 or not bool(torch.isfinite(loss))):
         raise AssertionError("differentiable SOE heat head gradients are invalid")
     print("V10_WINDOW_SMOKE",json.dumps(dict(name=name,
-        dt=dt,loss=float(loss.detach()),grad_norm=float(grad.norm()),
+        dt=dt,drive_v=float(row["voltage"][start]),
+        loss=float(loss.detach()),grad_norm=float(grad.norm()),
         source_w=float(ps.detach()),copper_w=pc.detach().tolist(),
-        current_A=[float(I[0].real),float(I[1].real)])),flush=True)
+        current_A=[float(I[0].real.detach()),
+                   float(I[1].real.detach())])),flush=True)
 
 
 if __name__=="__main__":
