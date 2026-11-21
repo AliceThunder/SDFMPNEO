@@ -1,0 +1,227 @@
+{
+  "description": "V11 sealed new-geometry full BFZI electrothermal acceptance",
+  "version": 11,
+  "seed": 24111,
+  "frozen": true,
+  "train": [],
+  "val": [],
+  "test": [
+    "V11B0001",
+    "V11B0002",
+    "V11B0003",
+    "V11B0004"
+  ],
+  "cases": {
+    "V11B0001": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.8664,
+        "alpha2": 0.8895,
+        "core1_mm": 11,
+        "core2_mm": 17,
+        "shift_mm": [
+          -2,
+          88,
+          -5
+        ],
+        "tilt_deg": 13,
+        "yaw_deg": 12,
+        "pitch_deg": -11,
+        "box1_mm": 225,
+        "box2_mm": 214
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 49,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 67,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V11B0002": {
+      "family": "continuous",
+      "donor": "g1",
+      "geometry": {
+        "alpha1": 0.7157,
+        "alpha2": 0.844,
+        "core1_mm": 22,
+        "core2_mm": 20,
+        "shift_mm": [
+          8,
+          93,
+          -8
+        ],
+        "tilt_deg": 1,
+        "yaw_deg": -3,
+        "pitch_deg": -13,
+        "box1_mm": 230,
+        "box2_mm": 212
+      },
+      "alpha_per_K": 0.02116,
+      "thermal": {
+        "ins_k": 0.3117,
+        "ins_t": 0.000354,
+        "pkg_k": 0.2896,
+        "pkg_sea_h": 25.586,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 51.5,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 69.5,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V11B0003": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.9108,
+        "alpha2": 0.9646,
+        "core1_mm": 6,
+        "core2_mm": 15,
+        "shift_mm": [
+          12,
+          87,
+          1
+        ],
+        "tilt_deg": -3,
+        "yaw_deg": -13,
+        "pitch_deg": 5,
+        "box1_mm": 223,
+        "box2_mm": 216
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 54,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 72,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    },
+    "V11B0004": {
+      "family": "continuous",
+      "donor": "g2",
+      "geometry": {
+        "alpha1": 0.7349,
+        "alpha2": 0.9133,
+        "core1_mm": 18,
+        "core2_mm": 19,
+        "shift_mm": [
+          -1,
+          92,
+          -4
+        ],
+        "tilt_deg": 6,
+        "yaw_deg": -8,
+        "pitch_deg": 9,
+        "box1_mm": 219,
+        "box2_mm": 220
+      },
+      "alpha_per_K": 0.01899,
+      "thermal": {
+        "ins_k": 0.2236,
+        "ins_t": 0.000426,
+        "pkg_k": 0.2362,
+        "pkg_sea_h": 32.733,
+        "skin_m": 0.002
+      },
+      "drives": [
+        {
+          "voltage": 56.5,
+          "off": [],
+          "duration": 60
+        },
+        {
+          "voltage": 74.5,
+          "off": [
+            [
+              45,
+              105
+            ],
+            [
+              195,
+              255
+            ]
+          ],
+          "duration": 300
+        }
+      ]
+    }
+  },
+  "source_test": {
+    "V11B0001": "V7E0027",
+    "V11B0002": "V7E0063",
+    "V11B0003": "V7E0089",
+    "V11B0004": "V7E0056"
+  },
+  "geometry_validity": "moderate shift and package/pose prefilter",
+  "model_candidates": [
+    "V8",
+    "V11_cold"
+  ],
+  "selection": "reserved cold-test geometry, disjoint from previous dynamic physical references",
+  "selection_finalized_before_physics": true,
+  "training_candidate": "runs/geomfrac_v11_cold.pt",
+  "notes": "4 new geometry disjoint from dynamics train/dev and prior V9/V10 blinds; g1/g2 external circuit coverage"
+}
